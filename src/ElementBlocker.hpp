@@ -21,8 +21,8 @@ public:
     // Toggle interactive element picker mode (Ctrl + Shift + H)
     void TogglePickerMode(ICoreWebView2* webView);
 
-    // Handles messages from Web (WebMessageReceived)
-    bool HandleWebMessage(const std::wstring& messageJson);
+    // Handles messages from Web (WebMessageReceived) with verified source origin
+    bool HandleWebMessage(const std::wstring& messageJson, const std::wstring& sourceUri = L"");
 
     bool IsPickerActive() const { return m_pickerActive; }
 

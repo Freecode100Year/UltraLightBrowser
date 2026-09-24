@@ -34,11 +34,11 @@ Unlike typical Electron or monolithic Chromium browsers that consume hundreds of
 
 | Metric | Target / Measured | Technical Driver |
 | :--- | :--- | :--- |
-| **Binary Footprint** | `<= 2.0 MB` (Single `.exe`) | Zero-bloat Win32, MSVC `/O2 /GL /LTCG /OPT:REF /OPT:ICF` |
+| **Binary Footprint** | `~300 KB` (Single standalone `.exe`) | Zero-bloat Win32, MSVC `/O2 /GL /LTCG /OPT:REF /OPT:ICF` |
 | **Cold Startup Time** | `<= 0.3s` | Native Win32 window loop, async WebView2 environment spin-up |
-| **Idle / Minimized RAM** | `~20 MB` | `EmptyWorkingSet` & `ICoreWebView2_3::TrySuspend` on minimize |
+| **Idle / Minimized RAM** | `~20 MB` (Host process working set) | `EmptyWorkingSet` & `ICoreWebView2_3::TrySuspend` on minimize (Note: Chromium renderers scale per webpage) |
 | **Display Scaling** | Crisp 4K/8K HiDPI | `DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2` |
-| **Visual Style** | Native Windows 11 | Mica/Immersive Dark Mode (`DWMWA_USE_IMMERSIVE_DARK_MODE`) & Rounded Corners |
+| **Visual Style** | Native Windows 11 | Immersive Dark Mode (`DWMWA_USE_IMMERSIVE_DARK_MODE`) & Rounded Corners |
 
 ---
 
@@ -77,10 +77,10 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **Bloatware Purge**: `--disable-features=Translate,OptimizationHints,MediaRouter --disable-background-networking --no-first-run`
 
 ### 2. 🧩 Chrome Extension (MV3) Support
-`ExtensionManager` provides native Chrome extension capabilities via `ICoreWebView2Profile7`:
-* **CRX3 Parser**: Validates `Cr24` magic headers, extracts format version 3 headers, and decompresses inner ZIP payloads into `%LOCALAPPDATA%\UltraLightBrowser\Extensions\<ID>`.
+`ExtensionManager` provides early MV3 foundation via `ICoreWebView2Profile7`:
+* **CRX3 Parser**: Validates `Cr24` headers and extracts inner payloads safely into `%LOCALAPPDATA%\UltraLightBrowser\Extensions\<ID>` with path-traversal safeguards and direct process execution (avoiding shell command injection).
 * **Manifest V3 Reader**: Parses `action.default_popup` and `action.default_icon`.
-* **Borderless Win32 Popups**: Spawns isolated native popups for extension action pages on click.
+* **Win32 Popups**: Displays native metadata popup window. Support for in-popup web rendering is under active development.
 
 ### 3. 🛡️ Zero-Flicker Element Hiding & Interactive Picker
 `ElementBlocker` ensures user privacy and ad-blocking without layout shifts:

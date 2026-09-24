@@ -74,3 +74,4 @@ vcpkg_installed/
 UserData/
 *.log
 config.json
+UltraLightBrowser-Windows-x64/

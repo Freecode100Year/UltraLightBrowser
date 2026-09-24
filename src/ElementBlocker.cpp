@@ -155,17 +155,28 @@ void ElementBlocker::TogglePickerMode(ICoreWebView2* webView) {
     webView->ExecuteScript(pickerJs.c_str(), nullptr);
 }
 
-bool ElementBlocker::HandleWebMessage(const std::wstring& messageJson) {
+bool ElementBlocker::HandleWebMessage(const std::wstring& messageJson, const std::wstring& sourceUri) {
 #if __has_include(<nlohmann/json.hpp>)
     try {
         std::string narrowMsg(messageJson.begin(), messageJson.end());
         json data = json::parse(narrowMsg);
 
         if (data.contains("type") && data["type"] == "ELEMENT_PICKED") {
-            std::string host = data["host"].get<std::string>();
-            std::string selector = data["selector"].get<std::string>();
+            // Strictly verify host using the trusted source URI from WebView2 to prevent spoofing
+            std::string verifiedHost = "";
+            if (!sourceUri.empty()) {
+                verifiedHost = ExtractHostFromUri(sourceUri);
+            }
+            if (verifiedHost.empty() && data.contains("host")) {
+                verifiedHost = data["host"].get<std::string>();
+            }
+            if (verifiedHost.empty()) return false;
 
-            Config::Instance().AddBlockRule(host, selector);
+            std::string selector = data["selector"].get<std::string>();
+            // Basic sanity check on selector length and content
+            if (selector.empty() || selector.length() > 4096) return false;
+
+            Config::Instance().AddBlockRule(verifiedHost, selector);
             m_pickerActive = false;
             return true;
         }

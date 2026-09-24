@@ -249,6 +249,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDC_BTN_RELOAD:
             m_webViewManager->Reload();
             break;
+        case IDC_EDIT_ADDRESS:
+            SetFocus(m_hEditAddress);
+            SendMessageW(m_hEditAddress, EM_SETSEL, 0, -1);
+            break;
         case IDC_BTN_BLOCKER:
             ElementBlocker::Instance().TogglePickerMode(m_webViewManager->GetWebView());
             break;

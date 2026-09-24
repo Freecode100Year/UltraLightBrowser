@@ -68,11 +68,63 @@ bool ExtensionManager::UnpackCrx3(const std::filesystem::path& crxPath, const st
         zipOut << file.rdbuf();
     }
 
-    // Unpack ZIP payload using tar -xf (native on Windows 10/11)
-    std::wstring cmd = L"tar.exe -xf \"" + tempZip.wstring() + L"\" -C \"" + destDir.wstring() + L"\"";
-    _wsystem(cmd.c_str());
+    // Locate system tar.exe safely to prevent PATH hijacking
+    wchar_t sysDir[MAX_PATH]{};
+    GetSystemDirectoryW(sysDir, MAX_PATH);
+    std::filesystem::path tarPath = std::filesystem::path(sysDir) / L"tar.exe";
+    if (!std::filesystem::exists(tarPath)) {
+        std::error_code ec;
+        std::filesystem::remove(tempZip, ec);
+        return false;
+    }
 
-    std::filesystem::remove(tempZip);
+    // Direct process invocation avoiding cmd.exe shell injection
+    std::wstring cmdLine = L"\"" + tarPath.wstring() + L"\" -xf \"" + tempZip.wstring() + L"\" -C \"" + destDir.wstring() + L"\"";
+    std::vector<wchar_t> cmdBuf(cmdLine.begin(), cmdLine.end());
+    cmdBuf.push_back(L'\0');
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi{};
+
+    BOOL created = CreateProcessW(
+        tarPath.c_str(),
+        cmdBuf.data(),
+        nullptr,
+        nullptr,
+        FALSE,
+        CREATE_NO_WINDOW,
+        nullptr,
+        nullptr,
+        &si,
+        &pi
+    );
+
+    if (created) {
+        WaitForSingleObject(pi.hProcess, 15000);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(tempZip, ec);
+
+    // Path traversal verification: ensure all extracted contents reside strictly within destDir
+    auto canonicalDest = std::filesystem::weakly_canonical(destDir, ec);
+    if (!ec) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(destDir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+            auto canonicalEntry = std::filesystem::weakly_canonical(entry.path(), ec);
+            auto rel = std::filesystem::relative(canonicalEntry, canonicalDest, ec);
+            if (rel.empty() || rel.string().find("..") != std::string::npos) {
+                // Abort on path traversal attempt
+                std::filesystem::remove_all(destDir, ec);
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -217,6 +269,12 @@ void ExtensionManager::ShowExtensionPopup(HWND hParent, const ExtensionInfo& ext
     );
 
     if (hPopup) {
+        std::wstring nameW = L"Extension: " + std::wstring(ext.name.begin(), ext.name.end());
+        CreateWindowExW(0, L"STATIC", nameW.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 20, width - 40, 25, hPopup, nullptr, GetModuleHandle(nullptr), nullptr);
+        std::wstring popupW = L"Popup Page: " + std::wstring(ext.defaultPopup.begin(), ext.defaultPopup.end());
+        CreateWindowExW(0, L"STATIC", popupW.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 50, width - 40, 25, hPopup, nullptr, GetModuleHandle(nullptr), nullptr);
+        std::wstring pathW = L"Path: " + ext.path.wstring();
+        CreateWindowExW(0, L"STATIC", pathW.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 80, width - 40, 60, hPopup, nullptr, GetModuleHandle(nullptr), nullptr);
         SetFocus(hPopup);
     }
 }

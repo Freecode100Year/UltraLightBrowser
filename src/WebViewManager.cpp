@@ -149,8 +149,13 @@ void WebViewManager::RegisterEventHandlers() {
         Callback<ICoreWebView2WebMessageReceivedEventHandler>(
             [](ICoreWebView2* /*sender*/, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
                 wil::unique_cotaskmem_string messageRaw;
+                wil::unique_cotaskmem_string sourceUri;
                 if (SUCCEEDED(args->get_WebMessageAsJson(&messageRaw))) {
-                    ElementBlocker::Instance().HandleWebMessage(messageRaw.get());
+                    std::wstring src = L"";
+                    if (SUCCEEDED(args->get_Source(&sourceUri)) && sourceUri.get()) {
+                        src = sourceUri.get();
+                    }
+                    ElementBlocker::Instance().HandleWebMessage(messageRaw.get(), src);
                 }
                 return S_OK;
             }
