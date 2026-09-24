@@ -40,6 +40,7 @@ if(MSVC)
         /OPT:REF            # Eliminate unreferenced functions/data
         /OPT:ICF            # Identical COMDAT folding (reduce binary size)
         /SUBSYSTEM:WINDOWS  # Pure Win32 GUI application
+        /MANIFEST:NO        # Custom manifest embedded via resource.rc
     )
 endif()
 
@@ -77,23 +78,36 @@ if(WEBVIEW2_DIRS)
     target_include_directories(UltraLightBrowser PRIVATE "${LATEST_WEBVIEW2_DIR}/build/native/include")
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
         target_link_directories(UltraLightBrowser PRIVATE "${LATEST_WEBVIEW2_DIR}/build/native/x64")
+        if(EXISTS "${LATEST_WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib")
+            target_link_libraries(UltraLightBrowser PRIVATE "${LATEST_WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib")
+        else()
+            target_link_libraries(UltraLightBrowser PRIVATE WebView2Loader.dll.lib)
+        endif()
     else()
         target_link_directories(UltraLightBrowser PRIVATE "${LATEST_WEBVIEW2_DIR}/build/native/x86")
+        target_link_libraries(UltraLightBrowser PRIVATE WebView2Loader.dll.lib)
     endif()
-    target_link_libraries(UltraLightBrowser PRIVATE WebView2Loader.dll.lib)
     
-    # Auto-copy WebView2Loader.dll to output directory
-    add_custom_command(TARGET UltraLightBrowser POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${LATEST_WEBVIEW2_DIR}/build/native/x64/WebView2Loader.dll"
-        $<TARGET_FILE_DIR:UltraLightBrowser>
-        COMMENT "Copying WebView2Loader.dll to target directory"
-    )
+    # Auto-copy WebView2Loader.dll to output directory if present
+    if(EXISTS "${LATEST_WEBVIEW2_DIR}/build/native/x64/WebView2Loader.dll")
+        add_custom_command(TARGET UltraLightBrowser POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${LATEST_WEBVIEW2_DIR}/build/native/x64/WebView2Loader.dll"
+            $<TARGET_FILE_DIR:UltraLightBrowser>
+            COMMENT "Copying WebView2Loader.dll to target directory"
+        )
+    endif()
 endif()
 
 if(WIL_DIRS)
     list(GET WIL_DIRS -1 LATEST_WIL_DIR)
     target_include_directories(UltraLightBrowser PRIVATE "${LATEST_WIL_DIR}/include")
+endif()
+
+file(GLOB NLOHMANN_DIRS "${NUGET_PACKAGES_DIR}/nlohmann.json.*")
+if(NLOHMANN_DIRS)
+    list(GET NLOHMANN_DIRS -1 LATEST_NLOHMANN_DIR)
+    target_include_directories(UltraLightBrowser PRIVATE "${LATEST_NLOHMANN_DIR}/build/native/include")
 endif()
 
 # Include directories
@@ -122,6 +136,7 @@ target_link_libraries(UltraLightBrowser PRIVATE
     shell32.lib
     advapi32.lib
     uxtheme.lib
+    wininet.lib
 )
 
 # Embed Manifest

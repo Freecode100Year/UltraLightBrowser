@@ -1,6 +1,7 @@
 #include "ElementBlocker.hpp"
 #include "Config.hpp"
 #include <urlmon.h>
+#include <wininet.h>
 #include <shlwapi.h>
 #include <sstream>
 

@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
 
 #if __has_include(<nlohmann/json.hpp>)
 #include <nlohmann/json.hpp>

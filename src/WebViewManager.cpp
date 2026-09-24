@@ -118,7 +118,7 @@ void WebViewManager::RegisterEventHandlers() {
 
     // Source (URL) Changed
     m_webView->add_SourceChanged(
-        Callback<ICoreWebView2SourceChangedEventArgsHandler>(
+        Callback<ICoreWebView2SourceChangedEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2SourceChangedEventArgs* /*args*/) -> HRESULT {
                 wil::unique_cotaskmem_string uri;
                 if (SUCCEEDED(sender->get_Source(&uri)) && m_sourceChangedCb) {
