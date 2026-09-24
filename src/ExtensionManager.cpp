@@ -273,7 +273,7 @@ void ExtensionManager::ShowExtensionPopup(HWND hParent, const ExtensionInfo& ext
         CreateWindowExW(0, L"STATIC", nameW.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 20, width - 40, 25, hPopup, nullptr, GetModuleHandle(nullptr), nullptr);
         std::wstring popupW = L"Popup Page: " + std::wstring(ext.defaultPopup.begin(), ext.defaultPopup.end());
         CreateWindowExW(0, L"STATIC", popupW.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 50, width - 40, 25, hPopup, nullptr, GetModuleHandle(nullptr), nullptr);
-        std::wstring pathW = L"Path: " + ext.path.wstring();
+        std::wstring pathW = L"Path: " + ext.unpackedPath.wstring();
         CreateWindowExW(0, L"STATIC", pathW.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 80, width - 40, 60, hPopup, nullptr, GetModuleHandle(nullptr), nullptr);
         SetFocus(hPopup);
     }
