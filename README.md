@@ -4,7 +4,7 @@
 > Powered by Microsoft Edge WebView2 Evergreen Runtime & Modern C++20.
 
 [![Release](https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github)](https://github.com/Freecode100Year/UltraLightBrowser/releases)
-[![Download EXE](https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.0.0/UltraLightBrowser.exe)
+[![Download EXE](https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.0.1/UltraLightBrowser.exe)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2011%20(x64)-0078d4.svg?logo=windows)](https://microsoft.com)
 [![Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=c%2B%2B)](https://isocpp.org)
 [![Build](https://img.shields.io/badge/Build-CMake%20%7C%20MSVC%202022-brightgreen.svg?logo=cmake)](https://cmake.org)
@@ -16,8 +16,8 @@
 
 可以在 GitHub Releases 中直接获取预编译的可用二进制程序：
 
-* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.0.0/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
-* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.0.0-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.0.0/UltraLightBrowser-v1.0.0-windows-x64.zip)**
+* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.0.1/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
+* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.0.1-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.0.1/UltraLightBrowser-v1.0.1-windows-x64.zip)**
 * 🔗 **[查看所有历史版本与 Release 资产](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
 ---
@@ -74,11 +74,11 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **DirectComposition Overlays**: `--enable-hardware-overlays=single-fullscreen,single-on-top --disable-direct-composition-video-overlays=false`
 * **AI Super Resolution**: `--enable-features=NvidiaVsr,IntelVsr,Prerender2`
 * **Low-Latency Transport**: `--enable-quic --quic-version=h3 --enable-bbr --enable-async-dns --enable-tcp-fast-open`
-* **Bloatware Purge**: `--disable-features=Translate,OptimizationHints,MediaRouter --disable-background-networking --no-first-run`
+* **Bloatware Purge**: `--disable-features=Translate,OptimizationHints,MediaRouter --no-first-run` (Retains Safe Browsing and security component background updates).
 
 ### 2. 🧩 Chrome Extension (MV3) Support
 `ExtensionManager` provides early MV3 foundation via `ICoreWebView2Profile7`:
-* **CRX3 Parser**: Validates `Cr24` headers and extracts inner payloads safely into `%LOCALAPPDATA%\UltraLightBrowser\Extensions\<ID>` with path-traversal safeguards and direct process execution (avoiding shell command injection).
+* **CRX3 Secure Unpacker**: Validates `Cr24` headers, bounds-checks `headerSize`, verifies Protobuf cryptographic signatures & signed header data, and performs pre-extraction ZIP Central Directory path traversal verification (ensuring zero untrusted files touch disk) with secondary post-extraction canonical directory verification. Direct Win32 `CreateProcessW` execution of `System32\tar.exe` eliminates shell command injection.
 * **Manifest V3 Reader**: Parses `action.default_popup` and `action.default_icon`.
 * **Win32 Popups**: Displays native metadata popup window. Support for in-popup web rendering is under active development.
 

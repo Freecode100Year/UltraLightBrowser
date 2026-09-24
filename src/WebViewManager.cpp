@@ -37,7 +37,6 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         L"--media-cache-size=134217728 "
         L"--disk-cache-size=209715200 "
         L"--disable-features=Translate,OptimizationHints,MediaRouter "
-        L"--disable-background-networking "
         L"--no-first-run";
 
     options->put_AdditionalBrowserArguments(performanceArgs.c_str());

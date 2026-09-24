@@ -75,3 +75,4 @@ UserData/
 *.log
 config.json
 UltraLightBrowser-Windows-x64/
+release_*/
