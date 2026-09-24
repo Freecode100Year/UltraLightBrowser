@@ -141,5 +141,5 @@ target_link_libraries(UltraLightBrowser PRIVATE
 
 # Embed Manifest
 set_target_properties(UltraLightBrowser PROPERTIES
-    VS_DPI_AWARE "PerMonitorHighDPIAware"
+    VS_DPI_AWARE "PerMonitor"
 )
