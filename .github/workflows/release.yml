@@ -1,0 +1,94 @@
+name: Build & Release UltraLightBrowser
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: false
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet Packages
+        run: |
+          nuget restore packages.config -PackagesDirectory packages
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Project
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Verify Binary
+        run: |
+          if (Test-Path "build\Release\UltraLightBrowser.exe") {
+            Write-Host "Build succeeded: build\Release\UltraLightBrowser.exe exists." -ForegroundColor Green
+            Get-Item "build\Release\UltraLightBrowser.exe" | Select-Object Name, Length, LastWriteTime
+          } else {
+            Write-Error "UltraLightBrowser.exe not found!"
+            exit 1
+          }
+
+      - name: Package Distribution ZIP
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag_name || github.ref_name }}"
+          if (-not $tag -or $tag -eq "main") { $tag = "latest" }
+          New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+          
+          # Copy target executable and license/readme
+          Copy-Item "build\Release\UltraLightBrowser.exe" -Destination "dist\"
+          if (Test-Path "build\Release\WebView2Loader.dll") {
+            Copy-Item "build\Release\WebView2Loader.dll" -Destination "dist\"
+          }
+          if (Test-Path "README.md") { Copy-Item "README.md" -Destination "dist\" }
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" -Destination "dist\" }
+          
+          $zipName = "UltraLightBrowser-$tag-windows-x64.zip"
+          Compress-Archive -Path "dist\*" -DestinationPath "build\Release\$zipName" -Force
+          Write-Host "Created archive: build\Release\$zipName"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: UltraLightBrowser-Windows-x64
+          path: |
+            build/Release/UltraLightBrowser.exe
+            build/Release/*.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: UltraLightBrowser ${{ github.event.inputs.tag_name || github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            build/Release/UltraLightBrowser.exe
+            build/Release/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
