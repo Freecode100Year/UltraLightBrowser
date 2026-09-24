@@ -1,0 +1,76 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Visual Studio & MSVC files
+.vs/
+*.sln.docstates
+*.user
+*.userosscache
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.vcxproj.vspscc
+x64/
+x86/
+Debug/
+Release/
+ipch/
+*.opendb
+*.db
+*.suo
+
+# CMake build directories and artifacts
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+build/
+bin/
+out/
+
+# NuGet & vcpkg
+packages/
+vcpkg_installed/
+*.nuget.props
+*.nuget.targets
+
+# Runtime / App Data
+UserData/
+*.log
+config.json

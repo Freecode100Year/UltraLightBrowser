@@ -1,0 +1,9 @@
+{
+  "name": "ultra-light-browser",
+  "version-string": "1.0.0",
+  "description": "Ultra-lightweight Windows 11 WebView2 Browser Shell",
+  "dependencies": [
+    "wil",
+    "nlohmann-json"
+  ]
+}

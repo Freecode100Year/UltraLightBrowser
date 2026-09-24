@@ -1,0 +1,151 @@
+#include "Config.hpp"
+#include <windows.h>
+#include <shlobj.h>
+#include <fstream>
+#include <sstream>
+#include <iostream>
+
+#if __has_include(<nlohmann/json.hpp>)
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+#else
+// Minimal JSON fallback if nlohmann/json is not present
+#endif
+
+namespace UltraLight {
+
+Config& Config::Instance() {
+    static Config s_instance;
+    return s_instance;
+}
+
+Config::Config() {
+    PWSTR localAppDataPath = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppDataPath))) {
+        std::filesystem::path basePath(localAppDataPath);
+        CoTaskMemFree(localAppDataPath);
+        std::filesystem::path appDir = basePath / "UltraLightBrowser";
+        std::filesystem::create_directories(appDir);
+        std::filesystem::create_directories(appDir / "Extensions");
+        std::filesystem::create_directories(appDir / "UserData");
+        m_configFilePath = appDir / "config.json";
+    } else {
+        m_configFilePath = "config.json";
+    }
+    Load();
+}
+
+std::filesystem::path Config::GetAppDataPath() const {
+    return m_configFilePath.parent_path();
+}
+
+std::filesystem::path Config::GetExtensionsDirectory() const {
+    return GetAppDataPath() / "Extensions";
+}
+
+std::filesystem::path Config::GetUserDataDirectory() const {
+    return GetAppDataPath() / "UserData";
+}
+
+void Config::Load() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!std::filesystem::exists(m_configFilePath)) {
+        return;
+    }
+
+#if __has_include(<nlohmann/json.hpp>)
+    try {
+        std::ifstream file(m_configFilePath);
+        if (!file.is_open()) return;
+
+        json root;
+        file >> root;
+
+        if (root.contains("settings")) {
+            auto& s = root["settings"];
+            if (s.contains("startUrl")) {
+                std::string url = s["startUrl"];
+                m_settings.startUrl = std::wstring(url.begin(), url.end());
+            }
+            if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
+            if (s.contains("enableExtensions")) m_settings.enableExtensions = s["enableExtensions"];
+            if (s.contains("enableAdBlock")) m_settings.enableAdBlock = s["enableAdBlock"];
+            if (s.contains("ecoMode")) m_settings.ecoMode = s["ecoMode"];
+        }
+
+        if (root.contains("blockRules") && root["blockRules"].is_object()) {
+            m_hostBlockRules.clear();
+            for (auto& [host, selectors] : root["blockRules"].items()) {
+                if (selectors.is_array()) {
+                    for (const auto& sel : selectors) {
+                        m_hostBlockRules[host].push_back(sel.get<std::string>());
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        // Fallback gracefully on parsing failure
+    }
+#endif
+}
+
+void Config::Save() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+#if __has_include(<nlohmann/json.hpp>)
+    try {
+        json root;
+        std::string startUrlNarrow(m_settings.startUrl.begin(), m_settings.startUrl.end());
+        root["settings"] = {
+            {"startUrl", startUrlNarrow},
+            {"hardwareAcceleration", m_settings.hardwareAcceleration},
+            {"enableExtensions", m_settings.enableExtensions},
+            {"enableAdBlock", m_settings.enableAdBlock},
+            {"ecoMode", m_settings.ecoMode}
+        };
+
+        json rulesObj = json::object();
+        for (const auto& [host, selectors] : m_hostBlockRules) {
+            rulesObj[host] = selectors;
+        }
+        root["blockRules"] = rulesObj;
+
+        std::ofstream file(m_configFilePath);
+        if (file.is_open()) {
+            file << root.dump(4);
+        }
+    } catch (...) {
+        // Log or handle
+    }
+#endif
+}
+
+std::string Config::GetBlockRulesForHost(const std::string& host) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_hostBlockRules.find(host);
+    if (it == m_hostBlockRules.end() || it->second.empty()) {
+        return "";
+    }
+
+    std::ostringstream ss;
+    for (size_t i = 0; i < it->second.size(); ++i) {
+        ss << it->second[i];
+        if (i + 1 < it->second.size()) {
+            ss << ", ";
+        }
+    }
+    ss << " { display: none !important; }";
+    return ss.str();
+}
+
+void Config::AddBlockRule(const std::string& host, const std::string& selector) {
+    if (host.empty() || selector.empty()) return;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_hostBlockRules[host].push_back(selector);
+    }
+    Save();
+}
+
+} // namespace UltraLight

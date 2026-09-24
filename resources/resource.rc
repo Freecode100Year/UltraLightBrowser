@@ -1,0 +1,6 @@
+#include <windows.h>
+
+#define IDI_APP_ICON 101
+
+// Manifest resource
+1 24 "app.manifest"

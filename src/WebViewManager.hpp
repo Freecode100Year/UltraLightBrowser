@@ -1,0 +1,61 @@
+#pragma once
+
+#include <windows.h>
+#include <wrl.h>
+#include <wil/com.h>
+#include <WebView2.h>
+#include <WebView2EnvironmentOptions.h>
+#include <string>
+#include <functional>
+
+namespace UltraLight {
+
+class WebViewManager {
+public:
+    using ReadyCallback = std::function<void()>;
+    using TitleChangedCallback = std::function<void(const std::wstring&)>;
+    using SourceChangedCallback = std::function<void(const std::wstring&)>;
+    using FullScreenCallback = std::function<void(bool)>;
+
+    WebViewManager();
+    ~WebViewManager() = default;
+
+    // Initialize environment and controller bound to hWnd
+    HRESULT Initialize(HWND hWndParent, ReadyCallback onReady = nullptr);
+
+    // Synchronize bounds on WM_SIZE
+    void Resize(const RECT& bounds);
+
+    // Navigation controls
+    void Navigate(const std::wstring& url);
+    void GoBack();
+    void GoForward();
+    void Reload();
+    void Stop();
+
+    // Callbacks
+    void SetTitleChangedCallback(TitleChangedCallback cb) { m_titleChangedCb = cb; }
+    void SetSourceChangedCallback(SourceChangedCallback cb) { m_sourceChangedCb = cb; }
+    void SetFullScreenCallback(FullScreenCallback cb) { m_fullScreenCb = cb; }
+
+    // Direct interface access
+    ICoreWebView2Controller* GetController() const { return m_controller.get(); }
+    ICoreWebView2* GetWebView() const { return m_webView.get(); }
+    ICoreWebView2Profile* GetProfile() const { return m_profile.get(); }
+
+private:
+    void RegisterEventHandlers();
+
+    HWND m_hWndParent = nullptr;
+    wil::com_ptr<ICoreWebView2Environment> m_environment;
+    wil::com_ptr<ICoreWebView2Controller> m_controller;
+    wil::com_ptr<ICoreWebView2> m_webView;
+    wil::com_ptr<ICoreWebView2Profile> m_profile;
+
+    ReadyCallback m_onReady;
+    TitleChangedCallback m_titleChangedCb;
+    SourceChangedCallback m_sourceChangedCb;
+    FullScreenCallback m_fullScreenCb;
+};
+
+} // namespace UltraLight
