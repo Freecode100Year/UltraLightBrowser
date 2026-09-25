@@ -19,6 +19,11 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
 
+    // Enable browser extensions (Chrome MV3 / MV2)
+    if (Config::Instance().GetSettings().enableExtensions) {
+        options->put_AreBrowserExtensionsEnabled(TRUE);
+    }
+
     // Inject the full performance, hardware acceleration, and low-latency network flags
     std::wstring performanceArgs =
         L"--enable-gpu-rasterization "
@@ -76,7 +81,7 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                             // Initialize modules
                             ElementBlocker::Instance().Initialize(m_webView.get());
                             if (m_profile) {
-                                ExtensionManager::Instance().Initialize(m_profile.get());
+                                ExtensionManager::Instance().Initialize(m_environment.get(), m_profile.get());
                             }
 
                             // Apply QoS optimizations

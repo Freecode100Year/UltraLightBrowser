@@ -76,11 +76,18 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **Low-Latency Transport**: `--enable-quic --quic-version=h3 --enable-bbr --enable-async-dns --enable-tcp-fast-open`
 * **Bloatware Purge**: `--disable-features=Translate,OptimizationHints,MediaRouter --no-first-run` (Retains Safe Browsing and security component background updates).
 
-### 2. 🧩 Chrome Extension (MV3) Support
-`ExtensionManager` provides early MV3 foundation via `ICoreWebView2Profile7`:
-* **CRX3 Secure Unpacker**: Validates `Cr24` headers, bounds-checks `headerSize`, verifies Protobuf cryptographic signatures & signed header data, and performs pre-extraction ZIP Central Directory path traversal verification (ensuring zero untrusted files touch disk) with secondary post-extraction canonical directory verification. Direct Win32 `CreateProcessW` execution of `System32\tar.exe` eliminates shell command injection.
-* **Manifest V3 Reader**: Parses `action.default_popup` and `action.default_icon`.
-* **Win32 Popups**: Displays native metadata popup window. Support for in-popup web rendering is under active development.
+### 2. 🧩 Chrome Extension (MV3 & MV2) & “加载未打包的扩展程序” Support
+`ExtensionManager` provides native Chrome extension capabilities built on `ICoreWebView2Profile7` with full runtime extension activation (`put_AreBrowserExtensionsEnabled(TRUE)`):
+* **📂 加载未打包的扩展程序 (Load Unpacked Extensions)**: 
+  * 支持直接选择包含 `manifest.json` 的任意本地文件夹加载开发中或解压的 Chrome 扩展程序。
+  * 自动验证清单文件完整性、多语言区域化名称解析 (`_locales/**/messages.json`) 与清单语法。
+  * 具备跨会话持久化记忆功能：下次启动浏览器时自动恢复并加载用户添加的所有未打包扩展。
+* **📦 CRX3 安全解包与安装 (CRX3 Secure Unpacker)**: 严格验证 `Cr24` 标头、Protobuf 签名证书及 signed_header_data，具备预解压 ZIP 目录遍历防护，通过 System32 下系统级 `tar.exe` 独立子进程安全释放并直接载入 Profile。
+* **🖱️ 拖拽即装即用 (Drag & Drop)**: 支持直接将未打包的扩展程序文件夹或 `.crx` 文件拖入浏览器主窗口，弹窗确认后立即加载生效。
+* **⚙️ 扩展程序管理中心与快捷操作**:
+  * 点击工具栏 **🧩 Extensions** 按钮弹出原生菜单，提供一键加载未打包扩展、安装 CRX、启用/禁用、重新加载及移除操作。
+  * 支持快捷键 **`Ctrl + Shift + E`** 或在地址栏输入 **`chrome://extensions`** / **`edge://extensions`** 打开原生扩展程序管理面板 (`ListView`)。
+* **🌐 原生弹窗与 Web 渲染**: 支持直接渲染 `chrome-extension://<id>/<default_popup>` 页面，也可在独立弹窗窗口中交互。
 
 ### 3. 🛡️ Zero-Flicker Element Hiding & Interactive Picker
 `ElementBlocker` ensures user privacy and ad-blocking without layout shifts:

@@ -5,6 +5,7 @@
 #include "PowerManager.hpp"
 #include <windowsx.h>
 #include <uxtheme.h>
+#include <shellapi.h>
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
@@ -21,6 +22,14 @@ enum ControlID : WORD {
     IDC_EDIT_ADDRESS = 1004,
     IDC_BTN_BLOCKER = 1005,
     IDC_BTN_EXTENSIONS = 1006
+};
+
+enum ExtensionMenuID : UINT_PTR {
+    IDM_EXT_LOAD_UNPACKED = 2001,
+    IDM_EXT_INSTALL_CRX   = 2002,
+    IDM_EXT_OPEN_DIR      = 2003,
+    IDM_EXT_MANAGE        = 2004,
+    IDM_EXT_ITEM_BASE     = 2100
 };
 
 namespace UltraLight {
@@ -67,6 +76,7 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
     }
 
     ApplyModernTheme();
+    DragAcceptFiles(m_hWnd, TRUE);
     ShowWindow(m_hWnd, nCmdShow);
     UpdateWindow(m_hWnd);
 
@@ -199,8 +209,21 @@ LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM
     if (uMsg == WM_KEYDOWN && wParam == VK_RETURN) {
         wchar_t buffer[2048]{};
         GetWindowTextW(hWnd, buffer, static_cast<int>(std::size(buffer)));
+        std::wstring input = buffer;
+        while (!input.empty() && iswspace(input.front())) input.erase(input.begin());
+        while (!input.empty() && iswspace(input.back())) input.pop_back();
+
+        if (_wcsicmp(input.c_str(), L"chrome://extensions") == 0 ||
+            _wcsicmp(input.c_str(), L"edge://extensions") == 0 ||
+            _wcsicmp(input.c_str(), L"about:extensions") == 0) {
+            if (self) {
+                ExtensionManager::Instance().ShowExtensionsDialog(self->GetHwnd());
+            }
+            return 0;
+        }
+
         if (self && self->m_webViewManager) {
-            self->m_webViewManager->Navigate(buffer);
+            self->m_webViewManager->Navigate(input);
         }
         return 0;
     }
@@ -237,6 +260,38 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_DROPFILES: {
+        HDROP hDrop = reinterpret_cast<HDROP>(wParam);
+        UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
+        for (UINT i = 0; i < fileCount; ++i) {
+            wchar_t filePath[MAX_PATH]{};
+            if (DragQueryFileW(hDrop, i, filePath, MAX_PATH)) {
+                std::filesystem::path p(filePath);
+                if (std::filesystem::is_directory(p)) {
+                    if (std::filesystem::exists(p / "manifest.json")) {
+                        std::wstring msgText = L"检测到未打包的 Chrome 扩展程序：\n" + p.wstring() + L"\n\n是否立即加载？";
+                        if (MessageBoxW(m_hWnd, msgText.c_str(), L"加载未打包的扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                            ExtensionManager::Instance().LoadUnpackedExtension(p, [this](bool success, const std::wstring& resMsg) {
+                                MessageBoxW(m_hWnd, resMsg.c_str(), success ? L"加载成功" : L"加载失败", MB_OK | (success ? MB_ICONINFORMATION : MB_ICONERROR));
+                            });
+                        }
+                    } else {
+                        MessageBoxW(m_hWnd, L"所拖入的文件夹不包含 manifest.json 文件！\n请拖入包含 manifest.json 的扩展程序根目录。", L"缺少清单文件", MB_OK | MB_ICONWARNING);
+                    }
+                } else if (p.extension() == L".crx") {
+                    std::wstring msgText = L"检测到 Chrome 扩展程序安装包：\n" + p.wstring() + L"\n\n是否立即安装？";
+                    if (MessageBoxW(m_hWnd, msgText.c_str(), L"安装 CRX 扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                        ExtensionManager::Instance().InstallCrx(p, [this](bool success, const std::wstring& resMsg) {
+                            MessageBoxW(m_hWnd, resMsg.c_str(), success ? L"安装成功" : L"安装失败", MB_OK | (success ? MB_ICONINFORMATION : MB_ICONERROR));
+                        });
+                    }
+                }
+            }
+        }
+        DragFinish(hDrop);
+        return 0;
+    }
+
     case WM_COMMAND: {
         WORD id = LOWORD(wParam);
         switch (id) {
@@ -257,18 +312,25 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             ElementBlocker::Instance().TogglePickerMode(m_webViewManager->GetWebView());
             break;
         case IDC_BTN_EXTENSIONS: {
-            RECT rect;
-            GetWindowRect(m_hBtnExtensions, &rect);
-            const auto& exts = ExtensionManager::Instance().GetExtensions();
-            if (!exts.empty()) {
-                POINT pt{ rect.left, rect.bottom };
-                ExtensionManager::Instance().ShowExtensionPopup(m_hWnd, exts.front(), pt);
-            } else {
-                MessageBoxW(m_hWnd, L"Drop unpacked extensions or .crx files in %LOCALAPPDATA%\\UltraLightBrowser\\Extensions\\", L"Extensions", MB_OK | MB_ICONINFORMATION);
-            }
+            ShowExtensionsMenu();
             break;
         }
+        case IDM_EXT_LOAD_UNPACKED:
+            ExtensionManager::Instance().PromptLoadUnpackedExtension(m_hWnd);
+            break;
+        case IDM_EXT_INSTALL_CRX:
+            ExtensionManager::Instance().PromptInstallCrx(m_hWnd);
+            break;
+        case IDM_EXT_OPEN_DIR:
+            ExtensionManager::Instance().OpenExtensionsDirectory();
+            break;
+        case IDM_EXT_MANAGE:
+            ExtensionManager::Instance().ShowExtensionsDialog(m_hWnd);
+            break;
         default:
+            if (id >= IDM_EXT_ITEM_BASE) {
+                HandleExtensionMenuCommand(id);
+            }
             break;
         }
         return 0;
@@ -329,6 +391,112 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
     }
 
     return DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+void MainWindow::ShowExtensionsMenu() {
+    HMENU hMenu = CreatePopupMenu();
+
+    AppendMenuW(hMenu, MF_STRING, IDM_EXT_LOAD_UNPACKED, L"📂  加载未打包的扩展程序...");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXT_INSTALL_CRX, L"📦  安装 .CRX 扩展程序...");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXT_OPEN_DIR, L"📁  打开扩展程序根目录");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXT_MANAGE, L"⚙  扩展程序管理中心...");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    const auto& exts = ExtensionManager::Instance().GetExtensions();
+    if (exts.empty()) {
+        AppendMenuW(hMenu, MF_STRING | MF_GRAYED, 0, L"    (暂无已安装的扩展程序)");
+    } else {
+        for (size_t i = 0; i < exts.size(); ++i) {
+            const auto& ext = exts[i];
+            HMENU hSub = CreatePopupMenu();
+            UINT_PTR baseCmd = IDM_EXT_ITEM_BASE + (i * 10);
+
+            std::wstring statusStr = ext.isEnabled ? L"状态: [已启用] - 点击禁用" : L"状态: [已禁用] - 点击启用";
+            AppendMenuW(hSub, MF_STRING, baseCmd + 1, statusStr.c_str());
+
+            if (!ext.defaultPopup.empty()) {
+                AppendMenuW(hSub, MF_STRING, baseCmd + 2, L"打开扩展弹窗界面");
+                AppendMenuW(hSub, MF_STRING, baseCmd + 5, L"在主标签页中打开扩展页面");
+            }
+
+            AppendMenuW(hSub, MF_STRING, baseCmd + 3, L"⟳ 重新加载扩展");
+            AppendMenuW(hSub, MF_STRING, baseCmd + 4, L"🗑 移除此扩展程序");
+
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, ext.name.c_str(), -1, nullptr, 0);
+            std::wstring nameW(wlen > 1 ? wlen - 1 : 0, 0);
+            if (wlen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.name.c_str(), -1, &nameW[0], wlen);
+
+            std::wstring itemTitle = (ext.isEnabled ? L"🧩  " : L"⚪  ") + (nameW.empty() ? L"未命名扩展" : nameW);
+            if (!ext.version.empty()) {
+                int vlen = MultiByteToWideChar(CP_UTF8, 0, ext.version.c_str(), -1, nullptr, 0);
+                std::wstring verW(vlen > 1 ? vlen - 1 : 0, 0);
+                if (vlen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.version.c_str(), -1, &verW[0], vlen);
+                itemTitle += L" (v" + verW + L")";
+            }
+
+            AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSub), itemTitle.c_str());
+        }
+    }
+
+    RECT rect;
+    GetWindowRect(m_hBtnExtensions, &rect);
+    TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON, rect.left, rect.bottom, 0, m_hWnd, nullptr);
+    DestroyMenu(hMenu);
+}
+
+void MainWindow::HandleExtensionMenuCommand(WORD id) {
+    size_t extIndex = (id - IDM_EXT_ITEM_BASE) / 10;
+    WORD action = (id - IDM_EXT_ITEM_BASE) % 10;
+
+    const auto& exts = ExtensionManager::Instance().GetExtensions();
+    if (extIndex >= exts.size()) return;
+
+    const auto& ext = exts[extIndex];
+    switch (action) {
+    case 1: // Toggle enabled
+        ExtensionManager::Instance().SetExtensionEnabled(ext.id, !ext.isEnabled);
+        break;
+    case 2: { // Open popup
+        RECT rect;
+        GetWindowRect(m_hBtnExtensions, &rect);
+        POINT pt{ rect.left, rect.bottom };
+        ExtensionManager::Instance().ShowExtensionPopup(m_hWnd, ext, pt);
+        break;
+    }
+    case 3: // Reload
+        ExtensionManager::Instance().ReloadExtension(ext.id, [this](bool ok) {
+            MessageBoxW(m_hWnd, ok ? L"扩展程序已成功重新加载！" : L"重新加载扩展失败！", L"重新加载", MB_OK | (ok ? MB_ICONINFORMATION : MB_ICONERROR));
+        });
+        break;
+    case 4: { // Remove
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, ext.name.c_str(), -1, nullptr, 0);
+        std::wstring nameW(wlen > 1 ? wlen - 1 : 0, 0);
+        if (wlen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.name.c_str(), -1, &nameW[0], wlen);
+
+        std::wstring prompt = L"确定要移除扩展程序 [" + nameW + L"] 吗？";
+        if (MessageBoxW(m_hWnd, prompt.c_str(), L"移除扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+            ExtensionManager::Instance().RemoveExtension(ext.id);
+        }
+        break;
+    }
+    case 5: { // Open in main tab
+        if (!ext.defaultPopup.empty() && m_webViewManager) {
+            int ilen = MultiByteToWideChar(CP_UTF8, 0, ext.id.c_str(), -1, nullptr, 0);
+            std::wstring idW(ilen > 1 ? ilen - 1 : 0, 0);
+            if (ilen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.id.c_str(), -1, &idW[0], ilen);
+
+            int plen = MultiByteToWideChar(CP_UTF8, 0, ext.defaultPopup.c_str(), -1, nullptr, 0);
+            std::wstring popupW(plen > 1 ? plen - 1 : 0, 0);
+            if (plen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.defaultPopup.c_str(), -1, &popupW[0], plen);
+
+            std::wstring extUrl = L"chrome-extension://" + idW + L"/" + popupW;
+            m_webViewManager->Navigate(extUrl);
+        }
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 } // namespace UltraLight

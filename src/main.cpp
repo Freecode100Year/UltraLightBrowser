@@ -28,7 +28,7 @@ int WINAPI wWinMain(
     // 3. Initialize Common Controls v6
     INITCOMMONCONTROLSEX icex{};
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
-    icex.dwICC = ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES;
+    icex.dwICC = ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES | ICC_LISTVIEW_CLASSES;
     InitCommonControlsEx(&icex);
 
     // 4. Initialize Configuration
@@ -46,9 +46,10 @@ int WINAPI wWinMain(
 
     HWND hWnd = mainWindow->GetHwnd();
 
-    // 7. Register Global Accelerators (Ctrl+Shift+H, Ctrl+R, F5, Ctrl+L, Alt+Left, Alt+Right)
+    // 7. Register Global Accelerators (Ctrl+Shift+H, Ctrl+Shift+E, Ctrl+R, F5, Ctrl+L, Alt+Left, Alt+Right)
     ACCEL accels[] = {
         { FCONTROL | FSHIFT | FVIRTKEY, 'H', 1005 },        // IDC_BTN_BLOCKER
+        { FCONTROL | FSHIFT | FVIRTKEY, 'E', 1006 },        // IDC_BTN_EXTENSIONS
         { FCONTROL | FVIRTKEY, 'R', 1003 },                 // IDC_BTN_RELOAD
         { FVIRTKEY, VK_F5, 1003 },                          // IDC_BTN_RELOAD
         { FCONTROL | FVIRTKEY, 'L', 1004 },                 // IDC_EDIT_ADDRESS

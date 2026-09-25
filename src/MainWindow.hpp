@@ -26,6 +26,8 @@ private:
     void UpdateLayout(int width, int height);
     void UpdateDpiScaling(UINT dpi);
     void ApplyModernTheme();
+    void ShowExtensionsMenu();
+    void HandleExtensionMenuCommand(WORD id);
 
     HWND m_hWnd = nullptr;
     HINSTANCE m_hInstance = nullptr;

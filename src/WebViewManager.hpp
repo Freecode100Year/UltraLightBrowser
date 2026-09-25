@@ -39,6 +39,7 @@ public:
     void SetFullScreenCallback(FullScreenCallback cb) { m_fullScreenCb = cb; }
 
     // Direct interface access
+    ICoreWebView2Environment* GetEnvironment() const { return m_environment.get(); }
     ICoreWebView2Controller* GetController() const { return m_controller.get(); }
     ICoreWebView2* GetWebView() const { return m_webView.get(); }
     ICoreWebView2Profile* GetProfile() const { return m_profile.get(); }

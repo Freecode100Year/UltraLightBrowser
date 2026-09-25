@@ -83,6 +83,16 @@ void Config::Load() {
                 }
             }
         }
+
+        if (root.contains("unpackedExtensions") && root["unpackedExtensions"].is_array()) {
+            m_unpackedExtensionPaths.clear();
+            for (const auto& item : root["unpackedExtensions"]) {
+                if (item.is_string()) {
+                    std::string s = item.get<std::string>();
+                    m_unpackedExtensionPaths.push_back(std::filesystem::path(std::u8string(s.begin(), s.end())));
+                }
+            }
+        }
     } catch (...) {
         // Fallback gracefully on parsing failure
     }
@@ -109,6 +119,13 @@ void Config::Save() {
             rulesObj[host] = selectors;
         }
         root["blockRules"] = rulesObj;
+
+        json extArr = json::array();
+        for (const auto& p : m_unpackedExtensionPaths) {
+            auto u8 = p.u8string();
+            extArr.push_back(std::string(u8.begin(), u8.end()));
+        }
+        root["unpackedExtensions"] = extArr;
 
         std::ofstream file(m_configFilePath);
         if (file.is_open()) {
@@ -144,6 +161,45 @@ void Config::AddBlockRule(const std::string& host, const std::string& selector) 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_hostBlockRules[host].push_back(selector);
+    }
+    Save();
+}
+
+std::vector<std::filesystem::path> Config::GetUnpackedExtensionPaths() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_unpackedExtensionPaths;
+}
+
+void Config::AddUnpackedExtensionPath(const std::filesystem::path& path) {
+    if (path.empty()) return;
+    std::error_code ec;
+    auto canPath = std::filesystem::weakly_canonical(path, ec);
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (const auto& p : m_unpackedExtensionPaths) {
+            if (p == canPath || std::filesystem::equivalent(p, canPath, ec)) {
+                return;
+            }
+        }
+        m_unpackedExtensionPaths.push_back(canPath);
+    }
+    Save();
+}
+
+void Config::RemoveUnpackedExtensionPath(const std::filesystem::path& path) {
+    if (path.empty()) return;
+    std::error_code ec;
+    auto canPath = std::filesystem::weakly_canonical(path, ec);
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = std::remove_if(m_unpackedExtensionPaths.begin(), m_unpackedExtensionPaths.end(), [&](const std::filesystem::path& p) {
+            return p == canPath || p == path || std::filesystem::equivalent(p, canPath, ec);
+        });
+        if (it != m_unpackedExtensionPaths.end()) {
+            m_unpackedExtensionPaths.erase(it, m_unpackedExtensionPaths.end());
+        } else {
+            return;
+        }
     }
     Save();
 }

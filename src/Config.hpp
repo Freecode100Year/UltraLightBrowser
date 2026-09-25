@@ -33,6 +33,10 @@ public:
     std::string GetBlockRulesForHost(const std::string& host);
     void AddBlockRule(const std::string& host, const std::string& selector);
 
+    std::vector<std::filesystem::path> GetUnpackedExtensionPaths() const;
+    void AddUnpackedExtensionPath(const std::filesystem::path& path);
+    void RemoveUnpackedExtensionPath(const std::filesystem::path& path);
+
 private:
     Config();
     ~Config() = default;
@@ -43,7 +47,8 @@ private:
     std::filesystem::path m_configFilePath;
     AppSettings m_settings;
     std::unordered_map<std::string, std::vector<std::string>> m_hostBlockRules;
-    std::mutex m_mutex;
+    std::vector<std::filesystem::path> m_unpackedExtensionPaths;
+    mutable std::mutex m_mutex;
 };
 
 } // namespace UltraLight
