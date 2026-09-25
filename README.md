@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.4/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.5/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -27,8 +27,8 @@
 
 可以在 GitHub Releases 中直接获取预编译的可用二进制程序：
 
-* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.4/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
-* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.1.4-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.4/UltraLightBrowser-v1.1.4-windows-x64.zip)**
+* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.5/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
+* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.1.5-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.5/UltraLightBrowser-v1.1.5-windows-x64.zip)**
 * 🔗 **[查看所有历史版本与 Release 资产](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
 ---
@@ -69,7 +69,6 @@ UltraLightBrowser/
     ├── main.cpp                # Win32 wWinMain, High-DPI initialization, and message pump
     ├── MainWindow.hpp/.cpp     # Native Win32 dark frame, Segoe UI toolbar & accelerator dispatch
     ├── WebViewManager.hpp/.cpp # WebView2 Evergreen composition, GPU flags & lifecycle
-    ├── ExtensionManager.hpp/.cpp# CRX3 in-memory unpacker, Chrome MV3 loading & popups
     ├── ElementBlocker.hpp/.cpp # Zero-flicker pre-render CSS injection & interactive DOM picker
     ├── PowerManager.hpp/.cpp   # EcoQoS suppression, thread priority elevation & memory trimming
     └── Config.hpp/.cpp         # Thread-safe JSON persistence for blocklist & settings
@@ -87,36 +86,23 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **Low-Latency Transport**: `--enable-quic --quic-version=h3 --enable-bbr --enable-async-dns --enable-tcp-fast-open`
 * **Bloatware Purge**: `--disable-features=Translate,OptimizationHints,MediaRouter --no-first-run` (Retains Safe Browsing and security component background updates).
 
-### 2. 🧩 Chrome Extension (MV3 & MV2) & “加载未打包的扩展程序” Support
-`ExtensionManager` provides native Chrome extension capabilities built on `ICoreWebView2Profile7` with full runtime extension activation (`put_AreBrowserExtensionsEnabled(TRUE)`):
-* **📂 加载未打包的扩展程序 (Load Unpacked Extensions)**: 
-  * 支持直接选择包含 `manifest.json` 的任意本地文件夹加载开发中或解压的 Chrome 扩展程序。
-  * 自动验证清单文件完整性、多语言区域化名称解析 (`_locales/**/messages.json`) 与清单语法。
-  * 具备跨会话持久化记忆功能：下次启动浏览器时自动恢复并加载用户添加的所有未打包扩展。
-* **📦 CRX3 安全解包与安装 (CRX3 Secure Unpacker)**: 严格验证 `Cr24` 标头、Protobuf 签名证书及 signed_header_data，具备预解压 ZIP 目录遍历防护，通过 System32 下系统级 `tar.exe` 独立子进程安全释放并直接载入 Profile。
-* **🖱️ 拖拽即装即用 (Drag & Drop)**: 支持直接将未打包的扩展程序文件夹或 `.crx` 文件拖入浏览器主窗口，弹窗确认后立即加载生效。
-* **⚙️ 扩展程序管理中心与快捷操作**:
-  * 点击工具栏 **🧩 Extensions** 按钮弹出原生菜单，提供一键加载未打包扩展、安装 CRX、启用/禁用、重新加载及移除操作。
-  * 支持快捷键 **`Ctrl + Shift + E`** 或在地址栏输入 **`chrome://extensions`** / **`edge://extensions`** 打开原生扩展程序管理面板 (`ListView`)。
-* **🌐 原生弹窗与 Web 渲染**: 支持直接渲染 `chrome-extension://<id>/<default_popup>` 页面，也可在独立弹窗窗口中交互。
-
-### 3. 🛡️ Zero-Flicker Element Hiding & Interactive Picker
+### 2. 🛡️ Zero-Flicker Element Hiding & Interactive Picker
 `ElementBlocker` ensures user privacy and ad-blocking without layout shifts:
 * **Pre-Render Injection**: Injects domain-matched CSS rules via `AddScriptToExecuteOnDocumentCreated` before DOM construction, preventing ad flash.
 * **Interactive DOM Picker (`Ctrl + Shift + H`)**: Injects an element inspector with red outlines; clicking an element computes its optimal CSS selector and saves it directly to local JSON storage.
 
-### 4. 🔋 Power & WorkingSet Memory Optimization
+### 3. 🔋 Power & WorkingSet Memory Optimization
 `PowerManager` dynamically manages system and child processes:
 * **EcoQoS Disabling**: Traverses process trees to disable `PROCESS_POWER_THROTTLING_EXECUTION_SPEED`, ensuring maximum frame rates and zero micro-stutters during heavy media playback.
 * **Smart Memory Trimming**: On `WM_SYSCOMMAND (SC_MINIMIZE)`, signals `ICoreWebView2_3::TrySuspend` and invokes `SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1)` (`EmptyWorkingSet`), purging unneeded physical pages down to ~20MB.
 * **Instant Resume**: Restores execution immediately upon `SC_RESTORE` or focus.
 
-### 5. 📺 Fullscreen HTML5 Video & Raw-Pixel Adaptive Viewport
+### 4. 📺 Fullscreen HTML5 Video & Raw-Pixel Adaptive Viewport
 * **HTML5 Video Fullscreen**: Full support for YouTube, Bilibili, and modern web video players. Automatically transitions the Win32 window to borderless full-screen on the active monitor, hides toolbars, and expands WebView2 bounds smoothly.
 * **F11 & Escape Keyboard Control**: Seamlessly toggle fullscreen with <kbd>F11</kbd> or exit with <kbd>Esc</kbd> across both the browser frame and web contents.
 * **Raw-Pixel Viewport Scaling (`COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS`)**: Matches WebView2 bounds 1:1 with Win32 client area physical pixels, eliminating DIP scaling distortion and ensuring webpage layouts adapt dynamically and crisply to any window size, maximization state, or monitor DPI (100%, 125%, 150%, 200%).
 
-### 6. 🔍 页面缩放与实时比例指示 (Page Zoom & Interactive Indicator)
+### 5. 🔍 页面缩放与实时比例指示 (Page Zoom & Interactive Indicator)
 * **全套快捷键支持**：
   * <kbd>Ctrl</kbd> + <kbd>+</kbd> / <kbd>=</kbd> : 放大页面（逐步放大至最高 500%）
   * <kbd>Ctrl</kbd> + <kbd>-</kbd> : 缩小页面（逐步缩小至最低 25%）
@@ -178,7 +164,6 @@ cmake --build build --config Release
 * <kbd>Ctrl</kbd> + <kbd>0</kbd> : Reset Zoom to 100% (重置缩放)
 * <kbd>Ctrl</kbd> + 鼠标滚轮 : Smooth Zoom (平滑滚轮缩放)
 * <kbd>Ctrl</kbd> + <kbd>L</kbd> : Focus Address Bar
-* <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> : Open Extensions Management Center
 * <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Toggle Interactive Element Hiding / Picker Mode
 * <kbd>Ctrl</kbd> + <kbd>R</kbd> / <kbd>F5</kbd> : Reload Current Page
 * <kbd>Alt</kbd> + <kbd>←</kbd> : Navigate Back

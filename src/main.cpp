@@ -46,10 +46,9 @@ int WINAPI wWinMain(
 
     HWND hWnd = mainWindow->GetHwnd();
 
-    // 7. Register Global Accelerators (Ctrl+Shift+H, Ctrl+Shift+E, Ctrl+R, F5, Ctrl+L, Alt+Left, Alt+Right, F11, Zoom)
+    // 7. Register Global Accelerators (Ctrl+Shift+H, Ctrl+R, F5, Ctrl+L, Alt+Left, Alt+Right, F11, Zoom)
     ACCEL accels[] = {
         { FCONTROL | FSHIFT | FVIRTKEY, 'H', UltraLight::IDC_BTN_BLOCKER },
-        { FCONTROL | FSHIFT | FVIRTKEY, 'E', UltraLight::IDC_BTN_EXTENSIONS },
         { FCONTROL | FVIRTKEY, 'R', UltraLight::IDC_BTN_RELOAD },
         { FVIRTKEY, VK_F5, UltraLight::IDC_BTN_RELOAD },
         { FCONTROL | FVIRTKEY, 'L', UltraLight::IDM_FOCUS_ADDRESS_BAR },

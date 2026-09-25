@@ -14,23 +14,17 @@ enum ControlID : WORD {
     IDC_BTN_RELOAD      = 1003,
     IDC_EDIT_ADDRESS    = 1004,
     IDC_BTN_BLOCKER     = 1005,
-    IDC_BTN_EXTENSIONS  = 1006,
-    IDC_BTN_ZOOM        = 1007
+    IDC_BTN_ZOOM        = 1006
 };
 
 enum AppCommandID : WORD {
-    IDM_EXT_LOAD_UNPACKED   = 2001,
-    IDM_EXT_INSTALL_CRX     = 2002,
-    IDM_EXT_OPEN_DIR        = 2003,
-    IDM_EXT_MANAGE          = 2004,
-    IDM_FOCUS_ADDRESS_BAR   = 2005,
-    IDM_TOGGLE_FULLSCREEN   = 2006,
-    IDM_EXIT_FULLSCREEN     = 2007,
-    IDM_ZOOM_IN             = 2008,
-    IDM_ZOOM_OUT            = 2009,
-    IDM_ZOOM_RESET          = 2010,
-    IDM_ZOOM_SET_BASE       = 2020,
-    IDM_EXT_ITEM_BASE       = 2100
+    IDM_FOCUS_ADDRESS_BAR   = 2001,
+    IDM_TOGGLE_FULLSCREEN   = 2002,
+    IDM_EXIT_FULLSCREEN     = 2003,
+    IDM_ZOOM_IN             = 2004,
+    IDM_ZOOM_OUT            = 2005,
+    IDM_ZOOM_RESET          = 2006,
+    IDM_ZOOM_SET_BASE       = 2020
 };
 
 class MainWindow {
@@ -54,8 +48,6 @@ private:
     void UpdateLayout(int width, int height);
     void UpdateDpiScaling(UINT dpi);
     void ApplyModernTheme();
-    void ShowExtensionsMenu();
-    void HandleExtensionMenuCommand(WORD id);
     void ShowZoomMenu();
     void UpdateZoomDisplay(double zoom);
 
@@ -70,7 +62,6 @@ private:
     HWND m_hEditAddress = nullptr;
     HWND m_hBtnZoom = nullptr;
     HWND m_hBtnBlocker = nullptr;
-    HWND m_hBtnExtensions = nullptr;
 
     HFONT m_hUiFont = nullptr;
     int m_topbarHeight = 44;

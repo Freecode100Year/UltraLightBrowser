@@ -52,7 +52,6 @@ public:
     ICoreWebView2Environment* GetEnvironment() const { return m_environment.get(); }
     ICoreWebView2Controller* GetController() const { return m_controller.get(); }
     ICoreWebView2* GetWebView() const { return m_webView.get(); }
-    ICoreWebView2Profile* GetProfile() const { return m_profile.get(); }
 
 private:
     void RegisterEventHandlers();
@@ -61,7 +60,6 @@ private:
     wil::com_ptr<ICoreWebView2Environment> m_environment;
     wil::com_ptr<ICoreWebView2Controller> m_controller;
     wil::com_ptr<ICoreWebView2> m_webView;
-    wil::com_ptr<ICoreWebView2Profile> m_profile;
 
     ReadyCallback m_onReady;
     TitleChangedCallback m_titleChangedCb;

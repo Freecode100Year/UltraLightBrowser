@@ -1,7 +1,6 @@
 #include "MainWindow.hpp"
 #include "Config.hpp"
 #include "ElementBlocker.hpp"
-#include "ExtensionManager.hpp"
 #include "PowerManager.hpp"
 #include <windowsx.h>
 #include <uxtheme.h>
@@ -113,7 +112,6 @@ void MainWindow::UpdateDpiScaling(UINT dpi) {
     if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnZoom) SendMessageW(m_hBtnZoom, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnExtensions) SendMessageW(m_hBtnExtensions, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
 }
 
 void MainWindow::CreateToolbarControls() {
@@ -155,12 +153,6 @@ void MainWindow::CreateToolbarControls() {
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_BLOCKER), m_hInstance, nullptr
     );
 
-    m_hBtnExtensions = CreateWindowExW(
-        0, L"BUTTON", L"🧩 Extensions",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_EXTENSIONS), m_hInstance, nullptr
-    );
-
     // Subclass address bar for Enter key navigation
     SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
@@ -180,7 +172,6 @@ void MainWindow::UpdateLayout(int width, int height) {
 
     int pad = MulDiv(6, m_dpi, 96);
     int btnW = MulDiv(34, m_dpi, 96);
-    int extBtnW = MulDiv(105, m_dpi, 96);
     int blockBtnW = MulDiv(90, m_dpi, 96);
     int zoomBtnW = MulDiv(72, m_dpi, 96);
     int topH = m_topbarHeight;
@@ -201,10 +192,7 @@ void MainWindow::UpdateLayout(int width, int height) {
     x += btnW + pad;
 
     // Right-aligned buttons
-    int rightX = width - pad - extBtnW;
-    SetWindowPos(m_hBtnExtensions, nullptr, rightX, pad, extBtnW, ctrlH, SWP_NOZORDER);
-
-    rightX -= (blockBtnW + pad);
+    int rightX = width - pad - blockBtnW;
     SetWindowPos(m_hBtnBlocker, nullptr, rightX, pad, blockBtnW, ctrlH, SWP_NOZORDER);
 
     rightX -= (zoomBtnW + pad);
@@ -238,7 +226,6 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_HIDE);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
-        if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, SW_HIDE);
 
         // Get monitor bounds for current window
         HMONITOR hMon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
@@ -276,7 +263,6 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_SHOW);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_SHOW);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_SHOW);
-        if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, SW_SHOW);
 
         RECT client;
         GetClientRect(m_hWnd, &client);
@@ -319,15 +305,6 @@ LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM
             while (!input.empty() && iswspace(input.back())) input.pop_back();
 
             if (input.empty()) return 0;
-
-            if (_wcsicmp(input.c_str(), L"chrome://extensions") == 0 ||
-                _wcsicmp(input.c_str(), L"edge://extensions") == 0 ||
-                _wcsicmp(input.c_str(), L"about:extensions") == 0) {
-                if (self) {
-                    ExtensionManager::Instance().ShowExtensionsDialog(self->GetHwnd());
-                }
-                return 0;
-            }
 
             if (self && self->m_webViewManager) {
                 self->m_webViewManager->Navigate(input);
@@ -427,28 +404,11 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_DROPFILES: {
         HDROP hDrop = reinterpret_cast<HDROP>(wParam);
         UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
-        for (UINT i = 0; i < fileCount; ++i) {
+        if (fileCount > 0) {
             wchar_t filePath[MAX_PATH]{};
-            if (DragQueryFileW(hDrop, i, filePath, MAX_PATH)) {
-                std::filesystem::path p(filePath);
-                if (std::filesystem::is_directory(p)) {
-                    if (std::filesystem::exists(p / "manifest.json")) {
-                        std::wstring msgText = L"检测到未打包的 Chrome 扩展程序：\n" + p.wstring() + L"\n\n是否立即加载？";
-                        if (MessageBoxW(m_hWnd, msgText.c_str(), L"加载未打包的扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
-                            ExtensionManager::Instance().LoadUnpackedExtension(p, [this](bool success, const std::wstring& resMsg) {
-                                MessageBoxW(m_hWnd, resMsg.c_str(), success ? L"加载成功" : L"加载失败", MB_OK | (success ? MB_ICONINFORMATION : MB_ICONERROR));
-                            });
-                        }
-                    } else {
-                        MessageBoxW(m_hWnd, L"所拖入的文件夹不包含 manifest.json 文件！\n请拖入包含 manifest.json 的扩展程序根目录。", L"缺少清单文件", MB_OK | MB_ICONWARNING);
-                    }
-                } else if (p.extension() == L".crx") {
-                    std::wstring msgText = L"检测到 Chrome 扩展程序安装包：\n" + p.wstring() + L"\n\n是否立即安装？";
-                    if (MessageBoxW(m_hWnd, msgText.c_str(), L"安装 CRX 扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
-                        ExtensionManager::Instance().InstallCrx(p, [this](bool success, const std::wstring& resMsg) {
-                            MessageBoxW(m_hWnd, resMsg.c_str(), success ? L"安装成功" : L"安装失败", MB_OK | (success ? MB_ICONINFORMATION : MB_ICONERROR));
-                        });
-                    }
+            if (DragQueryFileW(hDrop, 0, filePath, MAX_PATH)) {
+                if (m_webViewManager) {
+                    m_webViewManager->Navigate(filePath);
                 }
             }
         }
@@ -508,30 +468,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDC_BTN_BLOCKER:
             ElementBlocker::Instance().TogglePickerMode(m_webViewManager->GetWebView());
             break;
-        case IDC_BTN_EXTENSIONS: {
-            ShowExtensionsMenu();
-            break;
-        }
-        case IDM_EXT_LOAD_UNPACKED:
-            ExtensionManager::Instance().PromptLoadUnpackedExtension(m_hWnd);
-            break;
-        case IDM_EXT_INSTALL_CRX:
-            ExtensionManager::Instance().PromptInstallCrx(m_hWnd);
-            break;
-        case IDM_EXT_OPEN_DIR:
-            ExtensionManager::Instance().OpenExtensionsDirectory();
-            break;
-        case IDM_EXT_MANAGE:
-            ExtensionManager::Instance().ShowExtensionsDialog(m_hWnd);
-            break;
         default:
             if (id >= IDM_ZOOM_SET_BASE && id < IDM_ZOOM_SET_BASE + static_cast<WORD>(std::size(kPresetZoomPercentages))) {
                 size_t idx = id - IDM_ZOOM_SET_BASE;
                 if (m_webViewManager) {
                     m_webViewManager->SetZoomFactor(kPresetZoomPercentages[idx] / 100.0);
                 }
-            } else if (id >= IDM_EXT_ITEM_BASE) {
-                HandleExtensionMenuCommand(id);
             }
             break;
         }
@@ -593,98 +535,6 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
     }
 
     return DefWindowProcW(hWnd, msg, wParam, lParam);
-}
-
-void MainWindow::ShowExtensionsMenu() {
-    HMENU hMenu = CreatePopupMenu();
-
-    AppendMenuW(hMenu, MF_STRING, IDM_EXT_LOAD_UNPACKED, L"📂  加载未打包的扩展程序...");
-    AppendMenuW(hMenu, MF_STRING, IDM_EXT_INSTALL_CRX, L"📦  安装 .CRX 扩展程序...");
-    AppendMenuW(hMenu, MF_STRING, IDM_EXT_OPEN_DIR, L"📁  打开扩展程序根目录");
-    AppendMenuW(hMenu, MF_STRING, IDM_EXT_MANAGE, L"⚙  扩展程序管理中心...");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-
-    const auto& exts = ExtensionManager::Instance().GetExtensions();
-    if (exts.empty()) {
-        AppendMenuW(hMenu, MF_STRING | MF_GRAYED, 0, L"    (暂无已安装的扩展程序)");
-    } else {
-        for (size_t i = 0; i < exts.size(); ++i) {
-            const auto& ext = exts[i];
-            HMENU hSub = CreatePopupMenu();
-            UINT_PTR baseCmd = IDM_EXT_ITEM_BASE + (i * 10);
-
-            std::wstring statusStr = ext.isEnabled ? L"状态: [已启用] - 点击禁用" : L"状态: [已禁用] - 点击启用";
-            AppendMenuW(hSub, MF_STRING, baseCmd + 1, statusStr.c_str());
-
-            if (!ext.defaultPopup.empty()) {
-                AppendMenuW(hSub, MF_STRING, baseCmd + 2, L"打开扩展弹窗界面");
-                AppendMenuW(hSub, MF_STRING, baseCmd + 5, L"在主标签页中打开扩展页面");
-            }
-
-            AppendMenuW(hSub, MF_STRING, baseCmd + 3, L"⟳ 重新加载扩展");
-            AppendMenuW(hSub, MF_STRING, baseCmd + 4, L"🗑 移除此扩展程序");
-
-            std::wstring nameW = StringUtils::Utf8ToWide(ext.name);
-            std::wstring itemTitle = (ext.isEnabled ? L"🧩  " : L"⚪  ") + (nameW.empty() ? L"未命名扩展" : nameW);
-            if (!ext.version.empty()) {
-                std::wstring verW = StringUtils::Utf8ToWide(ext.version);
-                itemTitle += L" (v" + verW + L")";
-            }
-
-            AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSub), itemTitle.c_str());
-        }
-    }
-
-    RECT rect;
-    GetWindowRect(m_hBtnExtensions, &rect);
-    TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON, rect.left, rect.bottom, 0, m_hWnd, nullptr);
-    DestroyMenu(hMenu);
-}
-
-void MainWindow::HandleExtensionMenuCommand(WORD id) {
-    size_t extIndex = (id - IDM_EXT_ITEM_BASE) / 10;
-    WORD action = (id - IDM_EXT_ITEM_BASE) % 10;
-
-    const auto& exts = ExtensionManager::Instance().GetExtensions();
-    if (extIndex >= exts.size()) return;
-
-    const auto& ext = exts[extIndex];
-    switch (action) {
-    case 1: // Toggle enabled
-        ExtensionManager::Instance().SetExtensionEnabled(ext.id, !ext.isEnabled);
-        break;
-    case 2: { // Open popup
-        RECT rect;
-        GetWindowRect(m_hBtnExtensions, &rect);
-        POINT pt{ rect.left, rect.bottom };
-        ExtensionManager::Instance().ShowExtensionPopup(m_hWnd, ext, pt);
-        break;
-    }
-    case 3: // Reload
-        ExtensionManager::Instance().ReloadExtension(ext.id, [this](bool ok) {
-            MessageBoxW(m_hWnd, ok ? L"扩展程序已成功重新加载！" : L"重新加载扩展失败！", L"重新加载", MB_OK | (ok ? MB_ICONINFORMATION : MB_ICONERROR));
-        });
-        break;
-    case 4: { // Remove
-        std::wstring nameW = StringUtils::Utf8ToWide(ext.name);
-        std::wstring prompt = L"确定要移除扩展程序 [" + (nameW.empty() ? L"未命名扩展" : nameW) + L"] 吗？";
-        if (MessageBoxW(m_hWnd, prompt.c_str(), L"移除扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
-            ExtensionManager::Instance().RemoveExtension(ext.id);
-        }
-        break;
-    }
-    case 5: { // Open in main tab
-        if (!ext.defaultPopup.empty() && m_webViewManager) {
-            std::wstring idW = StringUtils::Utf8ToWide(ext.id);
-            std::wstring popupW = StringUtils::Utf8ToWide(ext.defaultPopup);
-            std::wstring extUrl = L"chrome-extension://" + idW + L"/" + popupW;
-            m_webViewManager->Navigate(extUrl);
-        }
-        break;
-    }
-    default:
-        break;
-    }
 }
 
 void MainWindow::UpdateZoomDisplay(double zoom) {

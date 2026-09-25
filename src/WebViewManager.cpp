@@ -2,7 +2,6 @@
 #include "MainWindow.hpp"
 #include "Config.hpp"
 #include "ElementBlocker.hpp"
-#include "ExtensionManager.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
 #include <iostream>
@@ -22,11 +21,6 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
     std::wstring userDataDir = Config::Instance().GetUserDataDirectory().wstring();
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
-
-    // Enable browser extensions (Chrome MV3 / MV2)
-    if (Config::Instance().GetSettings().enableExtensions) {
-        options->put_AreBrowserExtensionsEnabled(TRUE);
-    }
 
     // Inject the full performance, hardware acceleration, and low-latency network flags
     std::wstring performanceArgs =
@@ -66,7 +60,7 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                                 controller3->put_BoundsMode(COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS);
                             }
 
-                            // Intercept keyboard accelerators (Zoom, Fullscreen, Extensions, Address bar)
+                            // Intercept keyboard accelerators (Zoom, Fullscreen, Address bar)
                             m_controller->add_AcceleratorKeyPressed(
                                 Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
                                     [this](ICoreWebView2Controller* /*sender*/, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
@@ -104,12 +98,6 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                                                             args->put_Handled(TRUE);
                                                             return S_OK;
                                                         }
-                                                        // Extensions Center: Ctrl + Shift + E
-                                                        if (isShift && (key == 'E' || key == 'e')) {
-                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDC_BTN_EXTENSIONS, 0), 0);
-                                                            args->put_Handled(TRUE);
-                                                            return S_OK;
-                                                        }
                                                         // Element Blocker: Ctrl + Shift + H
                                                         if (isShift && (key == 'H' || key == 'h')) {
                                                             PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDC_BTN_BLOCKER, 0), 0);
@@ -135,12 +123,6 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                                 nullptr
                             );
 
-                            // Retrieve profile for extensions
-                            wil::com_ptr<ICoreWebView2_13> webView13;
-                            if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView13))) && webView13) {
-                                webView13->get_Profile(&m_profile);
-                            }
-
                             // Setup bounds
                             RECT bounds;
                             GetClientRect(m_hWndParent, &bounds);
@@ -152,9 +134,6 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
 
                             // Initialize modules
                             ElementBlocker::Instance().Initialize(m_webView.get());
-                            if (m_profile) {
-                                ExtensionManager::Instance().Initialize(m_environment.get(), m_profile.get());
-                            }
 
                             // Apply QoS optimizations
                             PowerManager::Instance().DisableEcoQoS();

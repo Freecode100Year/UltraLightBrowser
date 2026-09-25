@@ -27,7 +27,6 @@ Config::Config() {
         CoTaskMemFree(localAppDataPath);
         std::filesystem::path appDir = basePath / "UltraLightBrowser";
         std::filesystem::create_directories(appDir);
-        std::filesystem::create_directories(appDir / "Extensions");
         std::filesystem::create_directories(appDir / "UserData");
         m_configFilePath = appDir / "config.json";
     } else {
@@ -38,10 +37,6 @@ Config::Config() {
 
 std::filesystem::path Config::GetAppDataPath() const {
     return m_configFilePath.parent_path();
-}
-
-std::filesystem::path Config::GetExtensionsDirectory() const {
-    return GetAppDataPath() / "Extensions";
 }
 
 std::filesystem::path Config::GetUserDataDirectory() const {
@@ -68,7 +63,6 @@ void Config::Load() {
                 m_settings.startUrl = StringUtils::Utf8ToWide(s["startUrl"].get<std::string>());
             }
             if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
-            if (s.contains("enableExtensions")) m_settings.enableExtensions = s["enableExtensions"];
             if (s.contains("enableAdBlock")) m_settings.enableAdBlock = s["enableAdBlock"];
             if (s.contains("ecoMode")) m_settings.ecoMode = s["ecoMode"];
         }
@@ -80,16 +74,6 @@ void Config::Load() {
                     for (const auto& sel : selectors) {
                         m_hostBlockRules[host].push_back(sel.get<std::string>());
                     }
-                }
-            }
-        }
-
-        if (root.contains("unpackedExtensions") && root["unpackedExtensions"].is_array()) {
-            m_unpackedExtensionPaths.clear();
-            for (const auto& item : root["unpackedExtensions"]) {
-                if (item.is_string()) {
-                    std::string s = item.get<std::string>();
-                    m_unpackedExtensionPaths.push_back(std::filesystem::path(StringUtils::Utf8ToWide(s)));
                 }
             }
         }
@@ -109,7 +93,6 @@ void Config::Save() {
         root["settings"] = {
             {"startUrl", startUrlNarrow},
             {"hardwareAcceleration", m_settings.hardwareAcceleration},
-            {"enableExtensions", m_settings.enableExtensions},
             {"enableAdBlock", m_settings.enableAdBlock},
             {"ecoMode", m_settings.ecoMode}
         };
@@ -119,12 +102,6 @@ void Config::Save() {
             rulesObj[host] = selectors;
         }
         root["blockRules"] = rulesObj;
-
-        json extArr = json::array();
-        for (const auto& p : m_unpackedExtensionPaths) {
-            extArr.push_back(StringUtils::WideToUtf8(p.wstring()));
-        }
-        root["unpackedExtensions"] = extArr;
 
         std::filesystem::path tmpPath = m_configFilePath;
         tmpPath += L".tmp";
@@ -183,45 +160,6 @@ void Config::AddBlockRule(const std::string& host, const std::string& selector) 
             return;
         }
         list.push_back(selector);
-    }
-    Save();
-}
-
-std::vector<std::filesystem::path> Config::GetUnpackedExtensionPaths() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_unpackedExtensionPaths;
-}
-
-void Config::AddUnpackedExtensionPath(const std::filesystem::path& path) {
-    if (path.empty()) return;
-    std::error_code ec;
-    auto canPath = std::filesystem::weakly_canonical(path, ec);
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        for (const auto& p : m_unpackedExtensionPaths) {
-            if (p == canPath || std::filesystem::equivalent(p, canPath, ec)) {
-                return;
-            }
-        }
-        m_unpackedExtensionPaths.push_back(canPath);
-    }
-    Save();
-}
-
-void Config::RemoveUnpackedExtensionPath(const std::filesystem::path& path) {
-    if (path.empty()) return;
-    std::error_code ec;
-    auto canPath = std::filesystem::weakly_canonical(path, ec);
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        auto it = std::remove_if(m_unpackedExtensionPaths.begin(), m_unpackedExtensionPaths.end(), [&](const std::filesystem::path& p) {
-            return p == canPath || p == path || std::filesystem::equivalent(p, canPath, ec);
-        });
-        if (it != m_unpackedExtensionPaths.end()) {
-            m_unpackedExtensionPaths.erase(it, m_unpackedExtensionPaths.end());
-        } else {
-            return;
-        }
     }
     Save();
 }
