@@ -13,6 +13,9 @@ struct AppSettings {
     bool hardwareAcceleration = true;
     bool enableAdBlock = true;
     bool ecoMode = false;
+    bool enablePublicDns = false;
+    std::string selectedDnsProvider = "alidns";
+    std::string customDnsTemplate = "";
 };
 
 class Config {

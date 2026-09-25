@@ -5,6 +5,7 @@
 #include "MainWindow.hpp"
 #include "PowerManager.hpp"
 #include "Config.hpp"
+#include "DnsManager.hpp"
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "dwmapi.lib")
@@ -31,8 +32,9 @@ int WINAPI wWinMain(
     icex.dwICC = ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES | ICC_LISTVIEW_CLASSES;
     InitCommonControlsEx(&icex);
 
-    // 4. Initialize Configuration
+    // 4. Initialize Configuration & Apply Public DNS
     UltraLight::Config::Instance();
+    UltraLight::DnsManager::Instance().ApplySettings();
 
     // 5. Disable EcoQoS on Host Process for maximum responsiveness
     UltraLight::PowerManager::Instance().DisableEcoQoS(GetCurrentProcess());

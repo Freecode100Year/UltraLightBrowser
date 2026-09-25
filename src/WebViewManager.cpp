@@ -22,12 +22,14 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
 
-    // Inject the full performance, hardware acceleration, and low-latency network flags
+    // Inject the full performance, hardware acceleration, 240Hz refresh rate, and low-latency network flags
     std::wstring performanceArgs =
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
-        L"--enable-features=NvidiaVsr,IntelVsr,Prerender2 "
+        L"--disable-frame-rate-limit "
+        L"--max-gum-fps=240 "
+        L"--enable-features=NvidiaVsr,IntelVsr,Prerender2,DnsOverHttps "
         L"--enable-quic "
         L"--enable-async-dns "
         L"--media-cache-size=134217728 "

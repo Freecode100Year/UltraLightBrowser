@@ -1,5 +1,6 @@
 #include "MainWindow.hpp"
 #include "Config.hpp"
+#include "DnsManager.hpp"
 #include "ElementBlocker.hpp"
 #include "PowerManager.hpp"
 #include <windowsx.h>
@@ -110,6 +111,7 @@ void MainWindow::UpdateDpiScaling(UINT dpi) {
     if (m_hBtnForward) SendMessageW(m_hBtnForward, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnReload) SendMessageW(m_hBtnReload, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    if (m_hBtnDns) SendMessageW(m_hBtnDns, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnZoom) SendMessageW(m_hBtnZoom, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
 }
@@ -141,6 +143,12 @@ void MainWindow::CreateToolbarControls() {
     SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
     SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"输入网址或搜索内容，按 Enter 访问"));
 
+    m_hBtnDns = CreateWindowExW(
+        0, L"BUTTON", L"🌐 DNS",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_DNS), m_hInstance, nullptr
+    );
+
     m_hBtnZoom = CreateWindowExW(
         0, L"BUTTON", L"🔍 100%",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
@@ -157,6 +165,7 @@ void MainWindow::CreateToolbarControls() {
     SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     UpdateDpiScaling(GetDpiForWindow(m_hWnd));
+    UpdateDnsDisplay();
 }
 
 void MainWindow::UpdateLayout(int width, int height) {
@@ -174,6 +183,7 @@ void MainWindow::UpdateLayout(int width, int height) {
     int btnW = MulDiv(34, m_dpi, 96);
     int blockBtnW = MulDiv(90, m_dpi, 96);
     int zoomBtnW = MulDiv(72, m_dpi, 96);
+    int dnsBtnW = MulDiv(102, m_dpi, 96);
     int topH = m_topbarHeight;
     int ctrlH = topH - pad * 2;
 
@@ -191,12 +201,15 @@ void MainWindow::UpdateLayout(int width, int height) {
     SetWindowPos(m_hBtnReload, nullptr, x, pad, btnW, ctrlH, SWP_NOZORDER);
     x += btnW + pad;
 
-    // Right-aligned buttons
+    // Right-aligned buttons: [ 🌐 DNS ] [ 🔍 100% ] [ 🛡 Blocker ]
     int rightX = width - pad - blockBtnW;
     SetWindowPos(m_hBtnBlocker, nullptr, rightX, pad, blockBtnW, ctrlH, SWP_NOZORDER);
 
     rightX -= (zoomBtnW + pad);
     SetWindowPos(m_hBtnZoom, nullptr, rightX, pad, zoomBtnW, ctrlH, SWP_NOZORDER);
+
+    rightX -= (dnsBtnW + pad);
+    SetWindowPos(m_hBtnDns, nullptr, rightX, pad, dnsBtnW, ctrlH, SWP_NOZORDER);
 
     // Address Bar fill
     int addrW = (rightX - pad) - x;
@@ -224,6 +237,7 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_HIDE);
         if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
+        if (m_hBtnDns) ShowWindow(m_hBtnDns, SW_HIDE);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_HIDE);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
 
@@ -261,6 +275,7 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_SHOW);
         if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_SHOW);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_SHOW);
+        if (m_hBtnDns) ShowWindow(m_hBtnDns, SW_SHOW);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_SHOW);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_SHOW);
 
@@ -452,6 +467,25 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDC_BTN_ZOOM:
             ShowZoomMenu();
             break;
+        case IDC_BTN_DNS:
+            ShowDnsMenu();
+            break;
+        case IDM_DNS_TOGGLE_ENABLE: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.enablePublicDns = !settings.enablePublicDns;
+            Config::Instance().Save();
+            DnsManager::Instance().ApplySettings();
+            UpdateDnsDisplay();
+            std::wstring msg = settings.enablePublicDns
+                ? L"已开启公共 DNS 服务器解析！\n建议刷新网页以使新设置彻底生效。"
+                : L"已关闭公共 DNS，恢复为系统默认解析。";
+            MessageBoxW(m_hWnd, msg.c_str(), L"公共 DNS 设置", MB_OK | MB_ICONINFORMATION);
+            break;
+        }
+        case IDM_DNS_OPEN_SETTINGS:
+            DnsManager::Instance().ShowDnsDialog(m_hWnd);
+            UpdateDnsDisplay();
+            break;
         case IDC_EDIT_ADDRESS: {
             WORD notify = HIWORD(wParam);
             if (notify == EN_KILLFOCUS) {
@@ -473,6 +507,19 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 size_t idx = id - IDM_ZOOM_SET_BASE;
                 if (m_webViewManager) {
                     m_webViewManager->SetZoomFactor(kPresetZoomPercentages[idx] / 100.0);
+                }
+            } else if (id >= IDM_DNS_SELECT_BASE) {
+                size_t pIdx = id - IDM_DNS_SELECT_BASE;
+                const auto& providers = DnsManager::Instance().GetProviders();
+                if (pIdx < providers.size()) {
+                    auto& settings = Config::Instance().GetSettings();
+                    settings.enablePublicDns = true;
+                    settings.selectedDnsProvider = providers[pIdx].id;
+                    Config::Instance().Save();
+                    DnsManager::Instance().ApplySettings();
+                    UpdateDnsDisplay();
+                    std::wstring msg = L"已切换至公共 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已生效，建议刷新网页。";
+                    MessageBoxW(m_hWnd, msg.c_str(), L"公共 DNS 已更新", MB_OK | MB_ICONINFORMATION);
                 }
             }
             break;
@@ -579,6 +626,79 @@ void MainWindow::ShowZoomMenu() {
 
     RECT btnRect{};
     GetWindowRect(m_hBtnZoom, &btnRect);
+
+    TrackPopupMenu(
+        hMenu,
+        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
+        btnRect.left, btnRect.bottom,
+        0, m_hWnd, nullptr
+    );
+
+    DestroyMenu(hMenu);
+}
+
+void MainWindow::UpdateDnsDisplay() {
+    if (!m_hBtnDns) return;
+    const auto& settings = Config::Instance().GetSettings();
+    if (!settings.enablePublicDns) {
+        SetWindowTextW(m_hBtnDns, L"🌐 DNS [系统]");
+    } else {
+        if (settings.selectedDnsProvider == "custom") {
+            SetWindowTextW(m_hBtnDns, L"🌐 DNS [自定义]");
+        } else {
+            const auto* p = DnsManager::Instance().GetActiveProvider();
+            if (p) {
+                std::wstring label;
+                if (p->id == "alidns") label = L"🌐 阿里 DNS";
+                else if (p->id == "dnspod") label = L"🌐 腾讯 DNS";
+                else if (p->id == "baidu") label = L"🌐 百度 DNS";
+                else if (p->id == "114") label = L"🌐 114 DNS";
+                else if (p->id == "cloudflare") label = L"🌐 1.1.1.1";
+                else if (p->id == "google") label = L"🌐 8.8.8.8";
+                else if (p->id == "quad9") label = L"🌐 Quad9";
+                else if (p->id == "opendns") label = L"🌐 OpenDNS";
+                else if (p->id == "cnnic") label = L"🌐 CNNIC";
+                else label = L"🌐 " + p->name;
+                SetWindowTextW(m_hBtnDns, label.c_str());
+            } else {
+                SetWindowTextW(m_hBtnDns, L"🌐 DNS [开]");
+            }
+        }
+    }
+}
+
+void MainWindow::ShowDnsMenu() {
+    HMENU hMenu = CreatePopupMenu();
+    if (!hMenu) return;
+
+    const auto& settings = Config::Instance().GetSettings();
+    const auto& providers = DnsManager::Instance().GetProviders();
+
+    UINT toggleFlags = MF_STRING | (settings.enablePublicDns ? MF_CHECKED : MF_UNCHECKED);
+    AppendMenuW(hMenu, toggleFlags, IDM_DNS_TOGGLE_ENABLE, L"✔  启用公共 DNS 服务器 (DoH 隐私加密)");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    for (size_t i = 0; i < providers.size(); ++i) {
+        const auto& p = providers[i];
+        std::wstring itemText = p.name;
+        if (!p.ipv6Primary.empty() && p.ipv6Primary != L"(暂无)") {
+            itemText += L"  [IPv4/IPv6]";
+        } else {
+            itemText += L"  [IPv4]";
+        }
+        UINT pFlags = MF_STRING;
+        if (settings.enablePublicDns && settings.selectedDnsProvider == p.id) {
+            pFlags |= MF_CHECKED;
+        }
+        AppendMenuW(hMenu, pFlags, IDM_DNS_SELECT_BASE + static_cast<WORD>(i), itemText.c_str());
+    }
+
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING | MF_GRAYED, 0, L"⚡ 屏幕刷新率: 240Hz (电竞超高刷已生效)");
+    AppendMenuW(hMenu, MF_STRING, IDM_DNS_OPEN_SETTINGS, L"⚙  公共 DNS 详细 IPv4/IPv6 与高级设置...");
+
+    RECT btnRect{};
+    GetWindowRect(m_hBtnDns, &btnRect);
 
     TrackPopupMenu(
         hMenu,
