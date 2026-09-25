@@ -126,9 +126,19 @@ void Config::Save() {
         }
         root["unpackedExtensions"] = extArr;
 
-        std::ofstream file(m_configFilePath);
-        if (file.is_open()) {
+        std::filesystem::path tmpPath = m_configFilePath;
+        tmpPath += L".tmp";
+        {
+            std::ofstream file(tmpPath);
+            if (!file.is_open()) return;
             file << root.dump(4);
+            file.flush();
+        }
+        std::error_code ec;
+        std::filesystem::rename(tmpPath, m_configFilePath, ec);
+        if (ec) {
+            std::filesystem::copy_file(tmpPath, m_configFilePath, std::filesystem::copy_options::overwrite_existing, ec);
+            std::filesystem::remove(tmpPath, ec);
         }
     } catch (...) {
         // Log or handle
@@ -144,14 +154,17 @@ std::string Config::GetBlockRulesForHost(const std::string& host) {
     }
 
     std::ostringstream ss;
-    for (size_t i = 0; i < it->second.size(); ++i) {
-        ss << it->second[i];
-        if (i + 1 < it->second.size()) {
-            ss << ", ";
+    for (const auto& sel : it->second) {
+        if (!sel.empty()) {
+            ss << sel << " { display: none !important; }\n";
         }
     }
-    ss << " { display: none !important; }";
     return ss.str();
+}
+
+std::unordered_map<std::string, std::vector<std::string>> Config::GetAllBlockRules() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_hostBlockRules;
 }
 
 void Config::AddBlockRule(const std::string& host, const std::string& selector) {
@@ -159,7 +172,17 @@ void Config::AddBlockRule(const std::string& host, const std::string& selector) 
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_hostBlockRules[host].push_back(selector);
+        auto& list = m_hostBlockRules[host];
+        // Deduplicate selector
+        for (const auto& existing : list) {
+            if (existing == selector) return;
+        }
+        // Limit max rules per host to 100 to prevent unbounded growth
+        constexpr size_t MAX_RULES_PER_HOST = 100;
+        if (list.size() >= MAX_RULES_PER_HOST) {
+            return;
+        }
+        list.push_back(selector);
     }
     Save();
 }

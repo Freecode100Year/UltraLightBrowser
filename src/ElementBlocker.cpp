@@ -1,5 +1,6 @@
 #include "ElementBlocker.hpp"
 #include "Config.hpp"
+#include "StringUtils.hpp"
 #include <urlmon.h>
 #include <wininet.h>
 #include <shlwapi.h>
@@ -25,7 +26,7 @@ std::string ElementBlocker::ExtractHostFromUri(const std::wstring& uri) {
     if (InternetCrackUrlW(uri.c_str(), static_cast<DWORD>(uri.length()), 0, &urlComp)) {
         if (urlComp.lpszHostName && urlComp.dwHostNameLength > 0) {
             std::wstring hostW(urlComp.lpszHostName, urlComp.dwHostNameLength);
-            return std::string(hostW.begin(), hostW.end());
+            return StringUtils::WideToUtf8(hostW);
         }
     }
     return "";
@@ -33,45 +34,89 @@ std::string ElementBlocker::ExtractHostFromUri(const std::wstring& uri) {
 
 void ElementBlocker::Initialize(ICoreWebView2* webView) {
     if (!webView) return;
-
-    // Default pre-render injection handler
-    std::wstring initScript = LR"(
-        window.__ultralight_blocker_ready = true;
-    )";
-    webView->AddScriptToExecuteOnDocumentCreated(initScript.c_str(), nullptr);
+    m_webView = webView;
+    UpdateRulesScript(webView);
 }
 
-void ElementBlocker::OnNavigationStarting(ICoreWebView2* webView, const std::wstring& uri) {
+void ElementBlocker::UpdateRulesScript(ICoreWebView2* webView) {
     if (!webView) return;
 
-    std::string host = ExtractHostFromUri(uri);
-    if (host.empty()) return;
-
-    std::string cssRules = Config::Instance().GetBlockRulesForHost(host);
-    if (cssRules.empty()) return;
-
-    // Escape rules for JS string literal
-    std::string escapedRules;
-    for (char c : cssRules) {
-        if (c == '\"') escapedRules += "\\\"";
-        else if (c == '\\') escapedRules += "\\\\";
-        else if (c == '\n') escapedRules += "\\n";
-        else if (c == '\r') escapedRules += "\\r";
-        else escapedRules += c;
+    // Remove previously registered script to prevent accumulation across updates
+    if (!m_injectedScriptId.empty()) {
+        webView->RemoveScriptToExecuteOnDocumentCreated(m_injectedScriptId.c_str());
+        m_injectedScriptId.clear();
     }
 
-    std::wstring jsCode = LR"(
+#if __has_include(<nlohmann/json.hpp>)
+    auto allRules = Config::Instance().GetAllBlockRules();
+    json rulesObj = json::object();
+    for (const auto& [host, selectors] : allRules) {
+        if (!selectors.empty()) {
+            rulesObj[host] = selectors;
+        }
+    }
+
+    std::string rulesJsonStr = rulesObj.dump();
+    std::wstring rulesJsonW = StringUtils::Utf8ToWide(rulesJsonStr);
+
+    std::wstring initScript = LR"(
         (function() {
-            const rules = ")" + std::wstring(escapedRules.begin(), escapedRules.end()) + LR"(";
-            if (!rules) return;
-            const style = document.createElement('style');
-            style.id = '__ultralight_blocker_css__';
-            style.textContent = rules;
-            (document.head || document.documentElement).appendChild(style);
+            if (window.__ultralight_blocker_injected) return;
+            window.__ultralight_blocker_injected = true;
+
+            const rulesMap = )" + rulesJsonW + LR"(;
+
+            function applyRules() {
+                try {
+                    const host = window.location.hostname;
+                    if (!host) return;
+
+                    let selectors = [];
+                    for (const domain in rulesMap) {
+                        if (host === domain || host.endsWith('.' + domain)) {
+                            const arr = rulesMap[domain];
+                            if (Array.isArray(arr)) {
+                                selectors = selectors.concat(arr);
+                            }
+                        }
+                    }
+
+                    if (!selectors.length) return;
+
+                    let style = document.getElementById('__ultralight_blocker_css__');
+                    if (!style) {
+                        style = document.createElement('style');
+                        style.id = '__ultralight_blocker_css__';
+                        (document.head || document.documentElement).appendChild(style);
+                    }
+                    style.textContent = selectors.map(function(s) { return s + ' { display: none !important; }'; }).join('\n');
+                } catch(e) {}
+            }
+
+            if (document.head || document.documentElement) {
+                applyRules();
+            } else {
+                document.addEventListener('DOMContentLoaded', applyRules, { once: true });
+            }
         })();
     )";
 
-    webView->AddScriptToExecuteOnDocumentCreated(jsCode.c_str(), nullptr);
+    webView->AddScriptToExecuteOnDocumentCreated(
+        initScript.c_str(),
+        Microsoft::WRL::Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+            [this](HRESULT hr, LPCWSTR id) -> HRESULT {
+                if (SUCCEEDED(hr) && id) {
+                    m_injectedScriptId = id;
+                }
+                return S_OK;
+            }
+        ).Get()
+    );
+#endif
+}
+
+void ElementBlocker::OnNavigationStarting(ICoreWebView2* /*webView*/, const std::wstring& uri) {
+    m_currentHost = StringUtils::Utf8ToWide(ExtractHostFromUri(uri));
 }
 
 void ElementBlocker::TogglePickerMode(ICoreWebView2* webView) {
@@ -128,11 +173,11 @@ void ElementBlocker::TogglePickerMode(ICoreWebView2* webView) {
                     lastEl.style.outline = '';
                     const selector = getCssPath(lastEl);
                     if (window.chrome && window.chrome.webview) {
-                        window.chrome.webview.postMessage(JSON.stringify({
+                        window.chrome.webview.postMessage({
                             type: 'ELEMENT_PICKED',
                             selector: selector,
                             host: window.location.hostname
-                        }));
+                        });
                     }
                     lastEl.style.display = 'none';
                 }
@@ -157,12 +202,19 @@ void ElementBlocker::TogglePickerMode(ICoreWebView2* webView) {
 
 bool ElementBlocker::HandleWebMessage(const std::wstring& messageJson, const std::wstring& sourceUri) {
 #if __has_include(<nlohmann/json.hpp>)
+    // Guard against malicious web pages spoofing messages when picker mode is inactive
+    if (!m_pickerActive) return false;
+
     try {
-        std::string narrowMsg(messageJson.begin(), messageJson.end());
+        std::string narrowMsg = StringUtils::WideToUtf8(messageJson);
         json data = json::parse(narrowMsg);
 
-        if (data.contains("type") && data["type"] == "ELEMENT_PICKED") {
-            // Strictly verify host using the trusted source URI from WebView2 to prevent spoofing
+        // Handle case where web message was serialized as string
+        if (data.is_string()) {
+            data = json::parse(data.get<std::string>());
+        }
+
+        if (data.is_object() && data.contains("type") && data["type"] == "ELEMENT_PICKED") {
             std::string verifiedHost = "";
             if (!sourceUri.empty()) {
                 verifiedHost = ExtractHostFromUri(sourceUri);
@@ -173,11 +225,19 @@ bool ElementBlocker::HandleWebMessage(const std::wstring& messageJson, const std
             if (verifiedHost.empty()) return false;
 
             std::string selector = data["selector"].get<std::string>();
-            // Basic sanity check on selector length and content
             if (selector.empty() || selector.length() > 4096) return false;
 
             Config::Instance().AddBlockRule(verifiedHost, selector);
             m_pickerActive = false;
+
+            if (m_webView) {
+                UpdateRulesScript(m_webView);
+
+                // Instantly apply the block rule on currently loaded document
+                std::wstring hideNowJs = L"(function(){ const s = document.createElement('style'); s.textContent = '"
+                    + StringUtils::Utf8ToWide(selector) + L" { display: none !important; }'; (document.head||document.documentElement).appendChild(s); })();";
+                m_webView->ExecuteScript(hideNowJs.c_str(), nullptr);
+            }
             return true;
         }
     } catch (...) {

@@ -6,6 +6,7 @@
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <dwmapi.h>
+#include <wincrypt.h>
 #include <fstream>
 #include <iostream>
 #include <cstring>
@@ -84,8 +85,9 @@ static bool IsSafeZipEntryPath(const std::string& filename) {
     return true;
 }
 
-// Validates CRX3 Protobuf header structure to ensure required signature proofs exist
-static bool ValidateCrx3ProtobufHeader(const std::vector<uint8_t>& headerBytes) {
+// Validates CRX3 Protobuf header structure and extracts the first available public key.
+// Note: This validates CRX3 structure and signature presence, but does not verify official Chrome Web Store root CA certificate chains.
+static bool ValidateCrx3ProtobufHeader(const std::vector<uint8_t>& headerBytes, std::vector<uint8_t>* outPublicKey = nullptr) {
     if (headerBytes.empty()) return false;
 
     bool hasSignature = false;
@@ -135,6 +137,56 @@ static bool ValidateCrx3ProtobufHeader(const std::vector<uint8_t>& headerBytes) 
             // Field 2: sha256_with_rsa; Field 3: sha256_with_ecdsa
             if ((fieldNum == 2 || fieldNum == 3) && len > 0) {
                 hasSignature = true;
+                if (outPublicKey && outPublicKey->empty()) {
+                    // AsymmetricKeyProof message: field 1 is public_key (bytes)
+                    size_t subOffset = offset;
+                    size_t subEnd = offset + static_cast<size_t>(len);
+                    while (subOffset < subEnd) {
+                        uint64_t subTag = 0;
+                        int subShift = 0;
+                        bool subTagOk = false;
+                        while (subOffset < subEnd) {
+                            uint8_t sb = headerBytes[subOffset++];
+                            subTag |= static_cast<uint64_t>(sb & 0x7F) << subShift;
+                            subShift += 7;
+                            if ((sb & 0x80) == 0) { subTagOk = true; break; }
+                            if (subShift >= 64) break;
+                        }
+                        if (!subTagOk) break;
+
+                        uint32_t subField = static_cast<uint32_t>(subTag >> 3);
+                        uint32_t subWire = static_cast<uint32_t>(subTag & 0x7);
+                        if (subWire == 2) {
+                            uint64_t subLen = 0;
+                            int slShift = 0;
+                            bool slOk = false;
+                            while (subOffset < subEnd) {
+                                uint8_t lb = headerBytes[subOffset++];
+                                subLen |= static_cast<uint64_t>(lb & 0x7F) << slShift;
+                                slShift += 7;
+                                if ((lb & 0x80) == 0) { slOk = true; break; }
+                                if (slShift >= 64) break;
+                            }
+                            if (!slOk || subOffset + subLen > subEnd) break;
+                            if (subField == 1 && subLen > 0) {
+                                outPublicKey->assign(
+                                    headerBytes.begin() + subOffset,
+                                    headerBytes.begin() + subOffset + static_cast<size_t>(subLen)
+                                );
+                                break;
+                            }
+                            subOffset += static_cast<size_t>(subLen);
+                        } else if (subWire == 0) {
+                            while (subOffset < subEnd && (headerBytes[subOffset++] & 0x80) != 0);
+                        } else if (subWire == 1) {
+                            subOffset += 8;
+                        } else if (subWire == 5) {
+                            subOffset += 4;
+                        } else {
+                            break;
+                        }
+                    }
+                }
             } else if (fieldNum == 10000 && len > 0) {
                 // Field 10000: signed_header_data
                 hasSignedHeaderData = true;
@@ -149,6 +201,70 @@ static bool ValidateCrx3ProtobufHeader(const std::vector<uint8_t>& headerBytes) 
     }
 
     return hasSignature && hasSignedHeaderData;
+}
+
+// Derives standard Chrome extension ID (first 16 bytes of SHA-256 of public key, mapped to 'a'-'p')
+static std::string CalculateChromeExtensionIdFromPublicKey(const std::vector<uint8_t>& pubKey) {
+    if (pubKey.empty()) return "";
+
+    HCRYPTPROV hProv = 0;
+    if (!CryptAcquireContextW(&hProv, nullptr, nullptr, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+        return "";
+    }
+
+    HCRYPTHASH hHash = 0;
+    std::string extId;
+    if (CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
+        if (CryptHashData(hHash, pubKey.data(), static_cast<DWORD>(pubKey.size()), 0)) {
+            uint8_t hash[32]{};
+            DWORD hashLen = sizeof(hash);
+            if (CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashLen, 0) && hashLen >= 16) {
+                extId.reserve(32);
+                for (size_t i = 0; i < 16; ++i) {
+                    extId += static_cast<char>('a' + ((hash[i] >> 4) & 0x0F));
+                    extId += static_cast<char>('a' + (hash[i] & 0x0F));
+                }
+            }
+        }
+        CryptDestroyHash(hHash);
+    }
+    CryptReleaseContext(hProv, 0);
+    return extId;
+}
+
+static std::string ExtractCrx3ExtensionId(const std::filesystem::path& crxPath) {
+    std::error_code ec;
+    auto fileSize = std::filesystem::file_size(crxPath, ec);
+    if (ec || fileSize < 16) return "";
+
+    std::ifstream file(crxPath, std::ios::binary);
+    if (!file.is_open()) return "";
+
+    char magic[4];
+    file.read(magic, 4);
+    if (std::memcmp(magic, "Cr24", 4) != 0) return "";
+
+    uint32_t version = 0;
+    file.read(reinterpret_cast<char*>(&version), 4);
+    if (version != 3) return "";
+
+    uint32_t headerSize = 0;
+    file.read(reinterpret_cast<char*>(&headerSize), 4);
+    if (headerSize == 0 || headerSize > 16 * 1024 * 1024 || (12ULL + headerSize + 22ULL) > fileSize) {
+        return "";
+    }
+
+    std::vector<uint8_t> headerBytes(headerSize);
+    file.read(reinterpret_cast<char*>(headerBytes.data()), headerSize);
+    if (!file || file.gcount() != static_cast<std::streamsize>(headerSize)) {
+        return "";
+    }
+
+    std::vector<uint8_t> pubKey;
+    if (ValidateCrx3ProtobufHeader(headerBytes, &pubKey)) {
+        return CalculateChromeExtensionIdFromPublicKey(pubKey);
+    }
+    return "";
 }
 
 // Scans ZIP Central Directory to verify 100% of paths BEFORE extracting to disk
@@ -271,10 +387,23 @@ bool ExtensionManager::UnpackCrx3(const std::filesystem::path& crxPath, const st
         return false; // ZIP contains directory traversal or malformed entries
     }
 
-    // 6. Safe extraction: rewind to ZIP payload start and write temp archive
+    // 6. Safe extraction: extract into an isolated temporary staging directory
+    std::filesystem::path tempBase = std::filesystem::temp_directory_path(ec);
+    if (ec) {
+        tempBase = destDir.parent_path() / L".staging";
+    }
+    std::wstring stageFolderName = L"ulb_ext_stage_" + std::to_wstring(GetCurrentProcessId()) + L"_" + std::to_wstring(GetTickCount64());
+    std::filesystem::path stageDir = tempBase / stageFolderName;
+    std::filesystem::create_directories(stageDir, ec);
+
+    // Guaranteed staging directory cleanup on exit
+    auto cleanupStaging = wil::scope_exit([&]() {
+        std::error_code ignoreEc;
+        std::filesystem::remove_all(stageDir, ignoreEc);
+    });
+
     file.seekg(static_cast<std::streamoff>(zipStartOffset), std::ios::beg);
-    std::filesystem::create_directories(destDir, ec);
-    std::filesystem::path tempZip = destDir / "payload.zip";
+    std::filesystem::path tempZip = stageDir / "payload.zip";
     {
         std::ofstream zipOut(tempZip, std::ios::binary);
         zipOut << file.rdbuf();
@@ -285,12 +414,11 @@ bool ExtensionManager::UnpackCrx3(const std::filesystem::path& crxPath, const st
     GetSystemDirectoryW(sysDir, MAX_PATH);
     std::filesystem::path tarPath = std::filesystem::path(sysDir) / L"tar.exe";
     if (!std::filesystem::exists(tarPath)) {
-        std::filesystem::remove(tempZip, ec);
         return false;
     }
 
     // 8. Direct process invocation avoiding cmd.exe shell injection
-    std::wstring cmdLine = L"\"" + tarPath.wstring() + L"\" -xf \"" + tempZip.wstring() + L"\" -C \"" + destDir.wstring() + L"\"";
+    std::wstring cmdLine = L"\"" + tarPath.wstring() + L"\" -xf \"" + tempZip.wstring() + L"\" -C \"" + stageDir.wstring() + L"\"";
     std::vector<wchar_t> cmdBuf(cmdLine.begin(), cmdLine.end());
     cmdBuf.push_back(L'\0');
 
@@ -325,28 +453,41 @@ bool ExtensionManager::UnpackCrx3(const std::filesystem::path& crxPath, const st
         CloseHandle(pi.hThread);
         std::filesystem::remove(tempZip, ec);
         if (exitCode != 0) {
-            std::filesystem::remove_all(destDir, ec);
             return false;
         }
     } else {
-        std::filesystem::remove(tempZip, ec);
         return false;
     }
 
-    // 9. Post-extraction defense-in-depth: second layer canonical verification
-    auto canonicalDest = std::filesystem::weakly_canonical(destDir, ec);
+    // 9. Post-extraction defense-in-depth: canonical directory traversal verification within staging
+    auto canonicalStage = std::filesystem::weakly_canonical(stageDir, ec);
     if (!ec) {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(destDir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(stageDir, std::filesystem::directory_options::skip_permission_denied, ec)) {
             auto canonicalEntry = std::filesystem::weakly_canonical(entry.path(), ec);
-            auto rel = std::filesystem::relative(canonicalEntry, canonicalDest, ec);
-            if (rel.empty() || rel.string().find("..") != std::string::npos) {
-                std::filesystem::remove_all(destDir, ec);
+            auto rel = std::filesystem::relative(canonicalEntry, canonicalStage, ec);
+            if (rel.empty() || rel.wstring().find(L"..") != std::wstring::npos) {
                 return false;
             }
         }
     }
 
-    return true;
+    // 10. Verify manifest.json exists before committing to destDir
+    if (!std::filesystem::exists(stageDir / "manifest.json")) {
+        return false;
+    }
+
+    // 11. Atomic replace into destDir (only touched upon 100% verified extraction)
+    std::filesystem::create_directories(destDir.parent_path(), ec);
+    if (std::filesystem::exists(destDir)) {
+        std::filesystem::remove_all(destDir, ec);
+    }
+
+    std::filesystem::rename(stageDir, destDir, ec);
+    if (ec) {
+        std::filesystem::copy(stageDir, destDir, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+    }
+
+    return !ec;
 }
 
 using UltraLight::StringUtils::Utf8ToWide;
@@ -455,7 +596,7 @@ bool ExtensionManager::ParseManifest(const std::filesystem::path& extDir, Extens
         return false;
     }
 #else
-    outInfo.name = extDir.filename().string();
+    outInfo.name = WideToUtf8(extDir.filename().wstring());
     return true;
 #endif
 }
@@ -494,7 +635,7 @@ bool ExtensionManager::LoadUnpackedExtension(
     info.unpackedPath = canonicalPath;
     ParseManifest(canonicalPath, info);
     if (info.name.empty()) {
-        info.name = canonicalPath.filename().string();
+        info.name = WideToUtf8(canonicalPath.filename().wstring());
     }
 
     HRESULT hr = m_profile7->AddBrowserExtension(
@@ -622,8 +763,32 @@ bool ExtensionManager::InstallCrx(
         return false;
     }
 
-    std::string extId = crxPath.stem().string();
-    std::filesystem::path destDir = Config::Instance().GetExtensionsDirectory() / extId;
+    // 1. Compute official 32-character Chrome extension ID from CRX3 public key
+    std::string extId = ExtractCrx3ExtensionId(crxPath);
+    if (extId.empty()) {
+        // Fallback: derive safe alphanumeric identifier from filename stem
+        std::wstring stemW = crxPath.stem().wstring();
+        for (wchar_t ch : stemW) {
+            if (iswalnum(ch) || ch == L'_' || ch == L'-') {
+                extId.push_back(static_cast<char>(ch));
+            }
+        }
+        if (extId.empty() || extId == "." || extId == "..") {
+            extId = "crx_ext_" + std::to_string(GetTickCount64());
+        }
+    }
+
+    std::filesystem::path extensionsDir = Config::Instance().GetExtensionsDirectory();
+    std::filesystem::path destDir = extensionsDir / extId;
+
+    // 2. Strict boundary validation: verify destDir is directly under extensionsDir
+    std::error_code ec;
+    auto canDest = std::filesystem::weakly_canonical(destDir, ec);
+    auto canExtDir = std::filesystem::weakly_canonical(extensionsDir, ec);
+    if (canDest.parent_path() != canExtDir) {
+        if (callback) callback(false, L"非法的文件名或安装路径！");
+        return false;
+    }
 
     if (!UnpackCrx3(crxPath, destDir)) {
         if (callback) callback(false, L"解压 CRX 失败：文件损坏或格式不受支持。");

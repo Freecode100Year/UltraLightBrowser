@@ -34,6 +34,8 @@ if(MSVC)
         /W4                 # Warning level 4
         /Zc:inline          # Remove unreferenced functions/data
         /Zc:preprocessor    # Conforming preprocessor
+        /guard:cf           # Control Flow Guard
+        /sdl                # Additional Security Development Lifecycle checks
     )
     add_link_options(
         /LTCG               # Link-time code generation
@@ -41,6 +43,11 @@ if(MSVC)
         /OPT:ICF            # Identical COMDAT folding (reduce binary size)
         /SUBSYSTEM:WINDOWS  # Pure Win32 GUI application
         /MANIFEST:NO        # Custom manifest embedded via resource.rc
+        /guard:cf           # Control Flow Guard
+        /CETCOMPAT          # Intel CET shadow stack
+        /DYNAMICBASE        # ASLR
+        /NXCOMPAT           # DEP
+        /HIGHENTROPYVA      # 64-bit ASLR
     )
 endif()
 

@@ -31,14 +31,9 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
-        L"--ignore-gpu-blocklist "
         L"--enable-features=NvidiaVsr,IntelVsr,Prerender2 "
         L"--enable-quic "
-        L"--quic-version=h3 "
-        L"--enable-bbr "
         L"--enable-async-dns "
-        L"--enable-tcp-fast-open "
-        L"--max-connections-per-host=12 "
         L"--media-cache-size=134217728 "
         L"--disk-cache-size=209715200 "
         L"--disable-features=Translate,OptimizationHints,MediaRouter "
@@ -186,11 +181,14 @@ void WebViewManager::RegisterEventHandlers() {
             [](ICoreWebView2* /*sender*/, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
                 wil::unique_cotaskmem_string messageRaw;
                 wil::unique_cotaskmem_string sourceUri;
-                if (SUCCEEDED(args->get_WebMessageAsJson(&messageRaw))) {
-                    std::wstring src = L"";
-                    if (SUCCEEDED(args->get_Source(&sourceUri)) && sourceUri.get()) {
-                        src = sourceUri.get();
-                    }
+                std::wstring src = L"";
+                if (SUCCEEDED(args->get_Source(&sourceUri)) && sourceUri.get()) {
+                    src = sourceUri.get();
+                }
+
+                if (SUCCEEDED(args->TryGetWebMessageAsString(&messageRaw)) && messageRaw.get()) {
+                    ElementBlocker::Instance().HandleWebMessage(messageRaw.get(), src);
+                } else if (SUCCEEDED(args->get_WebMessageAsJson(&messageRaw)) && messageRaw.get()) {
                     ElementBlocker::Instance().HandleWebMessage(messageRaw.get(), src);
                 }
                 return S_OK;

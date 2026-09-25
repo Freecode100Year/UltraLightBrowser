@@ -15,6 +15,9 @@ public:
     // Sets up pre-render CSS injection for zero flicker
     void Initialize(ICoreWebView2* webView);
 
+    // Synchronize and update pre-render injection script
+    void UpdateRulesScript(ICoreWebView2* webView);
+
     // Updates injection rules based on domain navigation
     void OnNavigationStarting(ICoreWebView2* webView, const std::wstring& uri);
 
@@ -37,6 +40,8 @@ private:
 
     bool m_pickerActive = false;
     std::wstring m_currentHost;
+    std::wstring m_injectedScriptId;
+    ICoreWebView2* m_webView = nullptr;
 };
 
 } // namespace UltraLight

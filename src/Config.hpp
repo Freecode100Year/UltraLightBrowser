@@ -31,6 +31,7 @@ public:
     const AppSettings& GetSettings() const { return m_settings; }
 
     std::string GetBlockRulesForHost(const std::string& host);
+    std::unordered_map<std::string, std::vector<std::string>> GetAllBlockRules() const;
     void AddBlockRule(const std::string& host, const std::string& selector);
 
     std::vector<std::filesystem::path> GetUnpackedExtensionPaths() const;
