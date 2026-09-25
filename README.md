@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.2/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.3/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -27,8 +27,8 @@
 
 可以在 GitHub Releases 中直接获取预编译的可用二进制程序：
 
-* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.2/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
-* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.1.2-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.2/UltraLightBrowser-v1.1.2-windows-x64.zip)**
+* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.3/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
+* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.1.3-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.3/UltraLightBrowser-v1.1.3-windows-x64.zip)**
 * 🔗 **[查看所有历史版本与 Release 资产](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
 ---
