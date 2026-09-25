@@ -1,4 +1,5 @@
 #include "Config.hpp"
+#include "StringUtils.hpp"
 #include <windows.h>
 #include <shlobj.h>
 #include <fstream>
@@ -63,9 +64,8 @@ void Config::Load() {
 
         if (root.contains("settings")) {
             auto& s = root["settings"];
-            if (s.contains("startUrl")) {
-                std::string url = s["startUrl"];
-                m_settings.startUrl = std::wstring(url.begin(), url.end());
+            if (s.contains("startUrl") && s["startUrl"].is_string()) {
+                m_settings.startUrl = StringUtils::Utf8ToWide(s["startUrl"].get<std::string>());
             }
             if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
             if (s.contains("enableExtensions")) m_settings.enableExtensions = s["enableExtensions"];
@@ -89,7 +89,7 @@ void Config::Load() {
             for (const auto& item : root["unpackedExtensions"]) {
                 if (item.is_string()) {
                     std::string s = item.get<std::string>();
-                    m_unpackedExtensionPaths.push_back(std::filesystem::path(std::u8string(s.begin(), s.end())));
+                    m_unpackedExtensionPaths.push_back(std::filesystem::path(StringUtils::Utf8ToWide(s)));
                 }
             }
         }
@@ -105,7 +105,7 @@ void Config::Save() {
 #if __has_include(<nlohmann/json.hpp>)
     try {
         json root;
-        std::string startUrlNarrow(m_settings.startUrl.begin(), m_settings.startUrl.end());
+        std::string startUrlNarrow = StringUtils::WideToUtf8(m_settings.startUrl);
         root["settings"] = {
             {"startUrl", startUrlNarrow},
             {"hardwareAcceleration", m_settings.hardwareAcceleration},
@@ -122,8 +122,7 @@ void Config::Save() {
 
         json extArr = json::array();
         for (const auto& p : m_unpackedExtensionPaths) {
-            auto u8 = p.u8string();
-            extArr.push_back(std::string(u8.begin(), u8.end()));
+            extArr.push_back(StringUtils::WideToUtf8(p.wstring()));
         }
         root["unpackedExtensions"] = extArr;
 

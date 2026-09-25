@@ -8,6 +8,7 @@
 #include <vector>
 #include <filesystem>
 #include <functional>
+#include "StringUtils.hpp"
 
 namespace UltraLight {
 

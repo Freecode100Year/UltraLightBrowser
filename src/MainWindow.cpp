@@ -54,6 +54,8 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
     wc.lpszClassName = CLASS_NAME;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(101));
+    wc.hIconSm = reinterpret_cast<HICON>(LoadImageW(hInstance, MAKEINTRESOURCEW(101), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
 
     if (!RegisterClassExW(&wc)) {
         return false;
@@ -73,6 +75,13 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
 
     if (!m_hWnd) {
         return false;
+    }
+
+    if (wc.hIcon) {
+        SendMessageW(m_hWnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(wc.hIcon));
+    }
+    if (wc.hIconSm) {
+        SendMessageW(m_hWnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(wc.hIconSm));
     }
 
     ApplyModernTheme();
@@ -422,15 +431,10 @@ void MainWindow::ShowExtensionsMenu() {
             AppendMenuW(hSub, MF_STRING, baseCmd + 3, L"⟳ 重新加载扩展");
             AppendMenuW(hSub, MF_STRING, baseCmd + 4, L"🗑 移除此扩展程序");
 
-            int wlen = MultiByteToWideChar(CP_UTF8, 0, ext.name.c_str(), -1, nullptr, 0);
-            std::wstring nameW(wlen > 1 ? wlen - 1 : 0, 0);
-            if (wlen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.name.c_str(), -1, &nameW[0], wlen);
-
+            std::wstring nameW = StringUtils::Utf8ToWide(ext.name);
             std::wstring itemTitle = (ext.isEnabled ? L"🧩  " : L"⚪  ") + (nameW.empty() ? L"未命名扩展" : nameW);
             if (!ext.version.empty()) {
-                int vlen = MultiByteToWideChar(CP_UTF8, 0, ext.version.c_str(), -1, nullptr, 0);
-                std::wstring verW(vlen > 1 ? vlen - 1 : 0, 0);
-                if (vlen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.version.c_str(), -1, &verW[0], vlen);
+                std::wstring verW = StringUtils::Utf8ToWide(ext.version);
                 itemTitle += L" (v" + verW + L")";
             }
 
@@ -469,11 +473,8 @@ void MainWindow::HandleExtensionMenuCommand(WORD id) {
         });
         break;
     case 4: { // Remove
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, ext.name.c_str(), -1, nullptr, 0);
-        std::wstring nameW(wlen > 1 ? wlen - 1 : 0, 0);
-        if (wlen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.name.c_str(), -1, &nameW[0], wlen);
-
-        std::wstring prompt = L"确定要移除扩展程序 [" + nameW + L"] 吗？";
+        std::wstring nameW = StringUtils::Utf8ToWide(ext.name);
+        std::wstring prompt = L"确定要移除扩展程序 [" + (nameW.empty() ? L"未命名扩展" : nameW) + L"] 吗？";
         if (MessageBoxW(m_hWnd, prompt.c_str(), L"移除扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
             ExtensionManager::Instance().RemoveExtension(ext.id);
         }
@@ -481,14 +482,8 @@ void MainWindow::HandleExtensionMenuCommand(WORD id) {
     }
     case 5: { // Open in main tab
         if (!ext.defaultPopup.empty() && m_webViewManager) {
-            int ilen = MultiByteToWideChar(CP_UTF8, 0, ext.id.c_str(), -1, nullptr, 0);
-            std::wstring idW(ilen > 1 ? ilen - 1 : 0, 0);
-            if (ilen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.id.c_str(), -1, &idW[0], ilen);
-
-            int plen = MultiByteToWideChar(CP_UTF8, 0, ext.defaultPopup.c_str(), -1, nullptr, 0);
-            std::wstring popupW(plen > 1 ? plen - 1 : 0, 0);
-            if (plen > 1) MultiByteToWideChar(CP_UTF8, 0, ext.defaultPopup.c_str(), -1, &popupW[0], plen);
-
+            std::wstring idW = StringUtils::Utf8ToWide(ext.id);
+            std::wstring popupW = StringUtils::Utf8ToWide(ext.defaultPopup);
             std::wstring extUrl = L"chrome-extension://" + idW + L"/" + popupW;
             m_webViewManager->Navigate(extUrl);
         }

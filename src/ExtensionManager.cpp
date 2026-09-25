@@ -314,12 +314,24 @@ bool ExtensionManager::UnpackCrx3(const std::filesystem::path& crxPath, const st
     );
 
     if (created) {
-        WaitForSingleObject(pi.hProcess, 15000);
+        DWORD waitRes = WaitForSingleObject(pi.hProcess, 15000);
+        DWORD exitCode = 1;
+        if (waitRes == WAIT_OBJECT_0) {
+            GetExitCodeProcess(pi.hProcess, &exitCode);
+        } else {
+            TerminateProcess(pi.hProcess, 1);
+        }
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
+        std::filesystem::remove(tempZip, ec);
+        if (exitCode != 0) {
+            std::filesystem::remove_all(destDir, ec);
+            return false;
+        }
+    } else {
+        std::filesystem::remove(tempZip, ec);
+        return false;
     }
-
-    std::filesystem::remove(tempZip, ec);
 
     // 9. Post-extraction defense-in-depth: second layer canonical verification
     auto canonicalDest = std::filesystem::weakly_canonical(destDir, ec);
@@ -337,23 +349,8 @@ bool ExtensionManager::UnpackCrx3(const std::filesystem::path& crxPath, const st
     return true;
 }
 
-static std::wstring Utf8ToWide(const std::string& str) {
-    if (str.empty()) return L"";
-    int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-    if (size <= 1) return L"";
-    std::wstring out(size - 1, 0);
-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &out[0], size);
-    return out;
-}
-
-static std::string WideToUtf8(const std::wstring& wstr) {
-    if (wstr.empty()) return "";
-    int size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (size <= 1) return "";
-    std::string out(size - 1, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &out[0], size, nullptr, nullptr);
-    return out;
-}
+using UltraLight::StringUtils::Utf8ToWide;
+using UltraLight::StringUtils::WideToUtf8;
 
 static std::wstring FormatHResult(HRESULT hr) {
     wchar_t buf[32];
@@ -877,14 +874,19 @@ static LRESULT CALLBACK PopupWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 
 void ExtensionManager::ShowExtensionPopup(HWND hParent, const ExtensionInfo& ext, POINT anchorPoint) {
     const wchar_t POPUP_CLASS_NAME[] = L"UltraLightExtensionPopupClass";
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.lpfnWndProc = PopupWndProc;
-    wc.hInstance = GetModuleHandle(nullptr);
-    wc.lpszClassName = POPUP_CLASS_NAME;
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    RegisterClassExW(&wc);
+    static bool s_popupClassRegistered = false;
+    if (!s_popupClassRegistered) {
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(WNDCLASSEXW);
+        wc.lpfnWndProc = PopupWndProc;
+        wc.hInstance = GetModuleHandle(nullptr);
+        wc.lpszClassName = POPUP_CLASS_NAME;
+        wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        if (RegisterClassExW(&wc)) {
+            s_popupClassRegistered = true;
+        }
+    }
 
     const int width = 400;
     const int height = 480;
@@ -1257,14 +1259,21 @@ void ExtensionManager::ShowExtensionsDialog(HWND hParent) {
     InitCommonControlsEx(&icex);
 
     const wchar_t DLG_CLASS_NAME[] = L"UltraLightExtensionsDlgClass";
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.lpfnWndProc = ExtensionsDlgWndProc;
-    wc.hInstance = GetModuleHandle(nullptr);
-    wc.lpszClassName = DLG_CLASS_NAME;
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    RegisterClassExW(&wc);
+    static bool s_dlgClassRegistered = false;
+    if (!s_dlgClassRegistered) {
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(WNDCLASSEXW);
+        wc.lpfnWndProc = ExtensionsDlgWndProc;
+        wc.hInstance = GetModuleHandle(nullptr);
+        wc.lpszClassName = DLG_CLASS_NAME;
+        wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wc.hIcon = LoadIconW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(101));
+        wc.hIconSm = reinterpret_cast<HICON>(LoadImageW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(101), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
+        if (RegisterClassExW(&wc)) {
+            s_dlgClassRegistered = true;
+        }
+    }
 
     UINT dpi = GetDpiForWindow(hParent ? hParent : GetDesktopWindow());
     int dlgW = MulDiv(760, dpi, 96);
