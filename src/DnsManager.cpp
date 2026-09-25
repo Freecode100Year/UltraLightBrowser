@@ -300,21 +300,21 @@ LRESULT CALLBACK DlgWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             Config::Instance().Save();
             DnsManager::Instance().ApplySettings();
 
-            std::wstring msg = L"公共 DNS 设置已更新并成功应用！\n\n";
+            std::wstring alertMsg = L"公共 DNS 设置已更新并成功应用！\n\n";
             if (enableDns) {
-                msg += L"当前状态: 【已启用】\n";
+                alertMsg += L"当前状态: 【已启用】\n";
                 if (settings.selectedDnsProvider == "custom") {
-                    msg += L"服务商: 自定义 DoH 节点\n";
+                    alertMsg += L"服务商: 自定义 DoH 节点\n";
                 } else {
                     const auto* p = DnsManager::Instance().GetActiveProvider();
-                    if (p) msg += L"服务商: " + p->name + L"\n";
+                    if (p) alertMsg += L"服务商: " + p->name + L"\n";
                 }
-                msg += L"\n提示: 设置已写入本地配置文件与 Edge/WebView2 内核策略。\n点击确定后建议刷新网页以生效。";
+                alertMsg += L"\n提示: 设置已写入本地配置文件与 Edge/WebView2 内核策略。\n点击确定后建议刷新网页以生效。";
             } else {
-                msg += L"当前状态: 【已关闭 (使用系统默认 DNS)】\n\n设置已恢复为系统网络解析。";
+                alertMsg += L"当前状态: 【已关闭 (使用系统默认 DNS)】\n\n设置已恢复为系统网络解析。";
             }
 
-            MessageBoxW(hWnd, msg.c_str(), L"DNS 设置已保存", MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(hWnd, alertMsg.c_str(), L"DNS 设置已保存", MB_OK | MB_ICONINFORMATION);
             DestroyWindow(hWnd);
             break;
         }

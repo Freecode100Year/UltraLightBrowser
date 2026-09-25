@@ -565,10 +565,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             Config::Instance().Save();
             DnsManager::Instance().ApplySettings();
             UpdateDnsDisplay();
-            std::wstring msg = settings.enablePublicDns
+            std::wstring infoMsg = settings.enablePublicDns
                 ? L"已开启公共 DNS 服务器解析！\n建议刷新网页以使新设置彻底生效。"
                 : L"已关闭公共 DNS，恢复为系统默认解析。";
-            MessageBoxW(m_hWnd, msg.c_str(), L"公共 DNS 设置", MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(m_hWnd, infoMsg.c_str(), L"公共 DNS 设置", MB_OK | MB_ICONINFORMATION);
             break;
         }
         case IDM_DNS_OPEN_SETTINGS:
@@ -597,10 +597,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDM_BLOCKER_TOGGLE_NATIVE: {
             bool nextState = !NativeRequestFilter::Instance().IsEnabled();
             NativeRequestFilter::Instance().SetEnabled(nextState);
-            std::wstring msg = nextState
+            std::wstring infoMsg = nextState
                 ? L"原生网络请求拦截已开启！\n广告与跟踪器将直接在网络层阻断，提速 40%+，省流量 50%+。"
                 : L"原生网络请求拦截已关闭。";
-            MessageBoxW(m_hWnd, msg.c_str(), L"原生请求拦截", MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(m_hWnd, infoMsg.c_str(), L"原生请求拦截", MB_OK | MB_ICONINFORMATION);
             break;
         }
         case IDM_BLOCKER_CLEAR_RULES: {
@@ -609,8 +609,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 Config::Instance().ClearBlockRulesForHost(host);
                 ElementBlocker::Instance().UpdateRulesScript(m_webViewManager->GetWebView());
                 m_webViewManager->Reload();
-                std::wstring msg = L"已清空网站 [" + ElementBlocker::Instance().GetCurrentHost() + L"] 的全部元素屏蔽规则并重新载入。";
-                MessageBoxW(m_hWnd, msg.c_str(), L"清空规则", MB_OK | MB_ICONINFORMATION);
+                std::wstring infoMsg = L"已清空网站 [" + ElementBlocker::Instance().GetCurrentHost() + L"] 的全部元素屏蔽规则并重新载入。";
+                MessageBoxW(m_hWnd, infoMsg.c_str(), L"清空规则", MB_OK | MB_ICONINFORMATION);
             } else {
                 MessageBoxW(m_hWnd, L"当前页面未识别到有效域名。", L"清空规则", MB_OK | MB_ICONINFORMATION);
             }
@@ -632,8 +632,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     Config::Instance().Save();
                     DnsManager::Instance().ApplySettings();
                     UpdateDnsDisplay();
-                    std::wstring msg = L"已切换至公共 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已生效，建议刷新网页。";
-                    MessageBoxW(m_hWnd, msg.c_str(), L"公共 DNS 已更新", MB_OK | MB_ICONINFORMATION);
+                    std::wstring infoMsg = L"已切换至公共 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已生效，建议刷新网页。";
+                    MessageBoxW(m_hWnd, infoMsg.c_str(), L"公共 DNS 已更新", MB_OK | MB_ICONINFORMATION);
                 }
             }
             break;
@@ -645,13 +645,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         if ((wParam & 0xFFF0) == SC_MINIMIZE) {
             PowerManager::Instance().HandleWindowMinimize(m_webViewManager->GetWebView());
         } else if ((wParam & 0xFFF0) == SC_RESTORE) {
-            PowerManager::Instance().HandleWindowRestore(m_webViewManager->GetWebView());
-        }
-        break;
-    }
-
-    case WM_ACTIVATE: {
-        if (LOWORD(wParam) != WA_INACTIVE) {
             PowerManager::Instance().HandleWindowRestore(m_webViewManager->GetWebView());
         }
         break;
