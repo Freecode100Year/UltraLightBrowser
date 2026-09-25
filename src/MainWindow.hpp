@@ -14,7 +14,8 @@ enum ControlID : WORD {
     IDC_BTN_RELOAD      = 1003,
     IDC_EDIT_ADDRESS    = 1004,
     IDC_BTN_BLOCKER     = 1005,
-    IDC_BTN_EXTENSIONS  = 1006
+    IDC_BTN_EXTENSIONS  = 1006,
+    IDC_BTN_ZOOM        = 1007
 };
 
 enum AppCommandID : WORD {
@@ -25,6 +26,10 @@ enum AppCommandID : WORD {
     IDM_FOCUS_ADDRESS_BAR   = 2005,
     IDM_TOGGLE_FULLSCREEN   = 2006,
     IDM_EXIT_FULLSCREEN     = 2007,
+    IDM_ZOOM_IN             = 2008,
+    IDM_ZOOM_OUT            = 2009,
+    IDM_ZOOM_RESET          = 2010,
+    IDM_ZOOM_SET_BASE       = 2020,
     IDM_EXT_ITEM_BASE       = 2100
 };
 
@@ -51,6 +56,8 @@ private:
     void ApplyModernTheme();
     void ShowExtensionsMenu();
     void HandleExtensionMenuCommand(WORD id);
+    void ShowZoomMenu();
+    void UpdateZoomDisplay(double zoom);
 
     HWND m_hWnd = nullptr;
     HINSTANCE m_hInstance = nullptr;
@@ -61,6 +68,7 @@ private:
     HWND m_hBtnForward = nullptr;
     HWND m_hBtnReload = nullptr;
     HWND m_hEditAddress = nullptr;
+    HWND m_hBtnZoom = nullptr;
     HWND m_hBtnBlocker = nullptr;
     HWND m_hBtnExtensions = nullptr;
 

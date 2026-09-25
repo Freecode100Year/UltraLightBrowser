@@ -6,6 +6,8 @@
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 
 using namespace Microsoft::WRL;
 
@@ -64,7 +66,7 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                                 controller3->put_BoundsMode(COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS);
                             }
 
-                            // Intercept keyboard accelerators (F11 fullscreen toggle, Escape fullscreen exit)
+                            // Intercept keyboard accelerators (Zoom, Fullscreen, Extensions, Address bar)
                             m_controller->add_AcceleratorKeyPressed(
                                 Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
                                     [this](ICoreWebView2Controller* /*sender*/, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
@@ -73,6 +75,49 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                                             if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
                                                 UINT key = 0;
                                                 if (SUCCEEDED(args->get_VirtualKey(&key))) {
+                                                    bool isCtrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+                                                    bool isShift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                                                    bool isAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+
+                                                    if (isCtrl && !isAlt) {
+                                                        // Zoom In: Ctrl + Plus, Ctrl + Add, Ctrl + '='
+                                                        if (key == VK_OEM_PLUS || key == VK_ADD || key == 0xBB) {
+                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_ZOOM_IN, 0), 0);
+                                                            args->put_Handled(TRUE);
+                                                            return S_OK;
+                                                        }
+                                                        // Zoom Out: Ctrl + Minus, Ctrl + Subtract
+                                                        if (!isShift && (key == VK_OEM_MINUS || key == VK_SUBTRACT || key == 0xBD)) {
+                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_ZOOM_OUT, 0), 0);
+                                                            args->put_Handled(TRUE);
+                                                            return S_OK;
+                                                        }
+                                                        // Zoom Reset: Ctrl + 0
+                                                        if (!isShift && (key == '0' || key == VK_NUMPAD0)) {
+                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_ZOOM_RESET, 0), 0);
+                                                            args->put_Handled(TRUE);
+                                                            return S_OK;
+                                                        }
+                                                        // Focus Address Bar: Ctrl + L
+                                                        if (!isShift && (key == 'L' || key == 'l')) {
+                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_FOCUS_ADDRESS_BAR, 0), 0);
+                                                            args->put_Handled(TRUE);
+                                                            return S_OK;
+                                                        }
+                                                        // Extensions Center: Ctrl + Shift + E
+                                                        if (isShift && (key == 'E' || key == 'e')) {
+                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDC_BTN_EXTENSIONS, 0), 0);
+                                                            args->put_Handled(TRUE);
+                                                            return S_OK;
+                                                        }
+                                                        // Element Blocker: Ctrl + Shift + H
+                                                        if (isShift && (key == 'H' || key == 'h')) {
+                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDC_BTN_BLOCKER, 0), 0);
+                                                            args->put_Handled(TRUE);
+                                                            return S_OK;
+                                                        }
+                                                    }
+
                                                     if (key == VK_F11) {
                                                         PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_TOGGLE_FULLSCREEN, 0), 0);
                                                         args->put_Handled(TRUE);
@@ -212,6 +257,22 @@ void WebViewManager::RegisterEventHandlers() {
         ).Get(),
         nullptr
     );
+
+    // Zoom factor changed (e.g. via Ctrl+MouseWheel or navigation)
+    if (m_controller) {
+        m_controller->add_ZoomFactorChanged(
+            Callback<ICoreWebView2ZoomFactorChangedEventHandler>(
+                [this](ICoreWebView2Controller* sender, IUnknown* /*args*/) -> HRESULT {
+                    double zoom = 1.0;
+                    if (SUCCEEDED(sender->get_ZoomFactor(&zoom)) && m_zoomFactorChangedCb) {
+                        m_zoomFactorChangedCb(zoom);
+                    }
+                    return S_OK;
+                }
+            ).Get(),
+            nullptr
+        );
+    }
 }
 
 void WebViewManager::Resize(const RECT& bounds) {
@@ -263,6 +324,56 @@ void WebViewManager::Reload() {
 
 void WebViewManager::Stop() {
     if (m_webView) m_webView->Stop();
+}
+
+static const double kZoomLevels[] = {
+    0.25, 0.33, 0.50, 0.67, 0.75, 0.80, 0.90, 1.00,
+    1.10, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00
+};
+
+void WebViewManager::ZoomIn() {
+    double current = GetZoomFactor();
+    for (double level : kZoomLevels) {
+        if (level > current + 0.005) {
+            SetZoomFactor(level);
+            return;
+        }
+    }
+    SetZoomFactor(5.0);
+}
+
+void WebViewManager::ZoomOut() {
+    double current = GetZoomFactor();
+    for (int i = static_cast<int>(std::size(kZoomLevels)) - 1; i >= 0; --i) {
+        if (kZoomLevels[i] < current - 0.005) {
+            SetZoomFactor(kZoomLevels[i]);
+            return;
+        }
+    }
+    SetZoomFactor(0.25);
+}
+
+void WebViewManager::ZoomReset() {
+    SetZoomFactor(1.0);
+}
+
+double WebViewManager::GetZoomFactor() const {
+    if (!m_controller) return 1.0;
+    double factor = 1.0;
+    if (SUCCEEDED(m_controller->get_ZoomFactor(&factor))) {
+        return factor;
+    }
+    return 1.0;
+}
+
+void WebViewManager::SetZoomFactor(double factor) {
+    if (!m_controller) return;
+    factor = std::clamp(factor, 0.25, 5.0);
+    if (SUCCEEDED(m_controller->put_ZoomFactor(factor))) {
+        if (m_zoomFactorChangedCb) {
+            m_zoomFactorChangedCb(factor);
+        }
+    }
 }
 
 } // namespace UltraLight

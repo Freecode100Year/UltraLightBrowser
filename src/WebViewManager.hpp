@@ -16,6 +16,7 @@ public:
     using TitleChangedCallback = std::function<void(const std::wstring&)>;
     using SourceChangedCallback = std::function<void(const std::wstring&)>;
     using FullScreenCallback = std::function<void(bool)>;
+    using ZoomFactorChangedCallback = std::function<void(double)>;
 
     WebViewManager();
     ~WebViewManager() = default;
@@ -34,10 +35,18 @@ public:
     void Reload();
     void Stop();
 
+    // Zoom controls
+    void ZoomIn();
+    void ZoomOut();
+    void ZoomReset();
+    double GetZoomFactor() const;
+    void SetZoomFactor(double zoom);
+
     // Callbacks
     void SetTitleChangedCallback(TitleChangedCallback cb) { m_titleChangedCb = cb; }
     void SetSourceChangedCallback(SourceChangedCallback cb) { m_sourceChangedCb = cb; }
     void SetFullScreenCallback(FullScreenCallback cb) { m_fullScreenCb = cb; }
+    void SetZoomFactorChangedCallback(ZoomFactorChangedCallback cb) { m_zoomFactorChangedCb = cb; }
 
     // Direct interface access
     ICoreWebView2Environment* GetEnvironment() const { return m_environment.get(); }
@@ -58,6 +67,7 @@ private:
     TitleChangedCallback m_titleChangedCb;
     SourceChangedCallback m_sourceChangedCb;
     FullScreenCallback m_fullScreenCb;
+    ZoomFactorChangedCallback m_zoomFactorChangedCb;
 };
 
 } // namespace UltraLight

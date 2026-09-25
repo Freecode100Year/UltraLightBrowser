@@ -46,7 +46,7 @@ int WINAPI wWinMain(
 
     HWND hWnd = mainWindow->GetHwnd();
 
-    // 7. Register Global Accelerators (Ctrl+Shift+H, Ctrl+Shift+E, Ctrl+R, F5, Ctrl+L, Alt+Left, Alt+Right, F11)
+    // 7. Register Global Accelerators (Ctrl+Shift+H, Ctrl+Shift+E, Ctrl+R, F5, Ctrl+L, Alt+Left, Alt+Right, F11, Zoom)
     ACCEL accels[] = {
         { FCONTROL | FSHIFT | FVIRTKEY, 'H', UltraLight::IDC_BTN_BLOCKER },
         { FCONTROL | FSHIFT | FVIRTKEY, 'E', UltraLight::IDC_BTN_EXTENSIONS },
@@ -55,7 +55,15 @@ int WINAPI wWinMain(
         { FCONTROL | FVIRTKEY, 'L', UltraLight::IDM_FOCUS_ADDRESS_BAR },
         { FALT | FVIRTKEY, VK_LEFT, UltraLight::IDC_BTN_BACK },
         { FALT | FVIRTKEY, VK_RIGHT, UltraLight::IDC_BTN_FORWARD },
-        { FVIRTKEY, VK_F11, UltraLight::IDM_TOGGLE_FULLSCREEN }
+        { FVIRTKEY, VK_F11, UltraLight::IDM_TOGGLE_FULLSCREEN },
+        // Zoom shortcuts: Ctrl + Plus / Minus / 0
+        { FCONTROL | FVIRTKEY, VK_OEM_PLUS, UltraLight::IDM_ZOOM_IN },
+        { FCONTROL | FVIRTKEY, VK_ADD, UltraLight::IDM_ZOOM_IN },
+        { FCONTROL | FSHIFT | FVIRTKEY, VK_OEM_PLUS, UltraLight::IDM_ZOOM_IN },
+        { FCONTROL | FVIRTKEY, VK_OEM_MINUS, UltraLight::IDM_ZOOM_OUT },
+        { FCONTROL | FVIRTKEY, VK_SUBTRACT, UltraLight::IDM_ZOOM_OUT },
+        { FCONTROL | FVIRTKEY, '0', UltraLight::IDM_ZOOM_RESET },
+        { FCONTROL | FVIRTKEY, VK_NUMPAD0, UltraLight::IDM_ZOOM_RESET }
     };
     HACCEL hAccel = CreateAcceleratorTableW(accels, static_cast<int>(std::size(accels)));
 

@@ -6,6 +6,7 @@
 #include <windowsx.h>
 #include <uxtheme.h>
 #include <shellapi.h>
+#include <cmath>
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
@@ -16,6 +17,10 @@
 #endif
 
 namespace UltraLight {
+
+static const int kPresetZoomPercentages[] = {
+    500, 400, 300, 250, 200, 175, 150, 125, 110, 100, 90, 80, 75, 67, 50, 33, 25
+};
 
 MainWindow::MainWindow() : m_webViewManager(std::make_unique<WebViewManager>()) {}
 
@@ -106,6 +111,7 @@ void MainWindow::UpdateDpiScaling(UINT dpi) {
     if (m_hBtnForward) SendMessageW(m_hBtnForward, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnReload) SendMessageW(m_hBtnReload, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    if (m_hBtnZoom) SendMessageW(m_hBtnZoom, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnExtensions) SendMessageW(m_hBtnExtensions, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
 }
@@ -136,6 +142,12 @@ void MainWindow::CreateToolbarControls() {
     );
     SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
     SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"输入网址或搜索内容，按 Enter 访问"));
+
+    m_hBtnZoom = CreateWindowExW(
+        0, L"BUTTON", L"🔍 100%",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_ZOOM), m_hInstance, nullptr
+    );
 
     m_hBtnBlocker = CreateWindowExW(
         0, L"BUTTON", L"🛡 Blocker",
@@ -170,6 +182,7 @@ void MainWindow::UpdateLayout(int width, int height) {
     int btnW = MulDiv(34, m_dpi, 96);
     int extBtnW = MulDiv(105, m_dpi, 96);
     int blockBtnW = MulDiv(90, m_dpi, 96);
+    int zoomBtnW = MulDiv(72, m_dpi, 96);
     int topH = m_topbarHeight;
     int ctrlH = topH - pad * 2;
 
@@ -193,6 +206,9 @@ void MainWindow::UpdateLayout(int width, int height) {
 
     rightX -= (blockBtnW + pad);
     SetWindowPos(m_hBtnBlocker, nullptr, rightX, pad, blockBtnW, ctrlH, SWP_NOZORDER);
+
+    rightX -= (zoomBtnW + pad);
+    SetWindowPos(m_hBtnZoom, nullptr, rightX, pad, zoomBtnW, ctrlH, SWP_NOZORDER);
 
     // Address Bar fill
     int addrW = (rightX - pad) - x;
@@ -220,6 +236,7 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_HIDE);
         if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
+        if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_HIDE);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
         if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, SW_HIDE);
 
@@ -257,6 +274,7 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_SHOW);
         if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_SHOW);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_SHOW);
+        if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_SHOW);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_SHOW);
         if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, SW_SHOW);
 
@@ -368,11 +386,16 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             SetFullScreen(fs);
         });
 
+        m_webViewManager->SetZoomFactorChangedCallback([this](double zoom) {
+            UpdateZoomDisplay(zoom);
+        });
+
         // Initialize WebView2
         m_webViewManager->Initialize(m_hWnd, [this]() {
             RECT client;
             GetClientRect(m_hWnd, &client);
             UpdateLayout(client.right, client.bottom);
+            UpdateZoomDisplay(m_webViewManager->GetZoomFactor());
             m_webViewManager->Navigate(Config::Instance().GetSettings().startUrl);
         });
 
@@ -457,6 +480,18 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 SetFullScreen(false);
             }
             break;
+        case IDM_ZOOM_IN:
+            if (m_webViewManager) m_webViewManager->ZoomIn();
+            break;
+        case IDM_ZOOM_OUT:
+            if (m_webViewManager) m_webViewManager->ZoomOut();
+            break;
+        case IDM_ZOOM_RESET:
+            if (m_webViewManager) m_webViewManager->ZoomReset();
+            break;
+        case IDC_BTN_ZOOM:
+            ShowZoomMenu();
+            break;
         case IDC_EDIT_ADDRESS: {
             WORD notify = HIWORD(wParam);
             if (notify == EN_KILLFOCUS) {
@@ -490,7 +525,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             ExtensionManager::Instance().ShowExtensionsDialog(m_hWnd);
             break;
         default:
-            if (id >= IDM_EXT_ITEM_BASE) {
+            if (id >= IDM_ZOOM_SET_BASE && id < IDM_ZOOM_SET_BASE + static_cast<WORD>(std::size(kPresetZoomPercentages))) {
+                size_t idx = id - IDM_ZOOM_SET_BASE;
+                if (m_webViewManager) {
+                    m_webViewManager->SetZoomFactor(kPresetZoomPercentages[idx] / 100.0);
+                }
+            } else if (id >= IDM_EXT_ITEM_BASE) {
                 HandleExtensionMenuCommand(id);
             }
             break;
@@ -645,6 +685,59 @@ void MainWindow::HandleExtensionMenuCommand(WORD id) {
     default:
         break;
     }
+}
+
+void MainWindow::UpdateZoomDisplay(double zoom) {
+    if (!m_hBtnZoom) return;
+    int percent = static_cast<int>(std::round(zoom * 100.0));
+    wchar_t buf[32]{};
+    swprintf_s(buf, L"🔍 %d%%", percent);
+    SetWindowTextW(m_hBtnZoom, buf);
+}
+
+void MainWindow::ShowZoomMenu() {
+    HMENU hMenu = CreatePopupMenu();
+    if (!hMenu) return;
+
+    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_IN, L"放大\tCtrl + +");
+    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_OUT, L"缩小\tCtrl + -");
+    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_RESET, L"重置为 100%\tCtrl + 0");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    double currentZoom = m_webViewManager ? m_webViewManager->GetZoomFactor() : 1.0;
+    int currentPercent = static_cast<int>(std::round(currentZoom * 100.0));
+
+    int closestIdx = -1;
+    int minDiff = 10000;
+    for (size_t i = 0; i < std::size(kPresetZoomPercentages); ++i) {
+        int diff = std::abs(kPresetZoomPercentages[i] - currentPercent);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestIdx = static_cast<int>(i);
+        }
+    }
+
+    for (size_t i = 0; i < std::size(kPresetZoomPercentages); ++i) {
+        wchar_t itemText[32]{};
+        swprintf_s(itemText, L"%d%%", kPresetZoomPercentages[i]);
+        UINT flags = MF_STRING;
+        if (static_cast<int>(i) == closestIdx && minDiff <= 3) {
+            flags |= MF_CHECKED;
+        }
+        AppendMenuW(hMenu, flags, IDM_ZOOM_SET_BASE + static_cast<WORD>(i), itemText);
+    }
+
+    RECT btnRect{};
+    GetWindowRect(m_hBtnZoom, &btnRect);
+
+    TrackPopupMenu(
+        hMenu,
+        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
+        btnRect.left, btnRect.bottom,
+        0, m_hWnd, nullptr
+    );
+
+    DestroyMenu(hMenu);
 }
 
 } // namespace UltraLight
