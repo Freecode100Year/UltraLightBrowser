@@ -1,14 +1,22 @@
-# UltraLightBrowser 🚀
+<p align="center">
+  <img src="resources/icon.png" width="160" height="160" alt="UltraLightBrowser Logo">
+</p>
 
-> **Ultra-Fast, Minimal, and Hardware-Optimized Windows 11 Native Browser Shell**  
-> Powered by Microsoft Edge WebView2 Evergreen Runtime & Modern C++20.
+<h1 align="center">UltraLightBrowser 🚀</h1>
 
-[![Release](https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github)](https://github.com/Freecode100Year/UltraLightBrowser/releases)
-[![Download EXE](https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.1/UltraLightBrowser.exe)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2011%20(x64)-0078d4.svg?logo=windows)](https://microsoft.com)
-[![Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=c%2B%2B)](https://isocpp.org)
-[![Build](https://img.shields.io/badge/Build-CMake%20%7C%20MSVC%202022-brightgreen.svg?logo=cmake)](https://cmake.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<p align="center">
+  <b>Ultra-Fast, Minimal, and Hardware-Optimized Windows 11 Native Browser Shell</b><br>
+  Powered by Microsoft Edge WebView2 Evergreen Runtime & Modern C++20.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.1/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://microsoft.com"><img src="https://img.shields.io/badge/Platform-Windows%2011%20(x64)-0078d4.svg?logo=windows" alt="Platform"></a>
+  <a href="https://isocpp.org"><img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=c%2B%2B" alt="Standard"></a>
+  <a href="https://cmake.org"><img src="https://img.shields.io/badge/Build-CMake%20%7C%20MSVC%202022-brightgreen.svg?logo=cmake" alt="Build"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+</p>
 
 ---
 
