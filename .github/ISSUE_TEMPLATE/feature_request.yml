@@ -1,0 +1,32 @@
+name: "✨ Feature Request / 功能建议"
+description: "Suggest an idea or enhancement for UltraLightBrowser / 提出新功能或优化建议"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make UltraLightBrowser even faster, lighter, or more capable? We'd love to hear it!
+        欢迎提出任何能够让 UltraLightBrowser 更轻快、更强大的新构想！
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem or Motivation / 需求背景"
+      description: "Is your feature request related to a problem? Please describe."
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Proposed Solution / 建议方案"
+      description: "Describe the solution or feature you'd like to see implemented."
+      placeholder: "Add a button or API to..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered / 备选方案"
+      description: "Describe any alternative solutions or features you've considered."
+    validations:
+      required: false

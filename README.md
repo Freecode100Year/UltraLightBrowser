@@ -12,9 +12,12 @@
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.1/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases"><img src="https://img.shields.io/github/downloads/Freecode100Year/UltraLightBrowser/total?color=blueviolet" alt="Downloads"></a>
   <a href="https://microsoft.com"><img src="https://img.shields.io/badge/Platform-Windows%2011%20(x64)-0078d4.svg?logo=windows" alt="Platform"></a>
   <a href="https://isocpp.org"><img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=c%2B%2B" alt="Standard"></a>
-  <a href="https://cmake.org"><img src="https://img.shields.io/badge/Build-CMake%20%7C%20MSVC%202022-brightgreen.svg?logo=cmake" alt="Build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
 </p>
 
@@ -154,13 +157,23 @@ cmake --build build --config Release
 ## ⌨️ Shortcuts
 
 * <kbd>Ctrl</kbd> + <kbd>L</kbd> : Focus Address Bar
-* <kbd>Ctrl</kbd> + <kbd>R</kbd> / <kbd>F5</kbd> : Reload Current Page
+* <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> : Open Extensions Management Center
 * <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Toggle Interactive Element Hiding / Picker Mode
+* <kbd>Ctrl</kbd> + <kbd>R</kbd> / <kbd>F5</kbd> : Reload Current Page
 * <kbd>Alt</kbd> + <kbd>←</kbd> : Navigate Back
 * <kbd>Alt</kbd> + <kbd>→</kbd> : Navigate Forward
+
+---
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Freecode100Year/UltraLightBrowser&type=Date)](https://star-history.com/#Freecode100Year/UltraLightBrowser&Date)
+
+If you find **UltraLightBrowser** useful, please give it a ⭐ on GitHub! Your support motivates continuous improvement.
 
 ---
 
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
+

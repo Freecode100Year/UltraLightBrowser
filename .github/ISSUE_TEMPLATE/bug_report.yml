@@ -1,0 +1,56 @@
+name: "🐛 Bug Report / 问题反馈"
+description: "Report a bug or unexpected behavior in UltraLightBrowser / 报告程序异常或问题"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+        感谢反馈问题！请尽量填写以下信息以帮助我们快速定位。
+  - type: input
+    id: version
+    attributes:
+      label: "UltraLightBrowser Version / 程序版本"
+      description: "e.g. v1.1.1 (or commit hash)"
+      placeholder: "v1.1.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: "Operating System / 操作系统"
+      options:
+        - "Windows 11 (23H2/24H2)"
+        - "Windows 11 (22H2 or earlier)"
+        - "Windows 10"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: "Bug Description / 问题描述"
+      description: "A clear and concise description of what the bug is."
+      placeholder: "Describe what went wrong / 描述发生的具体异常"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Steps To Reproduce / 重现步骤"
+      description: "Steps to reproduce the behavior."
+      placeholder: |
+        1. Open UltraLightBrowser
+        2. Navigate to '...'
+        3. Click on '...'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected Behavior / 预期行为"
+      description: "What did you expect to happen instead?"
+      placeholder: "What should have happened"
+    validations:
+      required: false
