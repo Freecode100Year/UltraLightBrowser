@@ -412,8 +412,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
         m_webViewManager->SetUserActivityCallback([this]() {
             m_lastInteractionTick = GetTickCount64();
-            if (m_webViewManager && m_webViewManager->GetWebView() && PowerManager::Instance().IsSuspended()) {
-                PowerManager::Instance().HandleActivityResume(m_webViewManager->GetWebView());
+            if (m_webViewManager && m_webViewManager->GetWebView() &&
+                (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
+                PowerManager::Instance().HandleActivityResume(
+                    m_webViewManager->GetController(),
+                    m_webViewManager->GetWebView()
+                );
             }
         });
 
@@ -440,7 +444,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             // 5 minutes (300,000 ms) of inactivity when unfocused or minimized
             if (isUnfocused && (now - m_lastInteractionTick >= 300000)) {
                 if (m_webViewManager && m_webViewManager->GetWebView()) {
-                    PowerManager::Instance().HandleInactivitySuspend(m_webViewManager->GetWebView());
+                    bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
+                    PowerManager::Instance().HandleInactivitySuspend(
+                        m_webViewManager->GetController(),
+                        m_webViewManager->GetWebView(),
+                        isPlayingAudio
+                    );
                 }
             }
             return 0;
@@ -451,8 +460,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_ACTIVATE: {
         if (LOWORD(wParam) != WA_INACTIVE) {
             m_lastInteractionTick = GetTickCount64();
-            if (m_webViewManager && m_webViewManager->GetWebView() && PowerManager::Instance().IsSuspended()) {
-                PowerManager::Instance().HandleActivityResume(m_webViewManager->GetWebView());
+            if (m_webViewManager && m_webViewManager->GetWebView() &&
+                (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
+                PowerManager::Instance().HandleActivityResume(
+                    m_webViewManager->GetController(),
+                    m_webViewManager->GetWebView()
+                );
             }
         }
         break;
@@ -460,13 +473,36 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_SETFOCUS: {
         m_lastInteractionTick = GetTickCount64();
-        if (m_webViewManager && m_webViewManager->GetWebView() && PowerManager::Instance().IsSuspended()) {
-            PowerManager::Instance().HandleActivityResume(m_webViewManager->GetWebView());
+        if (m_webViewManager && m_webViewManager->GetWebView() &&
+            (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
+            PowerManager::Instance().HandleActivityResume(
+                m_webViewManager->GetController(),
+                m_webViewManager->GetWebView()
+            );
         }
         break;
     }
 
     case WM_SIZE: {
+        if (wParam == SIZE_MINIMIZED) {
+            if (m_webViewManager && m_webViewManager->GetWebView()) {
+                bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
+                PowerManager::Instance().HandleWindowMinimize(
+                    m_webViewManager->GetController(),
+                    m_webViewManager->GetWebView(),
+                    isPlayingAudio
+                );
+            }
+            return 0;
+        } else if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) {
+            if (m_webViewManager && m_webViewManager->GetWebView() &&
+                (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
+                PowerManager::Instance().HandleWindowRestore(
+                    m_webViewManager->GetController(),
+                    m_webViewManager->GetWebView()
+                );
+            }
+        }
         int w = LOWORD(lParam);
         int h = HIWORD(lParam);
         UpdateLayout(w, h);
@@ -643,9 +679,21 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_SYSCOMMAND: {
         if ((wParam & 0xFFF0) == SC_MINIMIZE) {
-            PowerManager::Instance().HandleWindowMinimize(m_webViewManager->GetWebView());
+            if (m_webViewManager && m_webViewManager->GetWebView()) {
+                bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
+                PowerManager::Instance().HandleWindowMinimize(
+                    m_webViewManager->GetController(),
+                    m_webViewManager->GetWebView(),
+                    isPlayingAudio
+                );
+            }
         } else if ((wParam & 0xFFF0) == SC_RESTORE) {
-            PowerManager::Instance().HandleWindowRestore(m_webViewManager->GetWebView());
+            if (m_webViewManager && m_webViewManager->GetWebView()) {
+                PowerManager::Instance().HandleWindowRestore(
+                    m_webViewManager->GetController(),
+                    m_webViewManager->GetWebView()
+                );
+            }
         }
         break;
     }

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(UltraLightBrowser
-    VERSION 1.2.0
+    VERSION 1.2.1
     DESCRIPTION "Minimal, Ultra-Fast Windows 11 Native Browser Shell"
     LANGUAGES CXX C
 )

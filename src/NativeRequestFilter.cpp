@@ -72,7 +72,17 @@ NativeRequestFilter::NativeRequestFilter() {
         L"yieldmo.com",
         L"ads-twitter.com",
         L"ads.tiktok.com",
-        L"analytics.tiktok.com"
+        L"analytics.tiktok.com",
+        L"connect.facebook.net",
+        L"sentry.io",
+        L"bugsnag.com",
+        L"amplitude.com",
+        L"log.byteoversea.com",
+        L"sensorsdata.cn",
+        L"app-measurement.com",
+        L"branch.io",
+        L"adjust.com",
+        L"appsflyer.com"
     };
 
     // Fast keyword substring matches in URL
@@ -86,7 +96,12 @@ NativeRequestFilter::NativeRequestFilter() {
         L"/gtag/js?id=",
         L"/gtm.js?id=",
         L"/hm.js?",
-        L"/beacon.js"
+        L"/beacon.js",
+        L"/beacon",
+        L"/collect?",
+        L"/pixel.gif",
+        L"/pixel.png",
+        L"/telemetry"
     };
 }
 

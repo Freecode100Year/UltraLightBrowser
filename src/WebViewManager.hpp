@@ -53,6 +53,13 @@ public:
     void SetFullScreenCallback(FullScreenCallback cb) { m_fullScreenCb = cb; }
     void SetZoomFactorChangedCallback(ZoomFactorChangedCallback cb) { m_zoomFactorChangedCb = cb; }
     void SetUserActivityCallback(UserActivityCallback cb) { m_userActivityCb = cb; }
+    void SetAudioPlayingCallback(std::function<void(bool)> cb) { m_audioPlayingCb = cb; }
+
+    // Audio & Visibility status
+    bool IsDocumentPlayingAudio() const { return m_isPlayingAudio; }
+    void SetVisible(bool isVisible);
+    bool IsVisible() const;
+    void ApplyMemoryUsageTargetLow();
 
     // Direct interface access
     ICoreWebView2Environment* GetEnvironment() const { return m_environment.get(); }
@@ -67,12 +74,17 @@ private:
     wil::com_ptr<ICoreWebView2Controller> m_controller;
     wil::com_ptr<ICoreWebView2> m_webView;
 
+    bool m_isPlayingAudio = false;
+    EventRegistrationToken m_audioPlayingToken{};
+
     ReadyCallback m_onReady;
     TitleChangedCallback m_titleChangedCb;
     SourceChangedCallback m_sourceChangedCb;
     FullScreenCallback m_fullScreenCb;
     ZoomFactorChangedCallback m_zoomFactorChangedCb;
     UserActivityCallback m_userActivityCb;
+    std::function<void(bool)> m_audioPlayingCb;
 };
 
 } // namespace UltraLight
+

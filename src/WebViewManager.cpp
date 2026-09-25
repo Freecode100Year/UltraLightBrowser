@@ -41,7 +41,13 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         L"--enable-async-dns "
         L"--media-cache-size=134217728 "
         L"--disk-cache-size=209715200 "
-        L"--disable-features=Translate,OptimizationHints,MediaRouter "
+        L"--disable-features=AudioServiceOutOfProcess,Translate,OptimizationHints,MediaRouter "
+        L"--disable-background-networking "
+        L"--disable-sync "
+        L"--disable-domain-reliability "
+        L"--disable-breakpad "
+        L"--no-pings "
+        L"--disable-speech-api "
         L"--no-first-run";
 
     options->put_AdditionalBrowserArguments(performanceArgs.c_str());
@@ -62,6 +68,9 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                             if (FAILED(res) || !controller) return res;
                             m_controller = controller;
                             m_controller->get_CoreWebView2(&m_webView);
+
+                            // Aggressive memory compression: LOW target level forces V8 Major GC and trims image decode cache
+                            ApplyMemoryUsageTargetLow();
 
                             // Use raw physical pixels for WebView2 bounds so it matches Win32 GetClientRect exactly
                             wil::com_ptr<ICoreWebView2Controller3> controller3;
@@ -279,6 +288,50 @@ void WebViewManager::RegisterEventHandlers() {
             nullptr
         );
     }
+
+    // Audio Playing State Changed (Media/Audio playback awareness)
+    wil::com_ptr<ICoreWebView2_8> webView8;
+    if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView8))) && webView8) {
+        webView8->add_IsDocumentPlayingAudioChanged(
+            Callback<ICoreWebView2IsDocumentPlayingAudioChangedEventHandler>(
+                [this](ICoreWebView2* sender, IUnknown* /*args*/) -> HRESULT {
+                    wil::com_ptr<ICoreWebView2_8> s8;
+                    if (SUCCEEDED(sender->QueryInterface(IID_PPV_ARGS(&s8))) && s8) {
+                        BOOL isPlaying = FALSE;
+                        if (SUCCEEDED(s8->get_IsDocumentPlayingAudio(&isPlaying))) {
+                            m_isPlayingAudio = (isPlaying != FALSE);
+                            if (m_audioPlayingCb) {
+                                m_audioPlayingCb(m_isPlayingAudio);
+                            }
+                        }
+                    }
+                    return S_OK;
+                }
+            ).Get(),
+            &m_audioPlayingToken
+        );
+    }
+}
+
+void WebViewManager::ApplyMemoryUsageTargetLow() {
+    if (!m_webView) return;
+    wil::com_ptr<ICoreWebView2_19> webView19;
+    if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView19))) && webView19) {
+        webView19->put_MemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
+    }
+}
+
+void WebViewManager::SetVisible(bool isVisible) {
+    if (m_controller) {
+        m_controller->put_IsVisible(isVisible ? TRUE : FALSE);
+    }
+}
+
+bool WebViewManager::IsVisible() const {
+    if (!m_controller) return false;
+    BOOL visible = FALSE;
+    m_controller->get_IsVisible(&visible);
+    return visible != FALSE;
 }
 
 void WebViewManager::Resize(const RECT& bounds) {
