@@ -706,7 +706,6 @@ void MainWindow::ShowDnsMenu() {
     }
 
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING | MF_GRAYED, 0, L"⚡ 屏幕刷新率: 240Hz (电竞超高刷已生效)");
     AppendMenuW(hMenu, MF_STRING, IDM_DNS_OPEN_SETTINGS, L"⚙  公共 DNS 详细 IPv4/IPv6 与高级设置...");
 
     RECT btnRect{};

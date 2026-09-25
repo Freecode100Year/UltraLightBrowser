@@ -206,14 +206,14 @@ LRESULT CALLBACK DlgWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_DLG_STATIC_DESC)), nullptr, nullptr);
         SendMessageW(ctx->hStaticDesc, WM_SETFONT, reinterpret_cast<WPARAM>(ctx->hFont), TRUE);
 
-        // 4. GroupBox for 240Hz status
-        HWND hGrpHz = CreateWindowExW(0, L"BUTTON", L"⚡ 渲染引擎与刷新率状态",
+        // 4. GroupBox for hardware acceleration and privacy status
+        HWND hGrpHz = CreateWindowExW(0, L"BUTTON", L"⚡ 硬件加速与隐私安全状态",
             WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             20, 365, 520, 55, hWnd, nullptr, nullptr, nullptr);
         SendMessageW(hGrpHz, WM_SETFONT, reinterpret_cast<WPARAM>(ctx->hFontBold), TRUE);
 
         HWND hLblHz = CreateWindowExW(0, L"STATIC",
-            L"🚀 屏幕刷新率: 240Hz (电竞超高刷渲染已激活，已解除 60 FPS 限制与 VSync 阻尼)",
+            L"🚀 GPU 硬件加速与原生 VSync 同步已就绪，退出时自动粉碎全部缓存与无痕浏览",
             WS_CHILD | WS_VISIBLE, 35, 388, 490, 20, hWnd, nullptr, nullptr, nullptr);
         SendMessageW(hLblHz, WM_SETFONT, reinterpret_cast<WPARAM>(ctx->hFont), TRUE);
 
@@ -609,7 +609,7 @@ void DnsManager::ShowDnsDialog(HWND hWndParent) {
     HWND hDlg = CreateWindowExW(
         WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         kDlgClassName,
-        L"公共 DNS 服务器设置 (支持知名 IPv4 & IPv6 双栈 | 240Hz 渲染)",
+        L"公共 DNS 服务器设置 (支持知名 IPv4 & IPv6 双栈 | 隐私防劫持)",
         WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
         posX, posY, dlgW, dlgH,
         hWndParent, nullptr, hInstance, &ctx);

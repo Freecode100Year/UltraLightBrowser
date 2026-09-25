@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.7/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.8/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -27,8 +27,8 @@
 
 可以在 GitHub Releases 中直接获取预编译的可用二进制程序：
 
-* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.7/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
-* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.1.7-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.7/UltraLightBrowser-v1.1.7-windows-x64.zip)**
+* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.8/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
+* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.1.8-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.8/UltraLightBrowser-v1.1.8-windows-x64.zip)**
 * 🔗 **[查看所有历史版本与 Release 资产](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
 ---
@@ -79,10 +79,9 @@ UltraLightBrowser/
 
 ## 🚀 Core Features
 
-### 1. 🏎️ Extreme Hardware Acceleration & 240Hz High Refresh Rate
+### 1. 🏎️ Extreme Hardware Acceleration & Network Optimization
 Through `WebViewManager`, the browser injects deep Chromium performance arguments on environment creation:
-* **240Hz 电竞级超高刷新率与无上限帧率**：`--disable-frame-rate-limit --max-gum-fps=240` 解除 Chromium 内部 60 FPS 渲染阻尼与帧率上限，完美匹配 144Hz / 240Hz / 360Hz 电竞高刷显示器，无论页面滚动还是 WebGL / Canvas / 动画均达到极致顺滑。
-* **GPU Rasterization & Zero-Copy**：`--enable-gpu-rasterization --enable-zero-copy --enable-accelerated-video-decode`
+* **GPU Rasterization & Zero-Copy**：`--enable-gpu-rasterization --enable-zero-copy --enable-accelerated-video-decode` 启用完整硬件解码与零拷贝渲染，保证高清/4K 视频播放丝滑流畅、不掉帧、低功耗。
 * **DirectComposition & Presentation**：原生 DirectComposition 交换链集成，跨多显示器 DPI 自适应无损渲染。
 * **AI Super Resolution**：`--enable-features=NvidiaVsr,IntelVsr,Prerender2,DnsOverHttps`
 * **Low-Latency Transport**：`--enable-quic --enable-async-dns` 零延迟异步 DNS 与 QUIC 快速传输。
@@ -103,7 +102,7 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
   * **自定义 DNS / DoH**：自由填入任意标准 DoH 节点 URI。
 * **双模快捷操作**：
   * 工具栏快捷菜单：点击 `[ 🌐 DNS ]` 按钮可一键开启/关闭公共 DNS，或直接单选切换服务商。
-  * 完整设置面板：提供完整的 IPv4/IPv6 地址展示、一键复制单条或全部 IP 节点、DoH 地址自定义及 240Hz 状态指示。
+  * 完整设置面板：提供完整的 IPv4/IPv6 地址展示、一键复制单条或全部 IP 节点与 DoH 地址自定义。
 * **双重内核级同步应用**：自动将安全 DNS 策略同步写入 `HKCU\SOFTWARE\Policies\Microsoft\Edge\WebView2` 注册表策略以及 Chromium 用户配置 `UserData/Default/Preferences`，保障权威解析与隐私安全。
 
 ### 3. 🔒 退出时强制清除所有缓存与临时文件（零痕迹无痕浏览保障）
