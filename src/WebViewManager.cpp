@@ -3,6 +3,7 @@
 #include "ElementBlocker.hpp"
 #include "ExtensionManager.hpp"
 #include "PowerManager.hpp"
+#include "StringUtils.hpp"
 #include <iostream>
 
 using namespace Microsoft::WRL;
@@ -194,12 +195,21 @@ void WebViewManager::Navigate(const std::wstring& url) {
     if (!m_webView) return;
 
     std::wstring target = url;
-    if (target.find(L"://") == std::wstring::npos) {
-        if (target.find(L'.') != std::wstring::npos && target.find(L' ') == std::wstring::npos) {
-            target = L"https://" + target;
-        } else {
-            target = L"https://www.google.com/search?q=" + target;
-        }
+    while (!target.empty() && iswspace(target.front())) target.erase(target.begin());
+    while (!target.empty() && iswspace(target.back())) target.pop_back();
+    if (target.empty()) return;
+
+    if (target.find(L"://") != std::wstring::npos ||
+        target.rfind(L"about:", 0) == 0 ||
+        target.rfind(L"data:", 0) == 0 ||
+        target.rfind(L"javascript:", 0) == 0) {
+        // Direct URL with recognized scheme
+    } else if (target.rfind(L"localhost", 0) == 0 || target.rfind(L"127.0.0.1", 0) == 0) {
+        target = L"http://" + target;
+    } else if (target.find(L'.') != std::wstring::npos && target.find(L' ') == std::wstring::npos) {
+        target = L"https://" + target;
+    } else {
+        target = L"https://www.google.com/search?q=" + StringUtils::UrlEncode(target);
     }
     m_webView->Navigate(target.c_str());
 }

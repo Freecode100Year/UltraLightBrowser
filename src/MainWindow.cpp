@@ -15,23 +15,6 @@
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
 #endif
 
-enum ControlID : WORD {
-    IDC_BTN_BACK = 1001,
-    IDC_BTN_FORWARD = 1002,
-    IDC_BTN_RELOAD = 1003,
-    IDC_EDIT_ADDRESS = 1004,
-    IDC_BTN_BLOCKER = 1005,
-    IDC_BTN_EXTENSIONS = 1006
-};
-
-enum ExtensionMenuID : UINT_PTR {
-    IDM_EXT_LOAD_UNPACKED = 2001,
-    IDM_EXT_INSTALL_CRX   = 2002,
-    IDM_EXT_OPEN_DIR      = 2003,
-    IDM_EXT_MANAGE        = 2004,
-    IDM_EXT_ITEM_BASE     = 2100
-};
-
 namespace UltraLight {
 
 MainWindow::MainWindow() : m_webViewManager(std::make_unique<WebViewManager>()) {}
@@ -148,9 +131,11 @@ void MainWindow::CreateToolbarControls() {
 
     m_hEditAddress = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_LEFT,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_EDIT_ADDRESS), m_hInstance, nullptr
     );
+    SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
+    SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"输入网址或搜索内容，按 Enter 访问"));
 
     m_hBtnBlocker = CreateWindowExW(
         0, L"BUTTON", L"🛡 Blocker",
@@ -214,27 +199,77 @@ void MainWindow::UpdateLayout(int width, int height) {
 
 LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
     auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+    static bool s_needSelectAllOnMouseUp = false;
 
-    if (uMsg == WM_KEYDOWN && wParam == VK_RETURN) {
-        wchar_t buffer[2048]{};
-        GetWindowTextW(hWnd, buffer, static_cast<int>(std::size(buffer)));
-        std::wstring input = buffer;
-        while (!input.empty() && iswspace(input.front())) input.erase(input.begin());
-        while (!input.empty() && iswspace(input.back())) input.pop_back();
+    switch (uMsg) {
+    case WM_SETFOCUS:
+        s_needSelectAllOnMouseUp = true;
+        break;
 
-        if (_wcsicmp(input.c_str(), L"chrome://extensions") == 0 ||
-            _wcsicmp(input.c_str(), L"edge://extensions") == 0 ||
-            _wcsicmp(input.c_str(), L"about:extensions") == 0) {
-            if (self) {
-                ExtensionManager::Instance().ShowExtensionsDialog(self->GetHwnd());
+    case WM_KILLFOCUS:
+        s_needSelectAllOnMouseUp = false;
+        break;
+
+    case WM_LBUTTONUP: {
+        LRESULT res = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+        if (s_needSelectAllOnMouseUp) {
+            s_needSelectAllOnMouseUp = false;
+            SendMessageW(hWnd, EM_SETSEL, 0, -1);
+        }
+        return res;
+    }
+
+    case WM_KEYDOWN:
+        if (wParam == VK_RETURN) {
+            wchar_t buffer[2048]{};
+            GetWindowTextW(hWnd, buffer, static_cast<int>(std::size(buffer)));
+            std::wstring input = buffer;
+            while (!input.empty() && iswspace(input.front())) input.erase(input.begin());
+            while (!input.empty() && iswspace(input.back())) input.pop_back();
+
+            if (input.empty()) return 0;
+
+            if (_wcsicmp(input.c_str(), L"chrome://extensions") == 0 ||
+                _wcsicmp(input.c_str(), L"edge://extensions") == 0 ||
+                _wcsicmp(input.c_str(), L"about:extensions") == 0) {
+                if (self) {
+                    ExtensionManager::Instance().ShowExtensionsDialog(self->GetHwnd());
+                }
+                return 0;
+            }
+
+            if (self && self->m_webViewManager) {
+                self->m_webViewManager->Navigate(input);
+                if (self->m_webViewManager->GetController()) {
+                    self->m_webViewManager->GetController()->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+                }
+            }
+            return 0;
+        } else if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessageW(hWnd, EM_SETSEL, 0, -1);
+            return 0;
+        } else if (wParam == VK_ESCAPE) {
+            if (self && self->m_webViewManager && self->m_webViewManager->GetWebView()) {
+                wil::unique_cotaskmem_string uri;
+                if (SUCCEEDED(self->m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
+                    SetWindowTextW(hWnd, uri.get());
+                }
+                if (self->m_webViewManager->GetController()) {
+                    self->m_webViewManager->GetController()->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+                }
             }
             return 0;
         }
+        break;
 
-        if (self && self->m_webViewManager) {
-            self->m_webViewManager->Navigate(input);
+    case WM_CHAR:
+        if (wParam == VK_RETURN) {
+            return 0; // Suppress beep
         }
-        return 0;
+        break;
+
+    default:
+        break;
     }
 
     return DefSubclassProc(hWnd, uMsg, wParam, lParam);
@@ -251,7 +286,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         });
 
         m_webViewManager->SetSourceChangedCallback([this](const std::wstring& uri) {
-            SetWindowTextW(m_hEditAddress, uri.c_str());
+            if (GetFocus() != m_hEditAddress) {
+                SetWindowTextW(m_hEditAddress, uri.c_str());
+            }
         });
 
         // Initialize WebView2
@@ -313,10 +350,23 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDC_BTN_RELOAD:
             m_webViewManager->Reload();
             break;
-        case IDC_EDIT_ADDRESS:
+        case IDM_FOCUS_ADDRESS_BAR:
             SetFocus(m_hEditAddress);
             SendMessageW(m_hEditAddress, EM_SETSEL, 0, -1);
             break;
+        case IDC_EDIT_ADDRESS: {
+            WORD notify = HIWORD(wParam);
+            if (notify == EN_KILLFOCUS) {
+                // When address bar loses focus, restore current page URL
+                if (m_webViewManager && m_webViewManager->GetWebView()) {
+                    wil::unique_cotaskmem_string uri;
+                    if (SUCCEEDED(m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
+                        SetWindowTextW(m_hEditAddress, uri.get());
+                    }
+                }
+            }
+            break;
+        }
         case IDC_BTN_BLOCKER:
             ElementBlocker::Instance().TogglePickerMode(m_webViewManager->GetWebView());
             break;

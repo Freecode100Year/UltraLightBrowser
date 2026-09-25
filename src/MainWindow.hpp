@@ -8,6 +8,24 @@
 
 namespace UltraLight {
 
+enum ControlID : WORD {
+    IDC_BTN_BACK        = 1001,
+    IDC_BTN_FORWARD     = 1002,
+    IDC_BTN_RELOAD      = 1003,
+    IDC_EDIT_ADDRESS    = 1004,
+    IDC_BTN_BLOCKER     = 1005,
+    IDC_BTN_EXTENSIONS  = 1006
+};
+
+enum AppCommandID : WORD {
+    IDM_EXT_LOAD_UNPACKED   = 2001,
+    IDM_EXT_INSTALL_CRX     = 2002,
+    IDM_EXT_OPEN_DIR        = 2003,
+    IDM_EXT_MANAGE          = 2004,
+    IDM_FOCUS_ADDRESS_BAR   = 2005,
+    IDM_EXT_ITEM_BASE       = 2100
+};
+
 class MainWindow {
 public:
     MainWindow();

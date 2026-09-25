@@ -24,4 +24,23 @@ inline std::string WideToUtf8(std::wstring_view wstr) {
     return out;
 }
 
+inline std::wstring UrlEncode(std::wstring_view str) {
+    std::string utf8 = WideToUtf8(str);
+    std::wstring out;
+    out.reserve(utf8.size() * 3);
+    for (unsigned char c : utf8) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~') {
+            out += static_cast<wchar_t>(c);
+        } else if (c == ' ') {
+            out += L'+';
+        } else {
+            wchar_t hex[8];
+            swprintf_s(hex, L"%%%02X", static_cast<unsigned int>(c));
+            out += hex;
+        }
+    }
+    return out;
+}
+
 } // namespace UltraLight::StringUtils
