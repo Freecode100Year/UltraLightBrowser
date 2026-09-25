@@ -213,7 +213,7 @@ LRESULT CALLBACK DlgWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SendMessageW(hGrpHz, WM_SETFONT, reinterpret_cast<WPARAM>(ctx->hFontBold), TRUE);
 
         HWND hLblHz = CreateWindowExW(0, L"STATIC",
-            L"🚀 GPU 硬件加速与原生 VSync 同步已就绪，退出时自动粉碎全部缓存与无痕浏览",
+            L"🚀 120Hz 高清流畅刷新率与原生 VSync 同步已就绪，退出时自动粉碎全部缓存与无痕浏览",
             WS_CHILD | WS_VISIBLE, 35, 388, 490, 20, hWnd, nullptr, nullptr, nullptr);
         SendMessageW(hLblHz, WM_SETFONT, reinterpret_cast<WPARAM>(ctx->hFont), TRUE);
 

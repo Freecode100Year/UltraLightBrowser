@@ -29,6 +29,8 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
         L"--enable-features=NvidiaVsr,IntelVsr,Prerender2,DnsOverHttps "
+        L"--fake-vsync-rate=120 "
+        L"--max-gum-fps=120 "
         L"--enable-quic "
         L"--enable-async-dns "
         L"--media-cache-size=134217728 "
