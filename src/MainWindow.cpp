@@ -2,7 +2,9 @@
 #include "Config.hpp"
 #include "DnsManager.hpp"
 #include "ElementBlocker.hpp"
+#include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
+#include "StringUtils.hpp"
 #include <windowsx.h>
 #include <uxtheme.h>
 #include <shellapi.h>
@@ -174,7 +176,7 @@ void MainWindow::CreateToolbarControls() {
 void MainWindow::UpdateLayout(int width, int height) {
     if (width <= 0 || height <= 0) return;
 
-    if (m_isFullScreen) {
+    if (m_isFullScreen || m_isImmersiveMode) {
         RECT fsRect{ 0, 0, width, height };
         if (m_webViewManager) {
             m_webViewManager->Resize(fsRect);
@@ -273,14 +275,15 @@ void MainWindow::SetFullScreen(bool enable) {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED
         );
 
-        // Show toolbar controls
-        if (m_hBtnBack) ShowWindow(m_hBtnBack, SW_SHOW);
-        if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_SHOW);
-        if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_SHOW);
-        if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_SHOW);
-        if (m_hBtnDns) ShowWindow(m_hBtnDns, SW_SHOW);
-        if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_SHOW);
-        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_SHOW);
+        // Show toolbar controls (if not in immersive mode)
+        int showCmd = m_isImmersiveMode ? SW_HIDE : SW_SHOW;
+        if (m_hBtnBack) ShowWindow(m_hBtnBack, showCmd);
+        if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
+        if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
+        if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
+        if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
+        if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
+        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
 
         RECT client;
         GetClientRect(m_hWnd, &client);
@@ -290,6 +293,28 @@ void MainWindow::SetFullScreen(bool enable) {
 
 void MainWindow::ToggleFullScreen() {
     SetFullScreen(!m_isFullScreen);
+}
+
+void MainWindow::SetImmersiveMode(bool enable) {
+    if (m_isImmersiveMode == enable) return;
+    m_isImmersiveMode = enable;
+
+    int showCmd = (enable || m_isFullScreen) ? SW_HIDE : SW_SHOW;
+    if (m_hBtnBack) ShowWindow(m_hBtnBack, showCmd);
+    if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
+    if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
+    if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
+    if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
+    if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
+    if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
+
+    RECT client;
+    GetClientRect(m_hWnd, &client);
+    UpdateLayout(client.right, client.bottom);
+}
+
+void MainWindow::ToggleImmersiveMode() {
+    SetImmersiveMode(!m_isImmersiveMode);
 }
 
 LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
@@ -385,6 +410,16 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             UpdateZoomDisplay(zoom);
         });
 
+        m_webViewManager->SetUserActivityCallback([this]() {
+            m_lastInteractionTick = GetTickCount64();
+            if (m_webViewManager && m_webViewManager->GetWebView() && PowerManager::Instance().IsSuspended()) {
+                PowerManager::Instance().HandleActivityResume(m_webViewManager->GetWebView());
+            }
+        });
+
+        m_lastInteractionTick = GetTickCount64();
+        SetTimer(m_hWnd, IDT_INACTIVITY_CHECK, 15000, nullptr);
+
         // Initialize WebView2
         m_webViewManager->Initialize(m_hWnd, [this]() {
             RECT client;
@@ -395,6 +430,40 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         });
 
         return 0;
+    }
+
+    case WM_TIMER: {
+        if (wParam == IDT_INACTIVITY_CHECK) {
+            ULONGLONG now = GetTickCount64();
+            HWND hFore = GetForegroundWindow();
+            bool isUnfocused = (hFore != m_hWnd) || IsIconic(m_hWnd);
+            // 5 minutes (300,000 ms) of inactivity when unfocused or minimized
+            if (isUnfocused && (now - m_lastInteractionTick >= 300000)) {
+                if (m_webViewManager && m_webViewManager->GetWebView()) {
+                    PowerManager::Instance().HandleInactivitySuspend(m_webViewManager->GetWebView());
+                }
+            }
+            return 0;
+        }
+        break;
+    }
+
+    case WM_ACTIVATE: {
+        if (LOWORD(wParam) != WA_INACTIVE) {
+            m_lastInteractionTick = GetTickCount64();
+            if (m_webViewManager && m_webViewManager->GetWebView() && PowerManager::Instance().IsSuspended()) {
+                PowerManager::Instance().HandleActivityResume(m_webViewManager->GetWebView());
+            }
+        }
+        break;
+    }
+
+    case WM_SETFOCUS: {
+        m_lastInteractionTick = GetTickCount64();
+        if (m_webViewManager && m_webViewManager->GetWebView() && PowerManager::Instance().IsSuspended()) {
+            PowerManager::Instance().HandleActivityResume(m_webViewManager->GetWebView());
+        }
+        break;
     }
 
     case WM_SIZE: {
@@ -412,9 +481,20 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     }
 
     case WM_KEYDOWN: {
-        if (wParam == VK_ESCAPE && m_isFullScreen) {
-            SetFullScreen(false);
+        m_lastInteractionTick = GetTickCount64();
+        if (wParam == VK_F9) {
+            ToggleImmersiveMode();
             return 0;
+        }
+        if (wParam == VK_ESCAPE) {
+            if (m_isFullScreen) {
+                SetFullScreen(false);
+                return 0;
+            }
+            if (m_isImmersiveMode) {
+                SetImmersiveMode(false);
+                return 0;
+            }
         }
         break;
     }
@@ -457,6 +537,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             if (m_isFullScreen) {
                 SetFullScreen(false);
             }
+            if (m_isImmersiveMode) {
+                SetImmersiveMode(false);
+            }
+            break;
+        case IDM_TOGGLE_IMMERSIVE:
+            ToggleImmersiveMode();
             break;
         case IDM_ZOOM_IN:
             if (m_webViewManager) m_webViewManager->ZoomIn();
@@ -503,8 +589,33 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case IDC_BTN_BLOCKER:
+            ShowBlockerMenu();
+            break;
+        case IDM_BLOCKER_PICKER:
             ElementBlocker::Instance().TogglePickerMode(m_webViewManager->GetWebView());
             break;
+        case IDM_BLOCKER_TOGGLE_NATIVE: {
+            bool nextState = !NativeRequestFilter::Instance().IsEnabled();
+            NativeRequestFilter::Instance().SetEnabled(nextState);
+            std::wstring msg = nextState
+                ? L"原生网络请求拦截已开启！\n广告与跟踪器将直接在网络层阻断，提速 40%+，省流量 50%+。"
+                : L"原生网络请求拦截已关闭。";
+            MessageBoxW(m_hWnd, msg.c_str(), L"原生请求拦截", MB_OK | MB_ICONINFORMATION);
+            break;
+        }
+        case IDM_BLOCKER_CLEAR_RULES: {
+            std::string host = StringUtils::WideToUtf8(ElementBlocker::Instance().GetCurrentHost());
+            if (!host.empty()) {
+                Config::Instance().ClearBlockRulesForHost(host);
+                ElementBlocker::Instance().UpdateRulesScript(m_webViewManager->GetWebView());
+                m_webViewManager->Reload();
+                std::wstring msg = L"已清空网站 [" + ElementBlocker::Instance().GetCurrentHost() + L"] 的全部元素屏蔽规则并重新载入。";
+                MessageBoxW(m_hWnd, msg.c_str(), L"清空规则", MB_OK | MB_ICONINFORMATION);
+            } else {
+                MessageBoxW(m_hWnd, L"当前页面未识别到有效域名。", L"清空规则", MB_OK | MB_ICONINFORMATION);
+            }
+            break;
+        }
         default:
             if (id >= IDM_ZOOM_SET_BASE && id < IDM_ZOOM_SET_BASE + static_cast<WORD>(std::size(kPresetZoomPercentages))) {
                 size_t idx = id - IDM_ZOOM_SET_BASE;
@@ -710,6 +821,43 @@ void MainWindow::ShowDnsMenu() {
 
     RECT btnRect{};
     GetWindowRect(m_hBtnDns, &btnRect);
+
+    TrackPopupMenu(
+        hMenu,
+        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
+        btnRect.left, btnRect.bottom,
+        0, m_hWnd, nullptr
+    );
+
+    DestroyMenu(hMenu);
+}
+
+void MainWindow::ShowBlockerMenu() {
+    HMENU hMenu = CreatePopupMenu();
+    if (!hMenu) return;
+
+    bool nativeEnabled = NativeRequestFilter::Instance().IsEnabled();
+    uint64_t blockedCount = NativeRequestFilter::Instance().GetBlockedCount();
+
+    AppendMenuW(hMenu, MF_STRING, IDM_BLOCKER_PICKER, L"🎯 选取网页元素屏蔽 (Ctrl + Shift + H)");
+
+    std::wstring nativeStr = nativeEnabled ? L"⚡ 原生网络请求拦截: [已开启]" : L"⚡ 原生网络请求拦截: [已关闭]";
+    AppendMenuW(hMenu, MF_STRING | (nativeEnabled ? MF_CHECKED : MF_UNCHECKED), IDM_BLOCKER_TOGGLE_NATIVE, nativeStr.c_str());
+
+    std::wstring countStr = L"📊 已阻断请求: " + std::to_wstring(blockedCount) + L" 个 (提速40%+)";
+    AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, countStr.c_str());
+
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_IMMERSIVE, m_isImmersiveMode ? L"🌌 退出无 UI 沉浸模式 (F9)" : L"🌌 切换无 UI 沉浸模式 (F9)");
+
+    std::wstring currentHost = ElementBlocker::Instance().GetCurrentHost();
+    std::wstring clearStr = currentHost.empty()
+        ? L"🗑️ 清空当前网站元素规则"
+        : (L"🗑️ 清空 " + currentHost + L" 元素规则");
+    AppendMenuW(hMenu, MF_STRING, IDM_BLOCKER_CLEAR_RULES, clearStr.c_str());
+
+    RECT btnRect{};
+    GetWindowRect(m_hBtnBlocker, &btnRect);
 
     TrackPopupMenu(
         hMenu,

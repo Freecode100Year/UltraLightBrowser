@@ -28,6 +28,7 @@ public:
     bool HandleWebMessage(const std::wstring& messageJson, const std::wstring& sourceUri = L"");
 
     bool IsPickerActive() const { return m_pickerActive; }
+    const std::wstring& GetCurrentHost() const { return m_currentHost; }
 
 private:
     ElementBlocker() = default;

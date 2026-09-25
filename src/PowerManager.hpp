@@ -24,6 +24,9 @@ public:
     // Memory trimming & suspension
     void HandleWindowMinimize(ICoreWebView2* webView);
     void HandleWindowRestore(ICoreWebView2* webView);
+    void HandleInactivitySuspend(ICoreWebView2* webView);
+    void HandleActivityResume(ICoreWebView2* webView);
+    bool IsSuspended() const { return m_isSuspended; }
 
     // Release working set
     void TrimWorkingSet();

@@ -34,6 +34,7 @@ public:
     std::string GetBlockRulesForHost(const std::string& host);
     std::unordered_map<std::string, std::vector<std::string>> GetAllBlockRules() const;
     void AddBlockRule(const std::string& host, const std::string& selector);
+    void ClearBlockRulesForHost(const std::string& host);
 
 private:
     Config();

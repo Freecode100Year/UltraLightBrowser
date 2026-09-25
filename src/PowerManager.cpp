@@ -91,6 +91,14 @@ void PowerManager::HandleWindowRestore(ICoreWebView2* webView) {
     }
 }
 
+void PowerManager::HandleInactivitySuspend(ICoreWebView2* webView) {
+    HandleWindowMinimize(webView);
+}
+
+void PowerManager::HandleActivityResume(ICoreWebView2* webView) {
+    HandleWindowRestore(webView);
+}
+
 void PowerManager::TrimWorkingSet() {
     // Release physical memory back to system down to ~20MB
     SetProcessWorkingSetSize(GetCurrentProcess(), static_cast<SIZE_T>(-1), static_cast<SIZE_T>(-1));

@@ -2,6 +2,7 @@
 #include "MainWindow.hpp"
 #include "Config.hpp"
 #include "ElementBlocker.hpp"
+#include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
 #include <iostream>
@@ -23,14 +24,19 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
 
-    // Inject the full performance, hardware acceleration, and low-latency network flags
+    // Inject pure hardware GPU pipeline, aggressive discard, 120Hz VSync and low-latency network flags
     std::wstring performanceArgs =
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
-        L"--enable-features=NvidiaVsr,IntelVsr,Prerender2,DnsOverHttps "
+        L"--enable-features=NvidiaVsr,IntelVsr,Prerender2,DnsOverHttps,HighEfficiencyModeAvailable,PageDiscarding,Freezer,BatterySaverModeAvailable "
         L"--fake-vsync-rate=120 "
         L"--max-gum-fps=120 "
+        L"--disable-software-rasterizer "
+        L"--disable-gpu-watchdog "
+        L"--enable-hardware-overlays=\"single-fullscreen,single-on-top,underlay\" "
+        L"--enable-native-gpu-memory-buffers "
+        L"--intensive-wake-up-throttling "
         L"--enable-quic "
         L"--enable-async-dns "
         L"--media-cache-size=134217728 "
@@ -72,6 +78,10 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                                             if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
                                                 UINT key = 0;
                                                 if (SUCCEEDED(args->get_VirtualKey(&key))) {
+                                                    if (m_userActivityCb) {
+                                                        m_userActivityCb();
+                                                    }
+
                                                     bool isCtrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
                                                     bool isShift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
                                                     bool isAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
@@ -107,6 +117,19 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                                                             args->put_Handled(TRUE);
                                                             return S_OK;
                                                         }
+                                                        // Immersive Mode: Ctrl + Shift + U
+                                                        if (isShift && (key == 'U' || key == 'u')) {
+                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_TOGGLE_IMMERSIVE, 0), 0);
+                                                            args->put_Handled(TRUE);
+                                                            return S_OK;
+                                                        }
+                                                    }
+
+                                                    // Immersive Mode: F9
+                                                    if (key == VK_F9) {
+                                                        PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_TOGGLE_IMMERSIVE, 0), 0);
+                                                        args->put_Handled(TRUE);
+                                                        return S_OK;
                                                     }
 
                                                     if (key == VK_F11) {
@@ -137,6 +160,7 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
 
                             // Initialize modules
                             ElementBlocker::Instance().Initialize(m_webView.get());
+                            NativeRequestFilter::Instance().Initialize(m_webView.get(), m_environment.get());
 
                             // Apply QoS optimizations
                             PowerManager::Instance().DisableEcoQoS();

@@ -25,8 +25,12 @@ enum AppCommandID : WORD {
     IDM_ZOOM_IN             = 2004,
     IDM_ZOOM_OUT            = 2005,
     IDM_ZOOM_RESET          = 2006,
+    IDM_TOGGLE_IMMERSIVE    = 2007,
     IDM_DNS_TOGGLE_ENABLE   = 2010,
     IDM_DNS_OPEN_SETTINGS   = 2011,
+    IDM_BLOCKER_PICKER      = 2012,
+    IDM_BLOCKER_TOGGLE_NATIVE = 2013,
+    IDM_BLOCKER_CLEAR_RULES = 2014,
     IDM_ZOOM_SET_BASE       = 2020,
     IDM_DNS_SELECT_BASE     = 2100
 };
@@ -41,6 +45,9 @@ public:
     void SetFullScreen(bool enable);
     void ToggleFullScreen();
     bool IsFullScreen() const { return m_isFullScreen; }
+    void SetImmersiveMode(bool enable);
+    void ToggleImmersiveMode();
+    bool IsImmersiveMode() const { return m_isImmersiveMode; }
 
 private:
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -56,6 +63,7 @@ private:
     void UpdateZoomDisplay(double zoom);
     void ShowDnsMenu();
     void UpdateDnsDisplay();
+    void ShowBlockerMenu();
 
     HWND m_hWnd = nullptr;
     HINSTANCE m_hInstance = nullptr;
@@ -74,8 +82,12 @@ private:
     int m_topbarHeight = 44;
 
     bool m_isFullScreen = false;
+    bool m_isImmersiveMode = false;
     WINDOWPLACEMENT m_wpPrev{ sizeof(WINDOWPLACEMENT) };
     DWORD m_dwStylePrev = 0;
+
+    ULONGLONG m_lastInteractionTick = 0;
+    static constexpr UINT_PTR IDT_INACTIVITY_CHECK = 5001;
 
     std::unique_ptr<WebViewManager> m_webViewManager;
 };

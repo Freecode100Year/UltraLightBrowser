@@ -174,4 +174,12 @@ void Config::AddBlockRule(const std::string& host, const std::string& selector) 
     Save();
 }
 
+void Config::ClearBlockRulesForHost(const std::string& host) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_hostBlockRules.erase(host);
+    }
+    Save();
+}
+
 } // namespace UltraLight

@@ -17,6 +17,7 @@ public:
     using SourceChangedCallback = std::function<void(const std::wstring&)>;
     using FullScreenCallback = std::function<void(bool)>;
     using ZoomFactorChangedCallback = std::function<void(double)>;
+    using UserActivityCallback = std::function<void()>;
 
     WebViewManager();
     ~WebViewManager() = default;
@@ -51,6 +52,7 @@ public:
     void SetSourceChangedCallback(SourceChangedCallback cb) { m_sourceChangedCb = cb; }
     void SetFullScreenCallback(FullScreenCallback cb) { m_fullScreenCb = cb; }
     void SetZoomFactorChangedCallback(ZoomFactorChangedCallback cb) { m_zoomFactorChangedCb = cb; }
+    void SetUserActivityCallback(UserActivityCallback cb) { m_userActivityCb = cb; }
 
     // Direct interface access
     ICoreWebView2Environment* GetEnvironment() const { return m_environment.get(); }
@@ -70,6 +72,7 @@ private:
     SourceChangedCallback m_sourceChangedCb;
     FullScreenCallback m_fullScreenCb;
     ZoomFactorChangedCallback m_zoomFactorChangedCb;
+    UserActivityCallback m_userActivityCb;
 };
 
 } // namespace UltraLight

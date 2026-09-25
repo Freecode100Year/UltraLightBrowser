@@ -81,15 +81,24 @@ void ElementBlocker::UpdateRulesScript(ICoreWebView2* webView) {
                         }
                     }
 
-                    if (!selectors.length) return;
-
-                    let style = document.getElementById('__ultralight_blocker_css__');
-                    if (!style) {
-                        style = document.createElement('style');
-                        style.id = '__ultralight_blocker_css__';
-                        (document.head || document.documentElement).appendChild(style);
+                    if (selectors.length) {
+                        let style = document.getElementById('__ultralight_blocker_css__');
+                        if (!style) {
+                            style = document.createElement('style');
+                            style.id = '__ultralight_blocker_css__';
+                            (document.head || document.documentElement).appendChild(style);
+                        }
+                        style.textContent = selectors.map(function(s) { return s + ' { display: none !important; }'; }).join('\n');
                     }
-                    style.textContent = selectors.map(function(s) { return s + ' { display: none !important; }'; }).join('\n');
+
+                    // Pure GPU hardware pipeline: hardware surface promotion & throttle runaway backdrop-filter CSS
+                    let gpuStyle = document.getElementById('__ultralight_gpu_pipe__');
+                    if (!gpuStyle) {
+                        gpuStyle = document.createElement('style');
+                        gpuStyle.id = '__ultralight_gpu_pipe__';
+                        gpuStyle.textContent = 'video, canvas { transform: translateZ(0); } @media (prefers-reduced-transparency: reduce) { * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; } }';
+                        (document.head || document.documentElement).appendChild(gpuStyle);
+                    }
                 } catch(e) {}
             }
 
