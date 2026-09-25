@@ -46,7 +46,7 @@ int WINAPI wWinMain(
 
     HWND hWnd = mainWindow->GetHwnd();
 
-    // 7. Register Global Accelerators (Ctrl+Shift+H, Ctrl+Shift+E, Ctrl+R, F5, Ctrl+L, Alt+Left, Alt+Right)
+    // 7. Register Global Accelerators (Ctrl+Shift+H, Ctrl+Shift+E, Ctrl+R, F5, Ctrl+L, Alt+Left, Alt+Right, F11)
     ACCEL accels[] = {
         { FCONTROL | FSHIFT | FVIRTKEY, 'H', UltraLight::IDC_BTN_BLOCKER },
         { FCONTROL | FSHIFT | FVIRTKEY, 'E', UltraLight::IDC_BTN_EXTENSIONS },
@@ -54,7 +54,8 @@ int WINAPI wWinMain(
         { FVIRTKEY, VK_F5, UltraLight::IDC_BTN_RELOAD },
         { FCONTROL | FVIRTKEY, 'L', UltraLight::IDM_FOCUS_ADDRESS_BAR },
         { FALT | FVIRTKEY, VK_LEFT, UltraLight::IDC_BTN_BACK },
-        { FALT | FVIRTKEY, VK_RIGHT, UltraLight::IDC_BTN_FORWARD }
+        { FALT | FVIRTKEY, VK_RIGHT, UltraLight::IDC_BTN_FORWARD },
+        { FVIRTKEY, VK_F11, UltraLight::IDM_TOGGLE_FULLSCREEN }
     };
     HACCEL hAccel = CreateAcceleratorTableW(accels, static_cast<int>(std::size(accels)));
 

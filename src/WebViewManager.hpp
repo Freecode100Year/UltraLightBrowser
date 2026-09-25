@@ -25,6 +25,7 @@ public:
 
     // Synchronize bounds on WM_SIZE
     void Resize(const RECT& bounds);
+    void NotifyParentWindowPositionChanged();
 
     // Navigation controls
     void Navigate(const std::wstring& url);

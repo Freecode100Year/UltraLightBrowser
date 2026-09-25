@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.1/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.2/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-UltraLightBrowser.exe-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -27,8 +27,8 @@
 
 可以在 GitHub Releases 中直接获取预编译的可用二进制程序：
 
-* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.1/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
-* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.1.1-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.1/UltraLightBrowser-v1.1.1-windows-x64.zip)**
+* 🚀 **[下载独立可执行程序 (UltraLightBrowser.exe)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.2/UltraLightBrowser.exe)**（推荐：单文件，双击即用）
+* 📦 **[下载便携完整压缩包 (UltraLightBrowser-v1.1.2-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.1.2/UltraLightBrowser-v1.1.2-windows-x64.zip)**
 * 🔗 **[查看所有历史版本与 Release 资产](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
 ---
@@ -82,7 +82,7 @@ UltraLightBrowser/
 ### 1. 🏎️ Extreme Hardware Acceleration & Network Optimization
 Through `WebViewManager`, the browser injects deep Chromium performance arguments on environment creation:
 * **GPU Rasterization & Zero-Copy**: `--enable-gpu-rasterization --enable-zero-copy --enable-accelerated-video-decode`
-* **DirectComposition Overlays**: `--enable-hardware-overlays=single-fullscreen,single-on-top --disable-direct-composition-video-overlays=false`
+* **DirectComposition & Presentation**: Native DirectComposition surface integration with seamless multi-monitor DPI scaling.
 * **AI Super Resolution**: `--enable-features=NvidiaVsr,IntelVsr,Prerender2`
 * **Low-Latency Transport**: `--enable-quic --quic-version=h3 --enable-bbr --enable-async-dns --enable-tcp-fast-open`
 * **Bloatware Purge**: `--disable-features=Translate,OptimizationHints,MediaRouter --no-first-run` (Retains Safe Browsing and security component background updates).
@@ -110,6 +110,11 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **EcoQoS Disabling**: Traverses process trees to disable `PROCESS_POWER_THROTTLING_EXECUTION_SPEED`, ensuring maximum frame rates and zero micro-stutters during heavy media playback.
 * **Smart Memory Trimming**: On `WM_SYSCOMMAND (SC_MINIMIZE)`, signals `ICoreWebView2_3::TrySuspend` and invokes `SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1)` (`EmptyWorkingSet`), purging unneeded physical pages down to ~20MB.
 * **Instant Resume**: Restores execution immediately upon `SC_RESTORE` or focus.
+
+### 5. 📺 Fullscreen HTML5 Video & Raw-Pixel Adaptive Viewport
+* **HTML5 Video Fullscreen**: Full support for YouTube, Bilibili, and modern web video players. Automatically transitions the Win32 window to borderless full-screen on the active monitor, hides toolbars, and expands WebView2 bounds smoothly.
+* **F11 & Escape Keyboard Control**: Seamlessly toggle fullscreen with <kbd>F11</kbd> or exit with <kbd>Esc</kbd> across both the browser frame and web contents.
+* **Raw-Pixel Viewport Scaling (`COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS`)**: Matches WebView2 bounds 1:1 with Win32 client area physical pixels, eliminating DIP scaling distortion and ensuring webpage layouts adapt dynamically and crisply to any window size, maximization state, or monitor DPI (100%, 125%, 150%, 200%).
 
 ---
 
@@ -156,6 +161,8 @@ cmake --build build --config Release
 
 ## ⌨️ Shortcuts
 
+* <kbd>F11</kbd> : Toggle Fullscreen Mode
+* <kbd>Esc</kbd> : Exit Fullscreen / Reset Address Bar
 * <kbd>Ctrl</kbd> + <kbd>L</kbd> : Focus Address Bar
 * <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> : Open Extensions Management Center
 * <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Toggle Interactive Element Hiding / Picker Mode

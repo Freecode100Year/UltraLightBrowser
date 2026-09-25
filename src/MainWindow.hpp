@@ -23,6 +23,8 @@ enum AppCommandID : WORD {
     IDM_EXT_OPEN_DIR        = 2003,
     IDM_EXT_MANAGE          = 2004,
     IDM_FOCUS_ADDRESS_BAR   = 2005,
+    IDM_TOGGLE_FULLSCREEN   = 2006,
+    IDM_EXIT_FULLSCREEN     = 2007,
     IDM_EXT_ITEM_BASE       = 2100
 };
 
@@ -33,6 +35,9 @@ public:
 
     bool Create(HINSTANCE hInstance, int nCmdShow);
     HWND GetHwnd() const { return m_hWnd; }
+    void SetFullScreen(bool enable);
+    void ToggleFullScreen();
+    bool IsFullScreen() const { return m_isFullScreen; }
 
 private:
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -61,6 +66,10 @@ private:
 
     HFONT m_hUiFont = nullptr;
     int m_topbarHeight = 44;
+
+    bool m_isFullScreen = false;
+    WINDOWPLACEMENT m_wpPrev{ sizeof(WINDOWPLACEMENT) };
+    DWORD m_dwStylePrev = 0;
 
     std::unique_ptr<WebViewManager> m_webViewManager;
 };

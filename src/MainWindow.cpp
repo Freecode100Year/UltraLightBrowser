@@ -158,6 +158,14 @@ void MainWindow::CreateToolbarControls() {
 void MainWindow::UpdateLayout(int width, int height) {
     if (width <= 0 || height <= 0) return;
 
+    if (m_isFullScreen) {
+        RECT fsRect{ 0, 0, width, height };
+        if (m_webViewManager) {
+            m_webViewManager->Resize(fsRect);
+        }
+        return;
+    }
+
     int pad = MulDiv(6, m_dpi, 96);
     int btnW = MulDiv(34, m_dpi, 96);
     int extBtnW = MulDiv(105, m_dpi, 96);
@@ -195,6 +203,71 @@ void MainWindow::UpdateLayout(int width, int height) {
     // Resize WebView2
     RECT webViewRect{ 0, topH, width, height };
     m_webViewManager->Resize(webViewRect);
+}
+
+void MainWindow::SetFullScreen(bool enable) {
+    if (m_isFullScreen == enable) return;
+    m_isFullScreen = enable;
+
+    if (m_isFullScreen) {
+        // Save current window placement & style
+        m_wpPrev.length = sizeof(WINDOWPLACEMENT);
+        GetWindowPlacement(m_hWnd, &m_wpPrev);
+        m_dwStylePrev = static_cast<DWORD>(GetWindowLongW(m_hWnd, GWL_STYLE));
+
+        // Hide toolbar controls
+        if (m_hBtnBack) ShowWindow(m_hBtnBack, SW_HIDE);
+        if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_HIDE);
+        if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
+        if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
+        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
+        if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, SW_HIDE);
+
+        // Get monitor bounds for current window
+        HMONITOR hMon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi{ sizeof(MONITORINFO) };
+        GetMonitorInfoW(hMon, &mi);
+
+        // Modify style to borderless popup and resize to full monitor
+        SetWindowLongW(m_hWnd, GWL_STYLE, m_dwStylePrev & ~(WS_CAPTION | WS_THICKFRAME));
+        int monW = mi.rcMonitor.right - mi.rcMonitor.left;
+        int monH = mi.rcMonitor.bottom - mi.rcMonitor.top;
+        SetWindowPos(
+            m_hWnd, HWND_TOP,
+            mi.rcMonitor.left, mi.rcMonitor.top,
+            monW, monH,
+            SWP_NOOWNERZORDER | SWP_FRAMECHANGED
+        );
+
+        if (m_webViewManager) {
+            RECT fsRect{ 0, 0, monW, monH };
+            m_webViewManager->Resize(fsRect);
+        }
+    } else {
+        // Restore window style and placement
+        SetWindowLongW(m_hWnd, GWL_STYLE, m_dwStylePrev);
+        SetWindowPlacement(m_hWnd, &m_wpPrev);
+        SetWindowPos(
+            m_hWnd, nullptr, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED
+        );
+
+        // Show toolbar controls
+        if (m_hBtnBack) ShowWindow(m_hBtnBack, SW_SHOW);
+        if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_SHOW);
+        if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_SHOW);
+        if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_SHOW);
+        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_SHOW);
+        if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, SW_SHOW);
+
+        RECT client;
+        GetClientRect(m_hWnd, &client);
+        UpdateLayout(client.right, client.bottom);
+    }
+}
+
+void MainWindow::ToggleFullScreen() {
+    SetFullScreen(!m_isFullScreen);
 }
 
 LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
@@ -291,8 +364,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             }
         });
 
+        m_webViewManager->SetFullScreenCallback([this](bool fs) {
+            SetFullScreen(fs);
+        });
+
         // Initialize WebView2
         m_webViewManager->Initialize(m_hWnd, [this]() {
+            RECT client;
+            GetClientRect(m_hWnd, &client);
+            UpdateLayout(client.right, client.bottom);
             m_webViewManager->Navigate(Config::Instance().GetSettings().startUrl);
         });
 
@@ -304,6 +384,21 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         int h = HIWORD(lParam);
         UpdateLayout(w, h);
         return 0;
+    }
+
+    case WM_MOVE: {
+        if (m_webViewManager) {
+            m_webViewManager->NotifyParentWindowPositionChanged();
+        }
+        break;
+    }
+
+    case WM_KEYDOWN: {
+        if (wParam == VK_ESCAPE && m_isFullScreen) {
+            SetFullScreen(false);
+            return 0;
+        }
+        break;
     }
 
     case WM_DROPFILES: {
@@ -353,6 +448,14 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDM_FOCUS_ADDRESS_BAR:
             SetFocus(m_hEditAddress);
             SendMessageW(m_hEditAddress, EM_SETSEL, 0, -1);
+            break;
+        case IDM_TOGGLE_FULLSCREEN:
+            ToggleFullScreen();
+            break;
+        case IDM_EXIT_FULLSCREEN:
+            if (m_isFullScreen) {
+                SetFullScreen(false);
+            }
             break;
         case IDC_EDIT_ADDRESS: {
             WORD notify = HIWORD(wParam);

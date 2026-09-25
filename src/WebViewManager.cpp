@@ -1,4 +1,5 @@
 #include "WebViewManager.hpp"
+#include "MainWindow.hpp"
 #include "Config.hpp"
 #include "ElementBlocker.hpp"
 #include "ExtensionManager.hpp"
@@ -31,8 +32,6 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
         L"--ignore-gpu-blocklist "
-        L"--enable-hardware-overlays=single-fullscreen,single-on-top "
-        L"--disable-direct-composition-video-overlays=false "
         L"--enable-features=NvidiaVsr,IntelVsr,Prerender2 "
         L"--enable-quic "
         L"--quic-version=h3 "
@@ -63,6 +62,38 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                             if (FAILED(res) || !controller) return res;
                             m_controller = controller;
                             m_controller->get_CoreWebView2(&m_webView);
+
+                            // Use raw physical pixels for WebView2 bounds so it matches Win32 GetClientRect exactly
+                            wil::com_ptr<ICoreWebView2Controller3> controller3;
+                            if (SUCCEEDED(m_controller->QueryInterface(IID_PPV_ARGS(&controller3))) && controller3) {
+                                controller3->put_BoundsMode(COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS);
+                            }
+
+                            // Intercept keyboard accelerators (F11 fullscreen toggle, Escape fullscreen exit)
+                            m_controller->add_AcceleratorKeyPressed(
+                                Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
+                                    [this](ICoreWebView2Controller* /*sender*/, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
+                                        COREWEBVIEW2_KEY_EVENT_KIND kind;
+                                        if (SUCCEEDED(args->get_KeyEventKind(&kind))) {
+                                            if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
+                                                UINT key = 0;
+                                                if (SUCCEEDED(args->get_VirtualKey(&key))) {
+                                                    if (key == VK_F11) {
+                                                        PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_TOGGLE_FULLSCREEN, 0), 0);
+                                                        args->put_Handled(TRUE);
+                                                        return S_OK;
+                                                    }
+                                                    if (key == VK_ESCAPE) {
+                                                        PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_EXIT_FULLSCREEN, 0), 0);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        return S_OK;
+                                    }
+                                ).Get(),
+                                nullptr
+                            );
 
                             // Retrieve profile for extensions
                             wil::com_ptr<ICoreWebView2_13> webView13;
@@ -188,6 +219,12 @@ void WebViewManager::RegisterEventHandlers() {
 void WebViewManager::Resize(const RECT& bounds) {
     if (m_controller) {
         m_controller->put_Bounds(bounds);
+    }
+}
+
+void WebViewManager::NotifyParentWindowPositionChanged() {
+    if (m_controller) {
+        m_controller->NotifyParentWindowPositionChanged();
     }
 }
 
