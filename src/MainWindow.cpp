@@ -25,6 +25,9 @@ static const int kPresetZoomPercentages[] = {
 MainWindow::MainWindow() : m_webViewManager(std::make_unique<WebViewManager>()) {}
 
 MainWindow::~MainWindow() {
+    if (m_webViewManager) {
+        m_webViewManager->ShutdownAndPurgeData();
+    }
     if (m_hUiFont) {
         DeleteObject(m_hUiFont);
     }
@@ -550,6 +553,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         RECT client;
         GetClientRect(m_hWnd, &client);
         UpdateLayout(client.right, client.bottom);
+        return 0;
+    }
+
+    case WM_CLOSE: {
+        ShowWindow(m_hWnd, SW_HIDE);
+        if (m_webViewManager) {
+            m_webViewManager->ShutdownAndPurgeData();
+        }
+        DestroyWindow(m_hWnd);
         return 0;
     }
 

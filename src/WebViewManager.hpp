@@ -42,6 +42,10 @@ public:
     double GetZoomFactor() const;
     void SetZoomFactor(double zoom);
 
+    // Cache and temporary files purge
+    void ShutdownAndPurgeData();
+    static void PurgeAllCacheAndTempFiles();
+
     // Callbacks
     void SetTitleChangedCallback(TitleChangedCallback cb) { m_titleChangedCb = cb; }
     void SetSourceChangedCallback(SourceChangedCallback cb) { m_sourceChangedCb = cb; }
