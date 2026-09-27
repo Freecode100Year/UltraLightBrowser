@@ -25,6 +25,24 @@ static const int kPresetZoomPercentages[] = {
     500, 400, 300, 250, 200, 175, 150, 125, 110, 100, 90, 80, 75, 67, 50, 33, 25
 };
 
+static void CopyTextToClipboard(HWND hWndOwner, const std::wstring& text) {
+    if (!OpenClipboard(hWndOwner)) return;
+    EmptyClipboard();
+    size_t bytes = (text.length() + 1) * sizeof(wchar_t);
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (hMem) {
+        void* pMem = GlobalLock(hMem);
+        if (pMem) {
+            memcpy(pMem, text.c_str(), bytes);
+            GlobalUnlock(hMem);
+            SetClipboardData(CF_UNICODETEXT, hMem);
+        } else {
+            GlobalFree(hMem);
+        }
+    }
+    CloseClipboard();
+}
+
 MainWindow::MainWindow() : m_webViewManager(std::make_unique<WebViewManager>()) {}
 
 MainWindow::~MainWindow() {
@@ -701,11 +719,48 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     std::wstring infoMsg = L"已切换至公共 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已生效，建议刷新网页。";
                     MessageBoxW(m_hWnd, infoMsg.c_str(), L"公共 DNS 已更新", MB_OK | MB_ICONINFORMATION);
                 }
-            } else if (id >= IDM_EXTENSIONS_TOGGLE_BASE && id < IDM_EXTENSIONS_TOGGLE_BASE + 100) {
+            } else if (id >= IDM_EXTENSIONS_OPEN_BASE && id < IDM_EXTENSIONS_OPEN_BASE + 50) {
+                size_t extIdx = id - IDM_EXTENSIONS_OPEN_BASE;
+                auto exts = ExtensionManager::Instance().GetExtensions();
+                if (extIdx < exts.size()) {
+                    ExtensionManager::Instance().OpenExtensionOptions(exts[extIdx].id, m_webViewManager ? m_webViewManager->GetWebView() : nullptr);
+                }
+            } else if (id >= IDM_EXTENSIONS_TOGGLE_BASE && id < IDM_EXTENSIONS_TOGGLE_BASE + 50) {
                 size_t extIdx = id - IDM_EXTENSIONS_TOGGLE_BASE;
                 auto exts = ExtensionManager::Instance().GetExtensions();
                 if (extIdx < exts.size()) {
                     ExtensionManager::Instance().ToggleExtension(exts[extIdx].id);
+                }
+            } else if (id >= IDM_EXTENSIONS_RELOAD_BASE && id < IDM_EXTENSIONS_RELOAD_BASE + 50) {
+                size_t extIdx = id - IDM_EXTENSIONS_RELOAD_BASE;
+                auto exts = ExtensionManager::Instance().GetExtensions();
+                if (extIdx < exts.size()) {
+                    ExtensionManager::Instance().ReloadExtension(exts[extIdx].id, [this, name = exts[extIdx].name](bool ok) {
+                        MessageBoxW(m_hWnd, (L"扩展程序【" + name + (ok ? L"】已成功重新载入！" : L"】重新载入失败。")).c_str(),
+                            L"扩展程序", ok ? (MB_OK | MB_ICONINFORMATION) : (MB_OK | MB_ICONERROR));
+                    });
+                }
+            } else if (id >= IDM_EXTENSIONS_FOLDER_BASE && id < IDM_EXTENSIONS_FOLDER_BASE + 50) {
+                size_t extIdx = id - IDM_EXTENSIONS_FOLDER_BASE;
+                auto exts = ExtensionManager::Instance().GetExtensions();
+                if (extIdx < exts.size()) {
+                    ExtensionManager::Instance().OpenExtensionFolder(exts[extIdx].id);
+                }
+            } else if (id >= IDM_EXTENSIONS_COPY_ID_BASE && id < IDM_EXTENSIONS_COPY_ID_BASE + 50) {
+                size_t extIdx = id - IDM_EXTENSIONS_COPY_ID_BASE;
+                auto exts = ExtensionManager::Instance().GetExtensions();
+                if (extIdx < exts.size()) {
+                    CopyTextToClipboard(m_hWnd, exts[extIdx].id);
+                    MessageBoxW(m_hWnd, (L"扩展 ID 已复制到剪贴板:\n" + exts[extIdx].id).c_str(), L"复制成功", MB_OK | MB_ICONINFORMATION);
+                }
+            } else if (id >= IDM_EXTENSIONS_REMOVE_BASE && id < IDM_EXTENSIONS_REMOVE_BASE + 50) {
+                size_t extIdx = id - IDM_EXTENSIONS_REMOVE_BASE;
+                auto exts = ExtensionManager::Instance().GetExtensions();
+                if (extIdx < exts.size()) {
+                    std::wstring prompt = L"确定要从浏览器中移除扩展程序【" + exts[extIdx].name + L"】吗？\n移除后该扩展将立即停止运行。";
+                    if (MessageBoxW(m_hWnd, prompt.c_str(), L"确认移除扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                        ExtensionManager::Instance().RemoveExtension(exts[extIdx].id);
+                    }
                 }
             }
             break;
@@ -950,26 +1005,51 @@ void MainWindow::ShowExtensionsMenu() {
     HMENU hMenu = CreatePopupMenu();
     if (!hMenu) return;
 
-    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_LOAD_UNPACKED, L"📂  加载未打包的扩展程序...");
-    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_MANAGE, L"⚙️  管理扩展程序 (详细设置)...");
-    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_RELOAD_ALL, L"🔄  重新加载所有扩展程序");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-
     auto exts = ExtensionManager::Instance().GetExtensions();
     if (exts.empty()) {
-        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"（暂无已加载的扩展程序）");
+        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"🧩  Chrome 扩展程序 (0)");
+        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"    （当前暂无已加载的扩展程序）");
     } else {
-        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"已加载扩展程序 (点击切换开关):");
-        for (size_t i = 0; i < exts.size() && i < 100; ++i) {
+        std::wstring headerStr = L"🧩  已安装扩展程序 (" + std::to_wstring(exts.size()) + L"):";
+        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, headerStr.c_str());
+
+        for (size_t i = 0; i < exts.size() && i < 50; ++i) {
             const auto& ext = exts[i];
-            std::wstring label = (ext.isEnabled ? L"✔  " : L"    ") + ext.name;
-            UINT flags = MF_STRING;
-            if (ext.isEnabled) {
-                flags |= MF_CHECKED;
+            HMENU hSub = CreatePopupMenu();
+            if (!hSub) continue;
+
+            // Submenu options
+            UINT openFlags = MF_STRING;
+            if (!ext.isEnabled) {
+                openFlags |= (MF_DISABLED | MF_GRAYED);
             }
-            AppendMenuW(hMenu, flags, IDM_EXTENSIONS_TOGGLE_BASE + static_cast<WORD>(i), label.c_str());
+            AppendMenuW(hSub, openFlags, IDM_EXTENSIONS_OPEN_BASE + static_cast<WORD>(i), L"🌐  打开扩展选项 / 界面");
+            AppendMenuW(hSub, MF_SEPARATOR, 0, nullptr);
+
+            std::wstring toggleStr = ext.isEnabled ? L"⏸  停用此扩展" : L"▶  启用此扩展";
+            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_TOGGLE_BASE + static_cast<WORD>(i), toggleStr.c_str());
+            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_RELOAD_BASE + static_cast<WORD>(i), L"🔄  重新载入此扩展");
+            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_FOLDER_BASE + static_cast<WORD>(i), L"📁  打开本地所在目录");
+            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_COPY_ID_BASE + static_cast<WORD>(i), L"📋  复制扩展 ID");
+            AppendMenuW(hSub, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_REMOVE_BASE + static_cast<WORD>(i), L"🗑️  从浏览器中移除此扩展");
+
+            // Extension label on main menu
+            std::wstring itemLabel = (ext.isEnabled ? L"🟢  " : L"⚪  ") + ext.name;
+            if (!ext.version.empty()) {
+                itemLabel += L"  (" + ext.version + L")";
+            }
+            if (!ext.isEnabled) {
+                itemLabel += L" [已停用]";
+            }
+            AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSub), itemLabel.c_str());
         }
     }
+
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_MANAGE, L"⚙️  扩展程序管理中心 (详细视图)...");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_LOAD_UNPACKED, L"📂  加载未打包的扩展程序目录...");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_RELOAD_ALL, L"🔄  重新载入并同步全部扩展程序");
 
     RECT btnRect{};
     GetWindowRect(m_hBtnExtensions, &btnRect);

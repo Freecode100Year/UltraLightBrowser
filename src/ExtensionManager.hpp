@@ -43,6 +43,7 @@ public:
     void SetExtensionEnabled(const std::wstring& id, bool enable, std::function<void(bool success)> callback = nullptr);
     void RemoveExtension(const std::wstring& id, std::function<void(bool success)> callback = nullptr);
     void ReloadAllExtensions();
+    void ReloadExtension(const std::wstring& id, std::function<void(bool success)> callback = nullptr);
     void OpenExtensionOptions(const std::wstring& id, ICoreWebView2* webView);
     void OpenExtensionFolder(const std::wstring& id);
 

@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.3.1/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.3.1%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.3.2/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.3.2%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -23,12 +23,12 @@
 
 ---
 
-## 📥 最新版便携下载 / Direct Download (v1.3.1)
+## 📥 最新版便携下载 / Direct Download (v1.3.2)
 
 可在 GitHub Releases 页面直接下载最新构建的预编译二进制文件：
 
-* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.3.1)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.3.1/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
-* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.3.1-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.3.1/UltraLightBrowser-v1.3.1-windows-x64.zip)**
+* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.3.2)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.3.2/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
+* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.3.2-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.3.2/UltraLightBrowser-v1.3.2-windows-x64.zip)**
 * 🌟 **[访问 GitHub Latest Release 最新发布页](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**
 * 🔗 **[查看所有历史版本与构建产物](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
@@ -179,12 +179,16 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
   * **深度多层安全校验**：自动进行路径规范化（`canonical path`），严格阻断系统级核心目录（如 `C:\Windows`、`C:\Program Files`、驱动器根盘符）的恶意挂载风险。
   * **智能清单语法解析器**：全自动校验 `manifest.json`，支持 `_locales` 多语言国际化映射（智能提取并呈现扩展本地化中文/英文真实名称，如将 `__MSG_appName__` 还原为人类可读名称）。
   * **即开即用热加载**：基于 `ICoreWebView2Profile7::AddBrowserExtension`，无需重启浏览器，解压目录秒级注册并生效。
-* **原生扩展程序管理面板 (Extension Management UI)**：
-  * **便捷顶栏交互**：工具栏常驻 `[ 🧩 扩展 ]` 按钮，点击即出极速弹出菜单（一键加载解压扩展、打开完整管理窗口、一键重新加载所有扩展、以及即时切换单项扩展的勾选启用状态）。
-  * **沉浸式独立管理窗口**：符合 Windows 11 暗黑模式视觉规范（Immersive Dark Mode），基于 Segoe UI 高清字体与双缓冲 ListView 列表呈现。
-  * **全维度信息与快捷控制**：
-    * 清晰展示：扩展名称、启用状态（已启用/已禁用）、版本号、32 位唯一扩展 ID、本地磁盘路径及功能描述。
-    * 快捷控制：`[ ⏸ 禁用 / ▶ 启用 ]` 开关、**列表项双击快速切换状态**、`[ 🗑️ 移除此扩展 ]` 卸载、`[ 复制 ID ]`、`[ 📂 打开目录 ]`（直达 Windows 资源管理器）、以及 `[ 🌐 打开选项页 ]`（直接载入扩展内部配置页 `chrome-extension://<id>/options.html`）。
+* **现代原生扩展程序交互与管理中心 (Fluent Dark Extensions UI)**：
+  * **顶栏层级菜单与丰富快捷操作**：
+    * 工具栏 `[ 🧩 扩展 ]` 顶部直接列出全部已安装扩展（附带 `🟢 已启用` / `⚪ 已停用` 状态与版本号）。
+    * 鼠标悬停/点击任意扩展即展开专用二级菜单：支持 `🌐 打开扩展界面/选项`、`⏸ 停用扩展 / ▶ 启用扩展`、`🔄 重新载入扩展`、`📁 打开本地安装目录`、`📋 复制扩展 ID`、`🗑️ 从浏览器中移除扩展`。
+    * 底部清晰归类：`⚙️ 扩展程序管理中心 (详细视图)...`、`📂 加载未打包的扩展程序目录...`、`🔄 重新载入并同步全部扩展程序`。
+  * **现代化 Windows 11 暗黑管理窗口 (Fluent Dark Inspector Deck)**：
+    * 完美沉浸式深色模式（Immersive Dark Mode + `DarkMode_Explorer` 原生深色列表主题），告别传统 Win32 刺眼白屏。
+    * 高清 DPI 动态缩放（Per-Monitor V2 DPI Awareness）与支持自由缩放/最大化窗口（动态响应式流畅布局）。
+    * 移除全局强制置顶（`WS_EX_TOPMOST`），避免阻挡其他程序；双击列表项直接打开扩展界面。
+    * 现代化 Inspector 检查器卡片（Fluent Rounded Card Deck）：清晰呈现大字号名称标题、运行状态徽章、多行描述、等宽 ID/路径快速复制与一键操作控制栏。
 * **智能数据持久化与安全无痕清理平衡**：
   * 已加载的解压扩展路径与开关状态持久化保存于 `%LOCALAPPDATA%\UltraLightBrowser\config.json`，下次启动全自动无感恢复。
   * 支持“退出时保留扩展程序配置与解压加载项”开关；在保留扩展的同时，依然自动粉碎 HTTP 临时缓存、GPU/Shader 缓存与浏览痕迹，兼顾极速安全与无痕隐私。
