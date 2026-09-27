@@ -15,7 +15,8 @@ enum ControlID : WORD {
     IDC_EDIT_ADDRESS    = 1004,
     IDC_BTN_DNS         = 1005,
     IDC_BTN_ZOOM        = 1006,
-    IDC_BTN_BLOCKER     = 1007
+    IDC_BTN_BLOCKER     = 1007,
+    IDC_BTN_EXTENSIONS  = 1008
 };
 
 enum AppCommandID : WORD {
@@ -32,7 +33,11 @@ enum AppCommandID : WORD {
     IDM_BLOCKER_TOGGLE_NATIVE = 2013,
     IDM_BLOCKER_CLEAR_RULES = 2014,
     IDM_ZOOM_SET_BASE       = 2020,
-    IDM_DNS_SELECT_BASE     = 2100
+    IDM_EXTENSIONS_MANAGE   = 2030,
+    IDM_EXTENSIONS_LOAD_UNPACKED = 2031,
+    IDM_EXTENSIONS_RELOAD_ALL    = 2032,
+    IDM_DNS_SELECT_BASE     = 2100,
+    IDM_EXTENSIONS_TOGGLE_BASE   = 2200
 };
 
 class MainWindow {
@@ -64,6 +69,7 @@ private:
     void ShowDnsMenu();
     void UpdateDnsDisplay();
     void ShowBlockerMenu();
+    void ShowExtensionsMenu();
 
     HWND m_hWnd = nullptr;
     HINSTANCE m_hInstance = nullptr;
@@ -74,6 +80,7 @@ private:
     HWND m_hBtnForward = nullptr;
     HWND m_hBtnReload = nullptr;
     HWND m_hEditAddress = nullptr;
+    HWND m_hBtnExtensions = nullptr;
     HWND m_hBtnDns = nullptr;
     HWND m_hBtnZoom = nullptr;
     HWND m_hBtnBlocker = nullptr;

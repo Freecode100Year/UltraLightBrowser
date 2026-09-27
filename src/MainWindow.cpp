@@ -3,6 +3,7 @@
 #include "DnsManager.hpp"
 #include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
+#include "ExtensionManager.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
 #include <windowsx.h>
@@ -119,6 +120,7 @@ void MainWindow::UpdateDpiScaling(UINT dpi) {
     if (m_hBtnDns) SendMessageW(m_hBtnDns, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnZoom) SendMessageW(m_hBtnZoom, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    if (m_hBtnExtensions) SendMessageW(m_hBtnExtensions, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
 }
 
 void MainWindow::CreateToolbarControls() {
@@ -147,6 +149,12 @@ void MainWindow::CreateToolbarControls() {
     );
     SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
     SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"输入网址或搜索内容，按 Enter 访问"));
+
+    m_hBtnExtensions = CreateWindowExW(
+        0, L"BUTTON", L"🧩 扩展",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_EXTENSIONS), m_hInstance, nullptr
+    );
 
     m_hBtnDns = CreateWindowExW(
         0, L"BUTTON", L"🌐 DNS",
@@ -189,6 +197,7 @@ void MainWindow::UpdateLayout(int width, int height) {
     int blockBtnW = MulDiv(90, m_dpi, 96);
     int zoomBtnW = MulDiv(72, m_dpi, 96);
     int dnsBtnW = MulDiv(102, m_dpi, 96);
+    int extBtnW = MulDiv(78, m_dpi, 96);
     int topH = m_topbarHeight;
     int ctrlH = topH - pad * 2;
 
@@ -206,7 +215,7 @@ void MainWindow::UpdateLayout(int width, int height) {
     SetWindowPos(m_hBtnReload, nullptr, x, pad, btnW, ctrlH, SWP_NOZORDER);
     x += btnW + pad;
 
-    // Right-aligned buttons: [ 🌐 DNS ] [ 🔍 100% ] [ 🛡 Blocker ]
+    // Right-aligned buttons: [ 🧩 扩展 ] [ 🌐 DNS ] [ 🔍 100% ] [ 🛡 Blocker ]
     int rightX = width - pad - blockBtnW;
     SetWindowPos(m_hBtnBlocker, nullptr, rightX, pad, blockBtnW, ctrlH, SWP_NOZORDER);
 
@@ -215,6 +224,9 @@ void MainWindow::UpdateLayout(int width, int height) {
 
     rightX -= (dnsBtnW + pad);
     SetWindowPos(m_hBtnDns, nullptr, rightX, pad, dnsBtnW, ctrlH, SWP_NOZORDER);
+
+    rightX -= (extBtnW + pad);
+    SetWindowPos(m_hBtnExtensions, nullptr, rightX, pad, extBtnW, ctrlH, SWP_NOZORDER);
 
     // Address Bar fill
     int addrW = (rightX - pad) - x;
@@ -242,6 +254,7 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_HIDE);
         if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
+        if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, SW_HIDE);
         if (m_hBtnDns) ShowWindow(m_hBtnDns, SW_HIDE);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_HIDE);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
@@ -281,6 +294,7 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
         if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
+        if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, showCmd);
         if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
@@ -304,6 +318,7 @@ void MainWindow::SetImmersiveMode(bool enable) {
     if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
     if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
     if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
+    if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, showCmd);
     if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
     if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
     if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
@@ -592,6 +607,21 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDC_BTN_ZOOM:
             ShowZoomMenu();
             break;
+        case IDC_BTN_EXTENSIONS:
+            ShowExtensionsMenu();
+            break;
+        case IDM_EXTENSIONS_MANAGE:
+            ExtensionManager::Instance().ShowManageDialog(m_hWnd);
+            break;
+        case IDM_EXTENSIONS_LOAD_UNPACKED:
+            ExtensionManager::Instance().LoadUnpackedExtension(m_hWnd, [this](bool ok, const std::wstring& msg) {
+                MessageBoxW(m_hWnd, msg.c_str(), ok ? L"加载扩展程序" : L"加载失败", ok ? (MB_OK | MB_ICONINFORMATION) : (MB_OK | MB_ICONERROR));
+            });
+            break;
+        case IDM_EXTENSIONS_RELOAD_ALL:
+            ExtensionManager::Instance().ReloadAllExtensions();
+            MessageBoxW(m_hWnd, L"已重新刷新并同步全部扩展程序！", L"扩展程序", MB_OK | MB_ICONINFORMATION);
+            break;
         case IDC_BTN_DNS:
             ShowDnsMenu();
             break;
@@ -658,7 +688,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 if (m_webViewManager) {
                     m_webViewManager->SetZoomFactor(kPresetZoomPercentages[idx] / 100.0);
                 }
-            } else if (id >= IDM_DNS_SELECT_BASE) {
+            } else if (id >= IDM_DNS_SELECT_BASE && id < IDM_DNS_SELECT_BASE + 50) {
                 size_t pIdx = id - IDM_DNS_SELECT_BASE;
                 const auto& providers = DnsManager::Instance().GetProviders();
                 if (pIdx < providers.size()) {
@@ -670,6 +700,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     UpdateDnsDisplay();
                     std::wstring infoMsg = L"已切换至公共 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已生效，建议刷新网页。";
                     MessageBoxW(m_hWnd, infoMsg.c_str(), L"公共 DNS 已更新", MB_OK | MB_ICONINFORMATION);
+                }
+            } else if (id >= IDM_EXTENSIONS_TOGGLE_BASE && id < IDM_EXTENSIONS_TOGGLE_BASE + 100) {
+                size_t extIdx = id - IDM_EXTENSIONS_TOGGLE_BASE;
+                auto exts = ExtensionManager::Instance().GetExtensions();
+                if (extIdx < exts.size()) {
+                    ExtensionManager::Instance().ToggleExtension(exts[extIdx].id);
                 }
             }
             break;
@@ -899,6 +935,44 @@ void MainWindow::ShowBlockerMenu() {
 
     RECT btnRect{};
     GetWindowRect(m_hBtnBlocker, &btnRect);
+
+    TrackPopupMenu(
+        hMenu,
+        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
+        btnRect.left, btnRect.bottom,
+        0, m_hWnd, nullptr
+    );
+
+    DestroyMenu(hMenu);
+}
+
+void MainWindow::ShowExtensionsMenu() {
+    HMENU hMenu = CreatePopupMenu();
+    if (!hMenu) return;
+
+    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_LOAD_UNPACKED, L"📂  加载未打包的扩展程序...");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_MANAGE, L"⚙️  管理扩展程序 (详细设置)...");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_RELOAD_ALL, L"🔄  重新加载所有扩展程序");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    auto exts = ExtensionManager::Instance().GetExtensions();
+    if (exts.empty()) {
+        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"（暂无已加载的扩展程序）");
+    } else {
+        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"已加载扩展程序 (点击切换开关):");
+        for (size_t i = 0; i < exts.size() && i < 100; ++i) {
+            const auto& ext = exts[i];
+            std::wstring label = (ext.isEnabled ? L"✔  " : L"    ") + ext.name;
+            UINT flags = MF_STRING;
+            if (ext.isEnabled) {
+                flags |= MF_CHECKED;
+            }
+            AppendMenuW(hMenu, flags, IDM_EXTENSIONS_TOGGLE_BASE + static_cast<WORD>(i), label.c_str());
+        }
+    }
+
+    RECT btnRect{};
+    GetWindowRect(m_hBtnExtensions, &btnRect);
 
     TrackPopupMenu(
         hMenu,

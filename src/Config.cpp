@@ -72,6 +72,34 @@ void Config::Load() {
             if (s.contains("customDnsTemplate") && s["customDnsTemplate"].is_string()) {
                 m_settings.customDnsTemplate = s["customDnsTemplate"].get<std::string>();
             }
+            if (s.contains("enableExtensions") && s["enableExtensions"].is_boolean()) {
+                m_settings.enableExtensions = s["enableExtensions"].get<bool>();
+            }
+            if (s.contains("preserveExtensionData") && s["preserveExtensionData"].is_boolean()) {
+                m_settings.preserveExtensionData = s["preserveExtensionData"].get<bool>();
+            }
+        }
+
+        if (root.contains("extensions") && root["extensions"].is_array()) {
+            m_extensionConfigs.clear();
+            for (const auto& item : root["extensions"]) {
+                ExtensionConfigItem cfg;
+                if (item.contains("id") && item["id"].is_string()) {
+                    cfg.id = item["id"].get<std::string>();
+                }
+                if (item.contains("name") && item["name"].is_string()) {
+                    cfg.name = item["name"].get<std::string>();
+                }
+                if (item.contains("folderPath") && item["folderPath"].is_string()) {
+                    cfg.folderPath = StringUtils::Utf8ToWide(item["folderPath"].get<std::string>());
+                }
+                if (item.contains("enabled") && item["enabled"].is_boolean()) {
+                    cfg.enabled = item["enabled"].get<bool>();
+                }
+                if (!cfg.id.empty() || !cfg.folderPath.empty()) {
+                    m_extensionConfigs.push_back(cfg);
+                }
+            }
         }
 
         if (root.contains("blockRules") && root["blockRules"].is_object()) {
@@ -104,7 +132,9 @@ void Config::Save() {
             {"ecoMode", m_settings.ecoMode},
             {"enablePublicDns", m_settings.enablePublicDns},
             {"selectedDnsProvider", m_settings.selectedDnsProvider},
-            {"customDnsTemplate", m_settings.customDnsTemplate}
+            {"customDnsTemplate", m_settings.customDnsTemplate},
+            {"enableExtensions", m_settings.enableExtensions},
+            {"preserveExtensionData", m_settings.preserveExtensionData}
         };
 
         json rulesObj = json::object();
@@ -112,6 +142,17 @@ void Config::Save() {
             rulesObj[host] = selectors;
         }
         root["blockRules"] = rulesObj;
+
+        json extList = json::array();
+        for (const auto& item : m_extensionConfigs) {
+            json obj;
+            obj["id"] = item.id;
+            obj["name"] = item.name;
+            obj["folderPath"] = StringUtils::WideToUtf8(item.folderPath);
+            obj["enabled"] = item.enabled;
+            extList.push_back(obj);
+        }
+        root["extensions"] = extList;
 
         std::filesystem::path tmpPath = m_configFilePath;
         tmpPath += L".tmp";
@@ -178,6 +219,65 @@ void Config::ClearBlockRulesForHost(const std::string& host) {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_hostBlockRules.erase(host);
+    }
+    Save();
+}
+
+std::vector<ExtensionConfigItem> Config::GetInstalledExtensions() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_extensionConfigs;
+}
+
+void Config::SetInstalledExtensions(const std::vector<ExtensionConfigItem>& exts) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_extensionConfigs = exts;
+    }
+    Save();
+}
+
+void Config::AddOrUpdateExtensionConfig(const ExtensionConfigItem& item) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        bool found = false;
+        for (auto& ext : m_extensionConfigs) {
+            if ((!item.id.empty() && ext.id == item.id) ||
+                (!item.folderPath.empty() && ext.folderPath == item.folderPath)) {
+                if (!item.id.empty()) ext.id = item.id;
+                if (!item.name.empty()) ext.name = item.name;
+                if (!item.folderPath.empty()) ext.folderPath = item.folderPath;
+                ext.enabled = item.enabled;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            m_extensionConfigs.push_back(item);
+        }
+    }
+    Save();
+}
+
+void Config::RemoveExtensionConfig(const std::string& id) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_extensionConfigs.erase(
+            std::remove_if(m_extensionConfigs.begin(), m_extensionConfigs.end(),
+                [&id](const ExtensionConfigItem& item) { return item.id == id; }),
+            m_extensionConfigs.end());
+    }
+    Save();
+}
+
+void Config::SetExtensionConfigEnabled(const std::string& id, bool enabled) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto& item : m_extensionConfigs) {
+            if (item.id == id) {
+                item.enabled = enabled;
+                break;
+            }
+        }
     }
     Save();
 }
