@@ -10,6 +10,7 @@
 #include <memory>
 #include <functional>
 #include <mutex>
+#include <atomic>
 #include <filesystem>
 #include "Config.hpp"
 

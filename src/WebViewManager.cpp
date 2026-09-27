@@ -33,6 +33,8 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
     }
 
     // Inject pure hardware GPU pipeline, aggressive discard, 120Hz VSync and low-latency network flags
+    // Note: Do NOT add --disable-background-networking or --intensive-wake-up-throttling as they
+    // break Chrome Extension background workers, MV3 service workers, and extension network events.
     std::wstring performanceArgs =
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
@@ -44,17 +46,14 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         L"--disable-gpu-watchdog "
         L"--enable-hardware-overlays=\"single-fullscreen,single-on-top,underlay\" "
         L"--enable-native-gpu-memory-buffers "
-        L"--intensive-wake-up-throttling "
         L"--enable-quic "
         L"--enable-async-dns "
         L"--media-cache-size=134217728 "
         L"--disk-cache-size=209715200 "
         L"--disable-features=AudioServiceOutOfProcess,Translate,OptimizationHints,MediaRouter "
-        L"--disable-background-networking "
         L"--disable-sync "
         L"--disable-domain-reliability "
         L"--disable-breakpad "
-        L"--no-pings "
         L"--disable-speech-api "
         L"--no-first-run";
 

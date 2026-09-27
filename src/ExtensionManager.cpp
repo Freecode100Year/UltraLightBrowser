@@ -477,6 +477,30 @@ LRESULT CALLBACK ExtDlgWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
+std::wstring NormalizeExtensionPath(const std::filesystem::path& path) {
+    std::error_code ec;
+    std::filesystem::path fPath = std::filesystem::weakly_canonical(path, ec);
+    if (ec) {
+        fPath = path;
+    }
+    std::wstring p = fPath.wstring();
+    // Strip Windows extended length prefix \\?\ or \\?\UNC\ if present
+    if (p.rfind(L"\\\\?\\UNC\\", 0) == 0) {
+        p = L"\\\\" + p.substr(8);
+    } else if (p.rfind(L"\\\\?\\", 0) == 0) {
+        p = p.substr(4);
+    }
+    // Normalize forward slashes to backslashes
+    for (auto& ch : p) {
+        if (ch == L'/') ch = L'\\';
+    }
+    // Remove trailing slash/backslash if not root drive
+    while (p.length() > 3 && (p.back() == L'\\' || p.back() == L'/')) {
+        p.pop_back();
+    }
+    return p;
+}
+
 } // namespace
 
 ExtensionManager& ExtensionManager::Instance() {
@@ -531,27 +555,43 @@ void ExtensionManager::RestoreSavedExtensions() {
                 }
 
                 // Restore any missing extension from its folder
+                std::vector<ExtensionConfigItem> toRestore;
                 for (const auto& cfg : savedConfigs) {
-                    if (!cfg.folderPath.empty() && std::filesystem::exists(cfg.folderPath)) {
-                        if (loadedIds.find(cfg.id) == loadedIds.end()) {
-                            m_profile7->AddBrowserExtension(
-                                cfg.folderPath.c_str(),
-                                Callback<ICoreWebView2ProfileAddBrowserExtensionCompletedHandler>(
-                                    [this, cfg](HRESULT addHr, ICoreWebView2BrowserExtension* ext) -> HRESULT {
-                                        if (SUCCEEDED(addHr) && ext) {
-                                            if (!cfg.enabled) {
-                                                ext->Enable(FALSE, nullptr);
-                                            }
-                                        }
-                                        return S_OK;
-                                    }
-                                ).Get()
-                            );
+                    if (!cfg.folderPath.empty()) {
+                        std::wstring clean = NormalizeExtensionPath(cfg.folderPath);
+                        if (std::filesystem::exists(clean)) {
+                            if (loadedIds.find(cfg.id) == loadedIds.end()) {
+                                auto copyCfg = cfg;
+                                copyCfg.folderPath = clean;
+                                toRestore.push_back(copyCfg);
+                            }
                         }
                     }
                 }
 
-                RefreshExtensions();
+                if (toRestore.empty()) {
+                    RefreshExtensions();
+                    return S_OK;
+                }
+
+                auto pendingCount = std::make_shared<std::atomic<int>>(static_cast<int>(toRestore.size()));
+                for (const auto& cfg : toRestore) {
+                    m_profile7->AddBrowserExtension(
+                        cfg.folderPath.c_str(),
+                        Callback<ICoreWebView2ProfileAddBrowserExtensionCompletedHandler>(
+                            [this, cfg, pendingCount](HRESULT addHr, ICoreWebView2BrowserExtension* ext) -> HRESULT {
+                                if (SUCCEEDED(addHr) && ext && !cfg.enabled) {
+                                    ext->Enable(FALSE, nullptr);
+                                }
+                                if (--(*pendingCount) <= 0) {
+                                    RefreshExtensions();
+                                }
+                                return S_OK;
+                            }
+                        ).Get()
+                    );
+                }
+
                 return S_OK;
             }
         ).Get()
@@ -560,27 +600,66 @@ void ExtensionManager::RestoreSavedExtensions() {
 
 bool ExtensionManager::ParseManifest(const std::filesystem::path& folderPath, ExtensionInfo& outInfo, std::string& outError) {
     std::error_code ec;
-    if (!std::filesystem::exists(folderPath, ec) || !std::filesystem::is_directory(folderPath, ec)) {
+    std::filesystem::path targetDir = folderPath;
+    if (!std::filesystem::exists(targetDir, ec) || !std::filesystem::is_directory(targetDir, ec)) {
         outError = "指定的路径不是有效目录。";
         return false;
     }
 
-    std::filesystem::path manifestPath = folderPath / "manifest.json";
+    std::filesystem::path manifestPath = targetDir / "manifest.json";
     if (!std::filesystem::exists(manifestPath, ec) || !std::filesystem::is_regular_file(manifestPath, ec)) {
-        outError = "目录中未找到 manifest.json 扩展清单文件。";
-        return false;
+        // Automatically probe 1-level deep subdirectories for manifest.json
+        // Common cases: dist/manifest.json, build/manifest.json, src/manifest.json, or an extracted root folder
+        bool foundSub = false;
+        const std::vector<std::string> probeNames = { "dist", "build", "src", "public", "app" };
+        for (const auto& probe : probeNames) {
+            std::filesystem::path p = targetDir / probe / "manifest.json";
+            if (std::filesystem::exists(p, ec) && std::filesystem::is_regular_file(p, ec)) {
+                targetDir = targetDir / probe;
+                manifestPath = p;
+                foundSub = true;
+                break;
+            }
+        }
+
+        if (!foundSub) {
+            for (const auto& entry : std::filesystem::directory_iterator(targetDir, ec)) {
+                if (entry.is_directory(ec)) {
+                    std::filesystem::path p = entry.path() / "manifest.json";
+                    if (std::filesystem::exists(p, ec) && std::filesystem::is_regular_file(p, ec)) {
+                        targetDir = entry.path();
+                        manifestPath = p;
+                        foundSub = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!foundSub) {
+            outError = "目录及其直接子目录中未找到 manifest.json 扩展清单文件。\n请确保选择的是已解压的扩展程序根目录。";
+            return false;
+        }
     }
 
-    std::ifstream file(manifestPath);
+    std::ifstream file(manifestPath, std::ios::binary);
     if (!file.is_open()) {
         outError = "无法打开 manifest.json 文件进行读取。";
         return false;
     }
 
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    // Strip UTF-8 BOM if present
+    if (content.size() >= 3 &&
+        static_cast<unsigned char>(content[0]) == 0xEF &&
+        static_cast<unsigned char>(content[1]) == 0xBB &&
+        static_cast<unsigned char>(content[2]) == 0xBF) {
+        content = content.substr(3);
+    }
+
 #if __has_include(<nlohmann/json.hpp>)
     try {
-        json manifest;
-        file >> manifest;
+        json manifest = json::parse(content, nullptr, true, true /* ignore comments */);
 
         if (!manifest.contains("manifest_version")) {
             outError = "manifest.json 缺少必需的 'manifest_version' 字段。";
@@ -592,7 +671,7 @@ bool ExtensionManager::ParseManifest(const std::filesystem::path& folderPath, Ex
             rawName = manifest["name"].get<std::string>();
         }
         if (rawName.empty()) {
-            rawName = folderPath.filename().string();
+            rawName = targetDir.filename().string();
         }
 
         std::string rawVersion = "1.0.0";
@@ -609,15 +688,21 @@ bool ExtensionManager::ParseManifest(const std::filesystem::path& folderPath, Ex
         auto resolveLocaleMsg = [&](const std::string& key) -> std::string {
             if (key.rfind("__MSG_", 0) == 0 && key.length() > 8 && key.substr(key.length() - 2) == "__") {
                 std::string msgKey = key.substr(6, key.length() - 8);
-                static const std::vector<std::string> localeDirs = { "zh_CN", "zh", "en", "en_US", "en_GB" };
+                static const std::vector<std::string> localeDirs = { "zh_CN", "zh", "zh_TW", "en", "en_US", "en_GB" };
                 for (const auto& loc : localeDirs) {
-                    std::filesystem::path locFile = folderPath / "_locales" / loc / "messages.json";
+                    std::filesystem::path locFile = targetDir / "_locales" / loc / "messages.json";
                     if (std::filesystem::exists(locFile, ec)) {
                         try {
-                            std::ifstream lf(locFile);
+                            std::ifstream lf(locFile, std::ios::binary);
                             if (lf.is_open()) {
-                                json locJson;
-                                lf >> locJson;
+                                std::string locContent((std::istreambuf_iterator<char>(lf)), std::istreambuf_iterator<char>());
+                                if (locContent.size() >= 3 &&
+                                    static_cast<unsigned char>(locContent[0]) == 0xEF &&
+                                    static_cast<unsigned char>(locContent[1]) == 0xBB &&
+                                    static_cast<unsigned char>(locContent[2]) == 0xBF) {
+                                    locContent = locContent.substr(3);
+                                }
+                                json locJson = json::parse(locContent, nullptr, true, true);
                                 if (locJson.contains(msgKey) && locJson[msgKey].contains("message")) {
                                     return locJson[msgKey]["message"].get<std::string>();
                                 }
@@ -641,11 +726,21 @@ bool ExtensionManager::ParseManifest(const std::filesystem::path& folderPath, Ex
         if (optionsPage.empty() && manifest.contains("options_page") && manifest["options_page"].is_string()) {
             optionsPage = manifest["options_page"].get<std::string>();
         }
+        if (optionsPage.empty() && manifest.contains("action") && manifest["action"].is_object()) {
+            if (manifest["action"].contains("default_popup") && manifest["action"]["default_popup"].is_string()) {
+                optionsPage = manifest["action"]["default_popup"].get<std::string>();
+            }
+        }
+        if (optionsPage.empty() && manifest.contains("browser_action") && manifest["browser_action"].is_object()) {
+            if (manifest["browser_action"].contains("default_popup") && manifest["browser_action"]["default_popup"].is_string()) {
+                optionsPage = manifest["browser_action"]["default_popup"].get<std::string>();
+            }
+        }
 
         outInfo.name = StringUtils::Utf8ToWide(rawName);
         outInfo.version = StringUtils::Utf8ToWide(rawVersion);
         outInfo.description = StringUtils::Utf8ToWide(rawDesc);
-        outInfo.folderPath = folderPath.wstring();
+        outInfo.folderPath = NormalizeExtensionPath(targetDir);
         outInfo.optionsPage = StringUtils::Utf8ToWide(optionsPage);
         return true;
     } catch (const std::exception& e) {
@@ -656,10 +751,10 @@ bool ExtensionManager::ParseManifest(const std::filesystem::path& folderPath, Ex
         return false;
     }
 #else
-    outInfo.name = folderPath.filename().wstring();
+    outInfo.name = targetDir.filename().wstring();
     outInfo.version = L"1.0.0";
     outInfo.description = L"";
-    outInfo.folderPath = folderPath.wstring();
+    outInfo.folderPath = NormalizeExtensionPath(targetDir);
     outInfo.optionsPage = L"";
     return true;
 #endif
@@ -717,44 +812,52 @@ void ExtensionManager::LoadUnpackedExtension(HWND hWndParent, std::function<void
 void ExtensionManager::AddExtensionFromPath(const std::wstring& folderPath, std::function<void(bool, const std::wstring&)> callback) {
     if (!m_profile7) {
         if (callback) {
-            callback(false, L"当前环境不支持 WebView2 扩展接口。");
+            callback(false, L"当前环境不支持 WebView2 扩展接口 (需要 Microsoft Edge Evergreen Runtime >= 118)。");
         }
         return;
     }
 
-    std::filesystem::path fPath(folderPath);
-    std::error_code ec;
-    fPath = std::filesystem::weakly_canonical(fPath, ec);
+    std::filesystem::path inputPath(folderPath);
+    std::wstring normalizedInput = NormalizeExtensionPath(inputPath);
 
-    std::wstring pStr = fPath.wstring();
-    std::wstring lowerP = pStr;
+    // Security check: prohibit drive root (e.g. C:\) or Windows system directory
+    std::wstring lowerP = normalizedInput;
     std::transform(lowerP.begin(), lowerP.end(), lowerP.begin(), ::towlower);
     if (lowerP.find(L":\\windows") != std::wstring::npos ||
-        lowerP.find(L":\\program files") != std::wstring::npos ||
-        fPath.root_path() == fPath) {
+        (lowerP.length() <= 3 && lowerP.find(L":\\") != std::wstring::npos)) {
         if (callback) {
-            callback(false, L"出于安全考虑，禁止将系统核心目录或驱动器根目录作为扩展加载！");
+            callback(false, L"出于安全考虑，禁止将 Windows 系统核心目录或驱动器根目录直接作为扩展加载！");
         }
         return;
     }
 
     ExtensionInfo parsedInfo;
     std::string parseErr;
-    if (!ParseManifest(fPath, parsedInfo, parseErr)) {
+    if (!ParseManifest(normalizedInput, parsedInfo, parseErr)) {
         if (callback) {
             callback(false, L"扩展清单验证失败: " + StringUtils::Utf8ToWide(parseErr));
         }
         return;
     }
 
+    std::wstring loadDir = parsedInfo.folderPath;
     m_profile7->AddBrowserExtension(
-        fPath.c_str(),
+        loadDir.c_str(),
         Callback<ICoreWebView2ProfileAddBrowserExtensionCompletedHandler>(
-            [this, parsedInfo, fPath, callback](HRESULT errorCode, ICoreWebView2BrowserExtension* extension) -> HRESULT {
+            [this, parsedInfo, loadDir, callback](HRESULT errorCode, ICoreWebView2BrowserExtension* extension) -> HRESULT {
                 if (FAILED(errorCode) || !extension) {
                     wchar_t hexCode[32]{};
                     swprintf_s(hexCode, L"0x%08X", static_cast<unsigned int>(errorCode));
-                    std::wstring errMsg = L"WebView2 加载扩展程序失败 (错误代码: " + std::wstring(hexCode) + L")。\n请检查扩展是否兼容或已存在。";
+                    std::wstring errMsg = L"WebView2 加载扩展程序失败 (错误代码: " + std::wstring(hexCode) + L")。\n";
+                    if (errorCode == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
+                        errMsg += L"找不到 manifest.json 或清单文件格式无效。";
+                    } else if (errorCode == HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)) {
+                        errMsg += L"当前 WebView2 环境未启用扩展支持，请重启浏览器重试。";
+                    } else if (errorCode == E_ACCESSDENIED) {
+                        errMsg += L"无法加载带有下划线 '_' 前缀保留目录的扩展程序。";
+                    } else {
+                        errMsg += L"请检查扩展是否兼容（WebView2 仅支持已解压的未打包扩展文件夹）。";
+                    }
                     if (callback) {
                         callback(false, errMsg);
                     }
@@ -775,22 +878,8 @@ void ExtensionManager::AddExtensionFromPath(const std::wstring& folderPath, std:
                 info.id = extId;
                 info.name = extName;
                 info.isEnabled = (isEnabled != FALSE);
+                info.folderPath = loadDir;
                 info.comExtension = extension;
-
-                {
-                    std::lock_guard<std::mutex> lock(m_mutex);
-                    bool updated = false;
-                    for (auto& existing : m_extensions) {
-                        if (existing.id == info.id || existing.folderPath == info.folderPath) {
-                            existing = info;
-                            updated = true;
-                            break;
-                        }
-                    }
-                    if (!updated) {
-                        m_extensions.push_back(info);
-                    }
-                }
 
                 ExtensionConfigItem cfgItem;
                 cfgItem.id = StringUtils::WideToUtf8(info.id);
@@ -799,10 +888,16 @@ void ExtensionManager::AddExtensionFromPath(const std::wstring& folderPath, std:
                 cfgItem.enabled = info.isEnabled;
                 Config::Instance().AddOrUpdateExtensionConfig(cfgItem);
 
-                std::wstring successMsg = L"扩展程序【" + info.name + L"】加载成功！\nID: " + info.id;
-                if (callback) {
-                    callback(true, successMsg);
-                }
+                // Refresh internal cache and synchronize list
+                RefreshExtensions([callback, info](bool) {
+                    std::wstring successMsg = L"扩展程序【" + info.name + L"】加载成功！\n\nID: " + info.id +
+                        L"\n版本: " + info.version +
+                        L"\n路径: " + info.folderPath;
+                    if (callback) {
+                        callback(true, successMsg);
+                    }
+                });
+
                 return S_OK;
             }
         ).Get()
@@ -967,11 +1062,24 @@ void ExtensionManager::OpenExtensionOptions(const std::wstring& id, ICoreWebView
     if (!targetWebView) return;
 
     std::wstring optionsPage = L"";
+    std::wstring folderPath = L"";
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         for (const auto& item : m_extensions) {
             if (item.id == id) {
                 optionsPage = item.optionsPage;
+                folderPath = item.folderPath;
+                break;
+            }
+        }
+    }
+
+    if (folderPath.empty()) {
+        auto saved = Config::Instance().GetInstalledExtensions();
+        std::string idUtf8 = StringUtils::WideToUtf8(id);
+        for (const auto& cfg : saved) {
+            if (cfg.id == idUtf8) {
+                folderPath = cfg.folderPath;
                 break;
             }
         }
@@ -981,8 +1089,19 @@ void ExtensionManager::OpenExtensionOptions(const std::wstring& id, ICoreWebView
         optionsPage = L"options.html";
     }
 
-    std::wstring url = L"chrome-extension://" + id + L"/" + optionsPage;
-    targetWebView->Navigate(url.c_str());
+    // Try file:/// URI if local file exists on disk, otherwise chrome-extension://
+    std::filesystem::path optFile = std::filesystem::path(folderPath) / optionsPage;
+    std::error_code ec;
+    if (std::filesystem::exists(optFile, ec)) {
+        std::wstring fileUri = L"file:///" + optFile.wstring();
+        for (auto& c : fileUri) {
+            if (c == L'\\') c = L'/';
+        }
+        targetWebView->Navigate(fileUri.c_str());
+    } else {
+        std::wstring url = L"chrome-extension://" + id + L"/" + optionsPage;
+        targetWebView->Navigate(url.c_str());
+    }
 }
 
 void ExtensionManager::OpenExtensionFolder(const std::wstring& id) {
@@ -997,8 +1116,20 @@ void ExtensionManager::OpenExtensionFolder(const std::wstring& id) {
         }
     }
 
+    if (folderPath.empty()) {
+        auto saved = Config::Instance().GetInstalledExtensions();
+        std::string idUtf8 = StringUtils::WideToUtf8(id);
+        for (const auto& cfg : saved) {
+            if (cfg.id == idUtf8) {
+                folderPath = cfg.folderPath;
+                break;
+            }
+        }
+    }
+
     if (!folderPath.empty()) {
-        ShellExecuteW(nullptr, L"open", folderPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        std::wstring clean = NormalizeExtensionPath(folderPath);
+        ShellExecuteW(nullptr, L"open", clean.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }
 }
 
