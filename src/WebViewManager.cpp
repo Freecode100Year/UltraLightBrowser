@@ -11,7 +11,6 @@
 #include <cmath>
 #include <filesystem>
 #include <mmdeviceapi.h>
-#include <functiondiscoverykeys_devpkey.h>
 
 #pragma comment(lib, "propsys.lib")
 
@@ -719,6 +718,19 @@ void WebViewManager::ShutdownAndPurgeData() {
     PurgeAllCacheAndTempFiles();
 }
 
+// Static PROPERTYKEY definitions avoiding external GUID library linkage issues across Windows SDKs
+// PKEY_AudioEndpoint_FormFactor: {1DA5D803-D492-4EDD-8C23-ED48FFEE79DF}, 0
+static const PROPERTYKEY kPKeyAudioEndpointFormFactor = {
+    { 0x1da5d803, 0xd492, 0x4edd, { 0x8c, 0x23, 0xed, 0x48, 0xff, 0xee, 0x79, 0xdf } },
+    0
+};
+
+// PKEY_Device_FriendlyName: {A45C254E-DF1C-4EFD-8020-67D146A850E0}, 14
+static const PROPERTYKEY kPKeyDeviceFriendlyName = {
+    { 0xa45c254e, 0xdf1c, 0x4efd, { 0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0 } },
+    14
+};
+
 AudioEndpointType WebViewManager::GetDetectedAudioEndpoint() const {
     AudioEndpointType result = AudioEndpointType::Speakers;
     wil::com_ptr<IMMDeviceEnumerator> pEnum;
@@ -738,7 +750,7 @@ AudioEndpointType WebViewManager::GetDetectedAudioEndpoint() const {
 
     PROPVARIANT var;
     PropVariantInit(&var);
-    hr = pProps->GetValue(PKEY_AudioEndpoint_FormFactor, &var);
+    hr = pProps->GetValue(kPKeyAudioEndpointFormFactor, &var);
     if (SUCCEEDED(hr) && var.vt == VT_UI4) {
         // 3: Headphones, 5: Headset
         if (var.ulVal == 3 || var.ulVal == 5) {
@@ -748,7 +760,7 @@ AudioEndpointType WebViewManager::GetDetectedAudioEndpoint() const {
         }
     } else {
         PropVariantClear(&var);
-        hr = pProps->GetValue(PKEY_Device_FriendlyName, &var);
+        hr = pProps->GetValue(kPKeyDeviceFriendlyName, &var);
         if (SUCCEEDED(hr) && var.vt == VT_LPWSTR && var.pwszVal) {
             std::wstring name = var.pwszVal;
             std::wstring lower;
