@@ -4,13 +4,39 @@
 
 IDI_APP_ICON ICON "app.ico"
 
+// Built-in pages (extracted to %LOCALAPPDATA%\\UltraLightBrowser\\ui at startup)
+3001 RCDATA "..\\ui\\ui.css"
+3002 RCDATA "..\\ui\\ui.js"
+3003 RCDATA "..\\ui\\start.html"
+3004 RCDATA "..\\ui\\start.css"
+3005 RCDATA "..\\ui\\start.js"
+3006 RCDATA "..\\ui\\history.html"
+3007 RCDATA "..\\ui\\history.js"
+3008 RCDATA "..\\ui\\bookmarks.html"
+3009 RCDATA "..\\ui\\bookmarks.js"
+3010 RCDATA "..\\ui\\settings.html"
+3011 RCDATA "..\\ui\\settings.js"
+3012 RCDATA "..\\ui\\privacy.html"
+3013 RCDATA "..\\ui\\privacy.js"
+3014 RCDATA "..\\ui\\overview.html"
+3015 RCDATA "..\\ui\\overview.js"
+3016 RCDATA "..\\ui\\sidebar.html"
+3017 RCDATA "..\\ui\\sidebar.js"
+3018 RCDATA "..\\ui\\reader.html"
+3019 RCDATA "..\\ui\\reader.css"
+3020 RCDATA "..\\ui\\reader.js"
+3021 RCDATA "..\\ui\\reader-extract.js"
+3022 RCDATA "..\\ui\\find.js"
+3023 RCDATA "..\\ui\\vendor\\Readability.js"
+3024 RCDATA "..\\ui\\vendor\\Readability-readerable.js"
+
 // Manifest resource
 1 24 "app.manifest"
 
 // Version information
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     1,6,9,0
-PRODUCTVERSION  1,6,9,0
+FILEVERSION     2,0,0,0
+PRODUCTVERSION  2,0,0,0
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 FILEFLAGS       0
 FILEOS          VOS_NT_WINDOWS32
@@ -22,13 +48,13 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName",      "UltraLightBrowser"
-            VALUE "FileDescription",  "UltraLight Browser - Minimal, Ultra-Fast Windows 11 Native Browser (macOS Safari UI Edition)"
-            VALUE "FileVersion",      "1.6.9.0"
+            VALUE "FileDescription",  "UltraLight Browser - Minimal, Ultra-Fast Windows 11 Native Browser (Safari-style UI)"
+            VALUE "FileVersion",      "2.0.0.0"
             VALUE "InternalName",     "UltraLightBrowser"
             VALUE "LegalCopyright",   "Copyright (C) 2026 Freecode100Year"
             VALUE "OriginalFilename", "UltraLightBrowser.exe"
             VALUE "ProductName",      "UltraLight Browser"
-            VALUE "ProductVersion",   "1.6.9.0"
+            VALUE "ProductVersion",   "2.0.0.0"
         END
     END
     BLOCK "VarFileInfo"

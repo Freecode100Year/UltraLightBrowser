@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>侧边栏</title><link rel="stylesheet" href="ui.css">
+<style>
+html,body{background:#24262c;height:100%;font-size:13px;user-select:none}
+body{padding:12px 10px;overflow-y:auto}
+.sh{font-size:11px;color:#8d9097;margin:16px 8px 6px;font-weight:600;display:flex;align-items:center}
+.sh button{margin-left:auto;font-size:11px;padding:1px 6px}
+.si{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:6px;color:#d8d9dd;cursor:pointer;min-width:0}
+.si:hover{background:#ffffff0f}
+.si.act{background:#3a3d44}
+.si .lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si .n{color:#8d9097;font-size:11.5px}
+.si .x{visibility:hidden;padding:0 4px;font-size:11px}
+.si:hover .x{visibility:visible}
+.si.read .lbl{color:#8d9097}
+.si.link{color:var(--accent)}
+.glyph{width:16px;text-align:center;color:#9aa0aa;flex:none}
+.fold{cursor:pointer}
+.sub{padding-left:14px}
+.audio{color:#9cc3ff;font-size:11px}
+.sleep{color:#9ad08a;font-size:11px}
+.filter{margin:10px 4px 0}
+</style></head><body>
+<div class="seg" id="seg">
+  <button data-seg="tabs">标签组</button><button data-seg="bookmarks">书签</button><button data-seg="reading">阅读列表</button>
+</div>
+<div id="content"></div>
+<script src="ui.js"></script><script src="sidebar.js"></script>
+</body></html>

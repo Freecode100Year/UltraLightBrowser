@@ -1,0 +1,46 @@
+:root{
+  --bg:#1e2026;--panel:#26282e;--card:#ffffff0d;--card-b:#ffffff17;--hover:#ffffff12;--sel:#3d6ff0;
+  --text:#ecedf0;--muted:#9a9ca3;--faint:#6f7279;--accent:#3d8bfd;--danger:#ff6b61;--ok:#5cc46e;
+  --radius:12px;color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  font:14px/1.5 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif}
+a{color:inherit;text-decoration:none}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;border-radius:8px;padding:6px 12px;background:#ffffff14}
+button:hover{background:#ffffff22}
+button.primary{background:var(--accent);color:#fff}
+button.primary:hover{background:#5b9dff}
+button.danger{color:var(--danger)}
+button.icon{background:none;padding:4px 6px;color:var(--muted);line-height:1}
+button.icon:hover{background:var(--hover);color:var(--text)}
+input[type=text],input[type=search],input[type=url],select{background:#ffffff0f;border:1px solid #ffffff1c;border-radius:8px;padding:7px 10px;outline:none}
+input[type=text]:focus,input[type=search]:focus,input[type=url]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #3d8bfd33}
+select option{background:#2a2c32}
+h1{font-size:26px;font-weight:600;margin:0 0 18px}
+h2{font-size:18px;font-weight:600;margin:28px 0 12px}
+.page{max-width:980px;margin:0 auto;padding:40px 32px 60px}
+.muted{color:var(--muted)}.faint{color:var(--faint)}
+.card{background:var(--card);border:1px solid var(--card-b);border-radius:var(--radius);padding:14px 18px}
+.row{display:flex;gap:12px;align-items:center}
+.spacer{flex:1}
+.tile{flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:#fff;font-weight:700;overflow:hidden;position:relative}
+.tile img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff}
+.list .item{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:8px}
+.list .item:hover{background:var(--hover)}
+.list .item .t{flex:1;min-width:0}
+.list .item .t div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list .item .x{visibility:hidden}
+.list .item:hover .x{visibility:visible}
+.empty{color:var(--muted);padding:30px 0;text-align:center}
+.modal-bg{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;z-index:99}
+.modal{background:#2a2c32;border:1px solid #ffffff1f;border-radius:14px;padding:20px 22px;width:420px;box-shadow:0 20px 60px #000a}
+.modal h3{margin:0 0 14px;font-size:16px}
+.modal label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+.modal input,.modal select{width:100%}
+.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.seg{display:flex;background:#ffffff10;border-radius:8px;padding:2px}
+.seg button{flex:1;background:none;border-radius:6px;padding:4px 8px;color:var(--muted);font-size:13px}
+.seg button.on{background:#ffffff26;color:var(--text)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#000c;color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;z-index:100}

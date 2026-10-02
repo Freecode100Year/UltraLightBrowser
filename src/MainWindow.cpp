@@ -1,43 +1,41 @@
 #include "MainWindow.hpp"
+#include "AppShell.hpp"
 #include "Config.hpp"
-#include "DnsManager.hpp"
-#include "ElementBlocker.hpp"
-#include "NativeRequestFilter.hpp"
+#include "InternalPages.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
 #include "WindowGeometry.hpp"
+
 #include <windowsx.h>
 #include <uxtheme.h>
 #include <shellapi.h>
 #include <cmath>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
-
 #ifndef DWMWA_WINDOW_CORNER_PREFERENCE
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
 #endif
-
 #ifndef DWMWA_SYSTEMBACKDROP_TYPE
 #define DWMWA_SYSTEMBACKDROP_TYPE 38
 #endif
 
-#ifndef ULB_VERSION
-#define ULB_VERSION "dev"
-#endif
-#define ULB_VERSION_STRING L"" ULB_VERSION
-
 namespace UltraLight {
 
-static const int kPresetZoomPercentages[] = {
-    500, 400, 300, 250, 200, 175, 150, 125, 110, 100, 90, 80, 75, 67, 50, 33, 25
-};
+namespace {
 
-static void CopyTextToClipboard(HWND hWndOwner, const std::wstring& text) {
+constexpr wchar_t kClassName[] = L"UltraLightBrowserMainWindow";
+constexpr wchar_t kSuggestClass[] = L"UltraLightBrowserSuggest";
+constexpr wchar_t kToastClass[] = L"UltraLightBrowserToast";
+
+void CopyTextToClipboard(HWND hWndOwner, const std::wstring& text) {
     if (!OpenClipboard(hWndOwner)) return;
     EmptyClipboard();
-    size_t bytes = (text.length() + 1) * sizeof(wchar_t);
+    const size_t bytes = (text.length() + 1) * sizeof(wchar_t);
     HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
     if (hMem) {
         void* pMem = GlobalLock(hMem);
@@ -52,654 +50,755 @@ static void CopyTextToClipboard(HWND hWndOwner, const std::wstring& text) {
     CloseClipboard();
 }
 
-MainWindow::MainWindow() : m_webViewManager(std::make_unique<WebViewManager>()) {
-    // macOS Safari Dark Palette
-    m_hBrTopBarBg = CreateSolidBrush(RGB(36, 36, 39));
-    m_hBrAddressBg = CreateSolidBrush(RGB(48, 48, 52));
-    m_hPenAddressBorder = CreatePen(PS_SOLID, 1, RGB(62, 62, 68));
-    m_hPenAddressBorderFocus = CreatePen(PS_SOLID, 1, RGB(10, 132, 255));
-    m_hPenSeparator = CreatePen(PS_SOLID, 1, RGB(24, 24, 26));
+std::wstring Trim(std::wstring s) {
+    while (!s.empty() && iswspace(s.front())) s.erase(s.begin());
+    while (!s.empty() && iswspace(s.back())) s.pop_back();
+    return s;
+}
+
+} // namespace
+
+MainWindow::MainWindow(bool isPrivate) : m_private(isPrivate) {
+    m_hBrAddressBg = CreateSolidBrush(RGB(30, 32, 37));
 }
 
 MainWindow::~MainWindow() {
-    if (m_webViewManager) {
-        m_webViewManager->ShutdownAndPurgeData();
+    for (auto& t : m_tabs) {
+        if (t->view) AppShell::Instance().Retire(std::move(t->view));
     }
+    m_tabs.clear();
+    if (m_sidebar.controller) m_sidebar.controller->Close();
+    if (m_overview.controller) m_overview.controller->Close();
+    if (m_hSuggest) DestroyWindow(m_hSuggest);
+    if (m_hToast) DestroyWindow(m_hToast);
     if (m_hUiFont) DeleteObject(m_hUiFont);
-    if (m_hNavFont) DeleteObject(m_hNavFont);
     if (m_hAddressFont) DeleteObject(m_hAddressFont);
-    if (m_hBrTopBarBg) DeleteObject(m_hBrTopBarBg);
+    if (m_hSmallFont) DeleteObject(m_hSmallFont);
     if (m_hBrAddressBg) DeleteObject(m_hBrAddressBg);
-    if (m_hPenAddressBorder) DeleteObject(m_hPenAddressBorder);
-    if (m_hPenAddressBorderFocus) DeleteObject(m_hPenAddressBorderFocus);
-    if (m_hPenSeparator) DeleteObject(m_hPenSeparator);
 }
 
-bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
+bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow, const std::vector<std::wstring>& initialUrls) {
     m_hInstance = hInstance;
+    m_initialUrls = initialUrls;
 
-    const wchar_t CLASS_NAME[] = L"UltraLightBrowserMainWindow";
+    static bool s_registered = false;
+    if (!s_registered) {
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(WNDCLASSEXW);
+        wc.lpfnWndProc = MainWindow::WndProc;
+        wc.hInstance = hInstance;
+        wc.lpszClassName = kClassName;
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = nullptr;
+        wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(101));
+        wc.hIconSm = reinterpret_cast<HICON>(LoadImageW(hInstance, MAKEINTRESOURCEW(101), IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
+        if (!RegisterClassExW(&wc)) return false;
 
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.lpfnWndProc = MainWindow::WndProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = CLASS_NAME;
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = m_hBrTopBarBg;
-    wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(101));
-    wc.hIconSm = reinterpret_cast<HICON>(LoadImageW(hInstance, MAKEINTRESOURCEW(101), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
+        WNDCLASSEXW sc{};
+        sc.cbSize = sizeof(sc);
+        sc.lpfnWndProc = MainWindow::SuggestWndProc;
+        sc.hInstance = hInstance;
+        sc.lpszClassName = kSuggestClass;
+        sc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        sc.style = CS_DROPSHADOW;
+        RegisterClassExW(&sc);
 
-    if (!RegisterClassExW(&wc)) {
-        return false;
+        WNDCLASSEXW tc{};
+        tc.cbSize = sizeof(tc);
+        tc.lpfnWndProc = MainWindow::ToastWndProc;
+        tc.hInstance = hInstance;
+        tc.lpszClassName = kToastClass;
+        tc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        RegisterClassExW(&tc);
+        s_registered = true;
     }
 
-    m_hWnd = CreateWindowExW(
-        WS_EX_APPWINDOW,
-        CLASS_NAME,
-        L"Safari",
-        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1280, 800,
-        nullptr,
-        nullptr,
-        hInstance,
-        this
-    );
-
-    if (!m_hWnd) {
-        return false;
+    // Cascade additional windows.
+    int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
+    if (AppShell::Instance().WindowCount() > 0) {
+        if (HWND fg = GetForegroundWindow()) {
+            RECT r{};
+            if (GetWindowRect(fg, &r)) { x = r.left + 32; y = r.top + 32; }
+        }
     }
 
-    if (wc.hIcon) {
-        SendMessageW(m_hWnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(wc.hIcon));
-    }
-    if (wc.hIconSm) {
-        SendMessageW(m_hWnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(wc.hIconSm));
-    }
+    m_hWnd = CreateWindowExW(WS_EX_APPWINDOW, kClassName, L"UltraLightBrowser",
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, x, y, 1280, 820, nullptr, nullptr, hInstance, this);
+    if (!m_hWnd) return false;
 
     ApplyModernTheme();
-
-    // Extend frame into client area so DWM retains drop shadows and rounded corners
-    MARGINS margins{ 0, 0, 1, 0 };
+    MARGINS margins{0, 0, 1, 0};
     DwmExtendFrameIntoClientArea(m_hWnd, &margins);
     SetWindowPos(m_hWnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
 
     DragAcceptFiles(m_hWnd, TRUE);
     ShowWindow(m_hWnd, nCmdShow);
     UpdateWindow(m_hWnd);
-
     return true;
 }
 
 void MainWindow::ApplyModernTheme() {
     BOOL darkMode = TRUE;
     DwmSetWindowAttribute(m_hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
-
-    DWORD cornerPref = 2; // DWMWCP_ROUND
+    DWORD cornerPref = 2;  // DWMWCP_ROUND
     DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &cornerPref, sizeof(cornerPref));
-
-    DWORD backdropType = 2; // Mica
+    DWORD backdropType = 2;  // Mica
     DwmSetWindowAttribute(m_hWnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
 }
 
 void MainWindow::UpdateDpiScaling(UINT dpi) {
-    m_dpi = dpi;
-    m_topbarHeight = MulDiv(52, dpi, 96);
-
+    m_dpi = dpi ? dpi : 96;
+    m_topbarHeight = S(52);
     if (m_hUiFont) DeleteObject(m_hUiFont);
-    if (m_hNavFont) DeleteObject(m_hNavFont);
     if (m_hAddressFont) DeleteObject(m_hAddressFont);
-
-    int fontHeight = -MulDiv(10, dpi, 72);
-    m_hUiFont = CreateFontW(
-        fontHeight, 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-        L"Segoe UI Variable Text"
-    );
-
-    int navFontHeight = -MulDiv(14, dpi, 72);
-    m_hNavFont = CreateFontW(
-        navFontHeight, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-        L"Segoe UI"
-    );
-
-    int addressFontHeight = -MulDiv(10, dpi, 72);
-    m_hAddressFont = CreateFontW(
-        addressFontHeight, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-        L"Segoe UI Variable Text"
-    );
-
-    // Apply fonts to child controls
-    if (m_hBtnBack) SendMessageW(m_hBtnBack, WM_SETFONT, reinterpret_cast<WPARAM>(m_hNavFont), TRUE);
-    if (m_hBtnForward) SendMessageW(m_hBtnForward, WM_SETFONT, reinterpret_cast<WPARAM>(m_hNavFont), TRUE);
+    if (m_hSmallFont) DeleteObject(m_hSmallFont);
+    // GDI+ only accepts installed TrueType faces with regular/bold weights; Segoe UI
+    // Variable exists on Windows 11 only, so fall back to Segoe UI elsewhere.
+    static const wchar_t* face = [] {
+        LOGFONTW lf{};
+        lf.lfCharSet = DEFAULT_CHARSET;
+        wcscpy_s(lf.lfFaceName, L"Segoe UI Variable Text");
+        bool found = false;
+        HDC screen = GetDC(nullptr);
+        EnumFontFamiliesExW(screen, &lf, [](const LOGFONTW*, const TEXTMETRICW*, DWORD, LPARAM p) -> int {
+            *reinterpret_cast<bool*>(p) = true;
+            return 0;
+        }, reinterpret_cast<LPARAM>(&found), 0);
+        ReleaseDC(nullptr, screen);
+        return found ? L"Segoe UI Variable Text" : L"Segoe UI";
+    }();
+    auto font = [this](int pt, int weight) {
+        return CreateFontW(-MulDiv(pt, static_cast<int>(m_dpi), 72), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
+    };
+    m_hUiFont = font(9, FW_NORMAL);
+    m_hAddressFont = font(10, FW_NORMAL);
+    m_hSmallFont = font(8, FW_BOLD);
     if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hAddressFont), TRUE);
-    if (m_hBtnReload) SendMessageW(m_hBtnReload, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnShare) SendMessageW(m_hBtnShare, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnSound) SendMessageW(m_hBtnSound, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnDns) SendMessageW(m_hBtnDns, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnZoom) SendMessageW(m_hBtnZoom, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnNewTab) SendMessageW(m_hBtnNewTab, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    if (m_hFindEdit) SendMessageW(m_hFindEdit, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
 }
 
-LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
-    auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+// ------------------------------------------------------------------ public hooks
 
-    bool isHovered = GetPropW(hWnd, L"SafariBtnHover") != nullptr;
-    bool isPressed = GetPropW(hWnd, L"SafariBtnPressed") != nullptr;
-
-    switch (uMsg) {
-    case WM_MOUSEMOVE: {
-        if (!isHovered) {
-            SetPropW(hWnd, L"SafariBtnHover", reinterpret_cast<HANDLE>(1));
-            TRACKMOUSEEVENT tme{ sizeof(TRACKMOUSEEVENT), TME_LEAVE, hWnd, 0 };
-            TrackMouseEvent(&tme);
-            InvalidateRect(hWnd, nullptr, FALSE);
-        }
-        break;
+std::vector<SavedTab> MainWindow::SavedTabs() const {
+    std::vector<SavedTab> out;
+    for (const auto& t : m_tabs) {
+        const std::wstring url = DisplayUrl(*t);
+        if (!url.empty()) out.push_back({StringUtils::WideToUtf8(t->title), StringUtils::WideToUtf8(url)});
     }
-    case WM_MOUSELEAVE: {
-        RemovePropW(hWnd, L"SafariBtnHover");
-        RemovePropW(hWnd, L"SafariBtnPressed");
-        InvalidateRect(hWnd, nullptr, FALSE);
-        break;
-    }
-    case WM_LBUTTONDOWN: {
-        SetPropW(hWnd, L"SafariBtnPressed", reinterpret_cast<HANDLE>(1));
-        InvalidateRect(hWnd, nullptr, FALSE);
-        break;
-    }
-    case WM_LBUTTONUP: {
-        RemovePropW(hWnd, L"SafariBtnPressed");
-        InvalidateRect(hWnd, nullptr, FALSE);
-        break;
-    }
-    case WM_ERASEBKGND:
-        return 1;
-
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hWnd, &ps);
-        RECT rc;
-        GetClientRect(hWnd, &rc);
-
-        HDC memDC = CreateCompatibleDC(hdc);
-        HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
-        HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
-
-        // Fill background with toolbar color
-        HBRUSH hBrBar = self ? self->m_hBrTopBarBg : nullptr;
-        if (!hBrBar) hBrBar = GetSysColorBrush(COLOR_BTNFACE);
-        FillRect(memDC, &rc, hBrBar);
-
-        bool enabled = IsWindowEnabled(hWnd) != FALSE;
-        int radius = self ? MulDiv(6, self->m_dpi, 96) : 6;
-
-        // Render rounded background on hover or press
-        if (enabled && isPressed) {
-            HBRUSH hBrPress = CreateSolidBrush(RGB(68, 68, 76));
-            HPEN hPenPress = CreatePen(PS_SOLID, 1, RGB(82, 82, 90));
-            HGDIOBJ oldBrush = SelectObject(memDC, hBrPress);
-            HGDIOBJ oldPen = SelectObject(memDC, hPenPress);
-            RoundRect(memDC, rc.left, rc.top, rc.right, rc.bottom, radius * 2, radius * 2);
-            SelectObject(memDC, oldBrush);
-            SelectObject(memDC, oldPen);
-            DeleteObject(hBrPress);
-            DeleteObject(hPenPress);
-        } else if (enabled && isHovered) {
-            HBRUSH hBrHover = CreateSolidBrush(RGB(52, 52, 58));
-            HPEN hPenHover = CreatePen(PS_SOLID, 1, RGB(66, 66, 72));
-            HGDIOBJ oldBrush = SelectObject(memDC, hBrHover);
-            HGDIOBJ oldPen = SelectObject(memDC, hPenHover);
-            RoundRect(memDC, rc.left, rc.top, rc.right, rc.bottom, radius * 2, radius * 2);
-            SelectObject(memDC, oldBrush);
-            SelectObject(memDC, oldPen);
-            DeleteObject(hBrHover);
-            DeleteObject(hPenHover);
-        }
-
-        // Draw button label / glyph
-        wchar_t text[128]{};
-        GetWindowTextW(hWnd, text, static_cast<int>(std::size(text)));
-
-        COLORREF textColor = enabled
-            ? (isHovered ? RGB(255, 255, 255) : RGB(232, 232, 237))
-            : RGB(105, 105, 110);
-
-        SetBkMode(memDC, TRANSPARENT);
-        SetTextColor(memDC, textColor);
-
-        HFONT hFont = reinterpret_cast<HFONT>(SendMessageW(hWnd, WM_GETFONT, 0, 0));
-        HGDIOBJ oldFont = hFont ? SelectObject(memDC, hFont) : nullptr;
-
-        DrawTextW(memDC, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
-        if (oldFont) SelectObject(memDC, oldFont);
-
-        BitBlt(hdc, 0, 0, rc.right, rc.bottom, memDC, 0, 0, SRCCOPY);
-
-        SelectObject(memDC, oldBmp);
-        DeleteObject(memBmp);
-        DeleteDC(memDC);
-
-        EndPaint(hWnd, &ps);
-        return 0;
-    }
-    case WM_NCDESTROY:
-        RemovePropW(hWnd, L"SafariBtnHover");
-        RemovePropW(hWnd, L"SafariBtnPressed");
-        break;
-    default:
-        break;
-    }
-
-    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+    return out;
 }
 
-void MainWindow::CreateToolbarControls() {
-    // 1. Navigation Chevrons
-    m_hBtnBack = CreateWindowExW(
-        0, L"BUTTON", L"‹",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_BACK), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnBack, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    m_hBtnForward = CreateWindowExW(
-        0, L"BUTTON", L"›",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_FORWARD), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnForward, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    // 3. Central Smart Search Field (Edit box & Reload button)
-    m_hEditAddress = CreateWindowExW(
-        0, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_LEFT,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_EDIT_ADDRESS), m_hInstance, nullptr
-    );
-    SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
-    SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索或输入网站名称"));
-    SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    m_hBtnReload = CreateWindowExW(
-        0, L"BUTTON", L"↻",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_RELOAD), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnReload, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    // 4. Right Safari Action Buttons
-    m_hBtnShare = CreateWindowExW(
-        0, L"BUTTON", L"↥",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_SHARE), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnShare, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    m_hBtnSound = CreateWindowExW(
-        0, L"BUTTON", L"🎧 环绕 [标]",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_SOUND), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnSound, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    m_hBtnBlocker = CreateWindowExW(
-        0, L"BUTTON", L"🛡️",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_BLOCKER), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnBlocker, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    m_hBtnDns = CreateWindowExW(
-        0, L"BUTTON", L"🌐 DNS",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_DNS), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnDns, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    m_hBtnZoom = CreateWindowExW(
-        0, L"BUTTON", L"100%",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_ZOOM), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnZoom, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    m_hBtnNewTab = CreateWindowExW(
-        0, L"BUTTON", L"+",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_NEWTAB), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnNewTab, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    UpdateDpiScaling(GetDpiForWindow(m_hWnd));
-    UpdateDnsDisplay();
-    UpdateSoundDisplay();
+ICoreWebView2* MainWindow::ActiveWebView() const {
+    const Tab* t = ActiveTab();
+    if (t && t->view && t->view->GetWebView()) return t->view->GetWebView();
+    for (const auto& tab : m_tabs) {
+        if (tab->view && tab->view->GetWebView()) return tab->view->GetWebView();
+    }
+    return nullptr;
 }
 
-void MainWindow::UpdateLayout(int width, int height) {
-    if (width <= 0 || height <= 0) return;
-
-    if (m_isFullScreen) {
-        RECT fsRect{ 0, 0, width, height };
-        if (m_webViewManager) {
-            m_webViewManager->Resize(fsRect);
-        }
-        return;
-    }
-
-    int topH = m_topbarHeight;
-    int ctrlH = MulDiv(28, m_dpi, 96);
-    int btnY = (topH - ctrlH) / 2;
-
-    // 1. macOS Traffic Lights Bounds
-    int trafficCenterY = topH / 2;
-    int trafficR = MulDiv(6, m_dpi, 96);
-    int circleD = trafficR * 2;
-    int trafficGap = MulDiv(8, m_dpi, 96);
-
-    int closeX = MulDiv(20, m_dpi, 96);
-    int minX = closeX + circleD + trafficGap;
-    int maxX = minX + circleD + trafficGap;
-
-    m_rcTrafficClose = { closeX - trafficR, trafficCenterY - trafficR, closeX + trafficR, trafficCenterY + trafficR };
-    m_rcTrafficMin   = { minX - trafficR, trafficCenterY - trafficR, minX + trafficR, trafficCenterY + trafficR };
-    m_rcTrafficMax   = { maxX - trafficR, trafficCenterY - trafficR, maxX + trafficR, trafficCenterY + trafficR };
-    m_rcTrafficGroup = { m_rcTrafficClose.left - 4, m_rcTrafficClose.top - 4, m_rcTrafficMax.right + 4, m_rcTrafficMax.bottom + 4 };
-
-    // 2. Left Action Group (Back, Forward)
-    int navBtnW = MulDiv(28, m_dpi, 96);
-    int pad = MulDiv(6, m_dpi, 96);
-
-    int leftX = m_rcTrafficMax.right + MulDiv(18, m_dpi, 96);
-
-    SetWindowPos(m_hBtnBack, nullptr, leftX, btnY, navBtnW, ctrlH, SWP_NOZORDER);
-    leftX += navBtnW + MulDiv(2, m_dpi, 96);
-
-    SetWindowPos(m_hBtnForward, nullptr, leftX, btnY, navBtnW, ctrlH, SWP_NOZORDER);
-    leftX += navBtnW + MulDiv(12, m_dpi, 96);
-
-    int leftGroupEnd = leftX;
-
-    // 3. Right Action Group (Share, Blocker, Sound, DNS, Zoom, New Tab)
-    int newTabBtnW = MulDiv(28, m_dpi, 96);
-    int zoomBtnW = MulDiv(58, m_dpi, 96);
-    int dnsBtnW = MulDiv(80, m_dpi, 96);
-    int soundBtnW = MulDiv(78, m_dpi, 96);
-    int blockerBtnW = MulDiv(32, m_dpi, 96);
-    int shareBtnW = MulDiv(30, m_dpi, 96);
-
-    int rightMargin = MulDiv(14, m_dpi, 96);
-    int rightX = width - rightMargin - newTabBtnW;
-
-    SetWindowPos(m_hBtnNewTab, nullptr, rightX, btnY, newTabBtnW, ctrlH, SWP_NOZORDER);
-
-    rightX -= (zoomBtnW + pad);
-    SetWindowPos(m_hBtnZoom, nullptr, rightX, btnY, zoomBtnW, ctrlH, SWP_NOZORDER);
-
-    rightX -= (dnsBtnW + pad);
-    SetWindowPos(m_hBtnDns, nullptr, rightX, btnY, dnsBtnW, ctrlH, SWP_NOZORDER);
-
-    rightX -= (soundBtnW + pad);
-    SetWindowPos(m_hBtnSound, nullptr, rightX, btnY, soundBtnW, ctrlH, SWP_NOZORDER);
-
-    rightX -= (blockerBtnW + pad);
-    SetWindowPos(m_hBtnBlocker, nullptr, rightX, btnY, blockerBtnW, ctrlH, SWP_NOZORDER);
-
-    rightX -= (shareBtnW + pad);
-    SetWindowPos(m_hBtnShare, nullptr, rightX, btnY, shareBtnW, ctrlH, SWP_NOZORDER);
-
-    int rightGroupStart = rightX - MulDiv(12, m_dpi, 96);
-
-    // 4. Centered Smart Search Capsule Layout
-    int availW = rightGroupStart - leftGroupEnd;
-    int maxCapsuleW = MulDiv(680, m_dpi, 96);
-    int capsuleW = availW;
-    int capsuleX = leftGroupEnd;
-
-    if (availW > maxCapsuleW) {
-        int idealX = (width - maxCapsuleW) / 2;
-        if (idealX >= leftGroupEnd && (idealX + maxCapsuleW) <= rightGroupStart) {
-            capsuleX = idealX;
-            capsuleW = maxCapsuleW;
-        } else {
-            capsuleW = availW;
+UINT32 MainWindow::BrowserProcessId() const {
+    for (const auto& t : m_tabs) {
+        if (t->view) {
+            if (const UINT32 pid = t->view->BrowserProcessId()) return pid;
         }
     }
-
-    if (capsuleW > MulDiv(120, m_dpi, 96)) {
-        int capsuleH = MulDiv(30, m_dpi, 96);
-        int capsuleY = (topH - capsuleH) / 2;
-        m_rcAddressCapsule = { capsuleX, capsuleY, capsuleX + capsuleW, capsuleY + capsuleH };
-
-        // Integrated Reload/Stop Button at right edge of the capsule
-        int reloadBtnW = MulDiv(22, m_dpi, 96);
-        int reloadBtnH = MulDiv(22, m_dpi, 96);
-        int reloadX = capsuleX + capsuleW - reloadBtnW - MulDiv(4, m_dpi, 96);
-        int reloadY = capsuleY + (capsuleH - reloadBtnH) / 2;
-        SetWindowPos(m_hBtnReload, nullptr, reloadX, reloadY, reloadBtnW, reloadBtnH, SWP_NOZORDER);
-
-        // Edit control between SSL icon on left and Reload button on right
-        int iconOffset = MulDiv(26, m_dpi, 96);
-        int editX = capsuleX + iconOffset;
-        int editW = (reloadX - editX) - MulDiv(4, m_dpi, 96);
-        int editH = MulDiv(20, m_dpi, 96);
-        int editY = capsuleY + (capsuleH - editH) / 2;
-
-        SetWindowPos(m_hEditAddress, nullptr, editX, editY, editW, editH, SWP_NOZORDER);
-    }
-
-    // Refresh toolbar region
-    RECT rcTop{ 0, 0, width, topH };
-    InvalidateRect(m_hWnd, &rcTop, FALSE);
-
-    // Resize WebView2
-    RECT webViewRect{ 0, topH, width, height };
-    if (m_webViewManager) {
-        m_webViewManager->Resize(webViewRect);
-    }
+    return 0;
 }
+
+void MainWindow::OpenInNewTab(const std::wstring& url, bool activate) {
+    NewTab(url, activate);
+}
+
+void MainWindow::FocusWindow() {
+    if (IsIconic(m_hWnd)) ShowWindow(m_hWnd, SW_RESTORE);
+    SetForegroundWindow(m_hWnd);
+}
+
+// ------------------------------------------------------------------ fullscreen
 
 void MainWindow::SetFullScreen(bool enable) {
     if (m_isFullScreen == enable) return;
     m_isFullScreen = enable;
-
-    if (m_isFullScreen) {
+    if (m_isAddressFocused) EndAddressEdit(false);
+    HideSuggestions();
+    if (enable) {
         m_wpPrev.length = sizeof(WINDOWPLACEMENT);
         GetWindowPlacement(m_hWnd, &m_wpPrev);
         m_dwStylePrev = static_cast<DWORD>(GetWindowLongW(m_hWnd, GWL_STYLE));
-
-        // Hide toolbar controls
-        if (m_hBtnBack) ShowWindow(m_hBtnBack, SW_HIDE);
-        if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_HIDE);
-        if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
-        if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
-        if (m_hBtnShare) ShowWindow(m_hBtnShare, SW_HIDE);
-        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
-        if (m_hBtnSound) ShowWindow(m_hBtnSound, SW_HIDE);
-        if (m_hBtnDns) ShowWindow(m_hBtnDns, SW_HIDE);
-        if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_HIDE);
-        if (m_hBtnNewTab) ShowWindow(m_hBtnNewTab, SW_HIDE);
-
         HMONITOR hMon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO mi{ sizeof(MONITORINFO) };
+        MONITORINFO mi{sizeof(MONITORINFO)};
         GetMonitorInfoW(hMon, &mi);
-
         // Fullscreen must not inherit maximized work-area sizing or DWM corners.
         const DWORD fullscreenStyle = (m_dwStylePrev & ~(WS_OVERLAPPEDWINDOW | WS_MAXIMIZE)) | WS_POPUP;
         SetWindowLongW(m_hWnd, GWL_STYLE, fullscreenStyle);
         const MARGINS margins{};
         DwmExtendFrameIntoClientArea(m_hWnd, &margins);
-        const DWORD cornerPreference = 1; // DWMWCP_DONOTROUND (Windows 11)
-        DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE,
-                              &cornerPreference, sizeof(cornerPreference));
-        const COLORREF borderColor = 0xFFFFFFFE; // DWMWA_COLOR_NONE
+        const DWORD cornerPreference = 1;  // DWMWCP_DONOTROUND
+        DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &cornerPreference, sizeof(cornerPreference));
+        const COLORREF borderColor = 0xFFFFFFFE;  // DWMWA_COLOR_NONE
         DwmSetWindowAttribute(m_hWnd, 34 /* DWMWA_BORDER_COLOR */, &borderColor, sizeof(borderColor));
-        int monW = mi.rcMonitor.right - mi.rcMonitor.left;
-        int monH = mi.rcMonitor.bottom - mi.rcMonitor.top;
-        SetWindowPos(
-            m_hWnd, HWND_TOP,
-            mi.rcMonitor.left, mi.rcMonitor.top,
-            monW, monH,
-            SWP_NOOWNERZORDER | SWP_FRAMECHANGED
-        );
-
-        if (m_webViewManager) {
-            RECT client{};
-            GetClientRect(m_hWnd, &client);
-            m_webViewManager->Resize(client);
-        }
+        SetWindowPos(m_hWnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
+                     mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top,
+                     SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     } else {
         SetWindowLongW(m_hWnd, GWL_STYLE, m_dwStylePrev);
-        const MARGINS margins{ 0, 0, 1, 0 };
+        const MARGINS margins{0, 0, 1, 0};
         DwmExtendFrameIntoClientArea(m_hWnd, &margins);
-        const DWORD cornerPreference = 2; // DWMWCP_ROUND
-        DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE,
-                              &cornerPreference, sizeof(cornerPreference));
-        const COLORREF borderColor = 0xFFFFFFFF; // DWMWA_COLOR_DEFAULT
-        DwmSetWindowAttribute(m_hWnd, 34 /* DWMWA_BORDER_COLOR */, &borderColor, sizeof(borderColor));
+        const DWORD cornerPreference = 2;
+        DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &cornerPreference, sizeof(cornerPreference));
+        const COLORREF borderColor = 0xFFFFFFFF;  // DWMWA_COLOR_DEFAULT
+        DwmSetWindowAttribute(m_hWnd, 34, &borderColor, sizeof(borderColor));
         SetWindowPlacement(m_hWnd, &m_wpPrev);
-        SetWindowPos(
-            m_hWnd, nullptr, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED
-        );
-
-        int showCmd = SW_SHOW;
-        if (m_hBtnBack) ShowWindow(m_hBtnBack, showCmd);
-        if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
-        if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
-        if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
-        if (m_hBtnShare) ShowWindow(m_hBtnShare, showCmd);
-        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
-        if (m_hBtnSound) ShowWindow(m_hBtnSound, showCmd);
-        if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
-        if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
-        if (m_hBtnNewTab) ShowWindow(m_hBtnNewTab, showCmd);
-
-        RECT client;
-        GetClientRect(m_hWnd, &client);
-        UpdateLayout(client.right, client.bottom);
+        SetWindowPos(m_hWnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     }
+    UpdateLayout();
 }
 
 void MainWindow::ToggleFullScreen() {
     SetFullScreen(!m_isFullScreen);
 }
 
-LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
-    auto* self = reinterpret_cast<MainWindow*>(dwRefData);
-    static bool s_needSelectAllOnMouseUp = false;
+// ------------------------------------------------------------------ address bar
 
-    switch (uMsg) {
-    case WM_SETFOCUS:
-        s_needSelectAllOnMouseUp = true;
-        if (self) {
-            self->m_isAddressFocused = true;
-            InvalidateRect(self->m_hWnd, &self->m_rcAddressCapsule, FALSE);
-        }
-        break;
+void MainWindow::BeginAddressEdit(const std::wstring& text, bool selectAll) {
+    if (m_isFullScreen || !ActiveTab()) return;
+    if (m_overviewVisible) HideOverview();
+    m_isAddressFocused = true;
+    m_suppressSuggest = true;
+    SetWindowTextW(m_hEditAddress, text.c_str());
+    m_suppressSuggest = false;
+    UpdateLayout();
+    SetFocus(m_hEditAddress);
+    if (selectAll) SendMessageW(m_hEditAddress, EM_SETSEL, 0, -1);
+    else SendMessageW(m_hEditAddress, EM_SETSEL, static_cast<WPARAM>(text.size()), static_cast<LPARAM>(text.size()));
+    InvalidateToolbar();
+}
 
-    case WM_KILLFOCUS:
-        s_needSelectAllOnMouseUp = false;
-        if (self) {
-            self->m_isAddressFocused = false;
-            InvalidateRect(self->m_hWnd, &self->m_rcAddressCapsule, FALSE);
+void MainWindow::EndAddressEdit(bool focusPage) {
+    if (!m_isAddressFocused) return;
+    m_isAddressFocused = false;
+    HideSuggestions();
+    ShowWindow(m_hEditAddress, SW_HIDE);
+    UpdateLayout();
+    if (focusPage) {
+        if (Tab* t = ActiveTab(); t && t->view && t->view->GetController()) {
+            t->view->GetController()->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
         }
-        break;
-
-    case WM_LBUTTONUP: {
-        LRESULT res = DefSubclassProc(hWnd, uMsg, wParam, lParam);
-        if (s_needSelectAllOnMouseUp) {
-            s_needSelectAllOnMouseUp = false;
-            SendMessageW(hWnd, EM_SETSEL, 0, -1);
-        }
-        return res;
     }
+}
 
-    case WM_KEYDOWN:
-        if (wParam == VK_RETURN) {
-            wchar_t buffer[2048]{};
-            GetWindowTextW(hWnd, buffer, static_cast<int>(std::size(buffer)));
-            std::wstring input = buffer;
-            while (!input.empty() && iswspace(input.front())) input.erase(input.begin());
-            while (!input.empty() && iswspace(input.back())) input.pop_back();
+void MainWindow::CommitAddress() {
+    std::wstring input;
+    if (m_hSuggest && IsWindowVisible(m_hSuggest) && m_suggestSel > 0 && m_suggestSel <= static_cast<int>(m_suggestions.size())) {
+        input = StringUtils::Utf8ToWide(m_suggestions[static_cast<size_t>(m_suggestSel - 1)].url);
+    } else {
+        const int len = GetWindowTextLengthW(m_hEditAddress);
+        std::wstring buf(static_cast<size_t>(len) + 1, L'\0');
+        GetWindowTextW(m_hEditAddress, buf.data(), len + 1);
+        buf.resize(static_cast<size_t>(len));
+        input = Trim(buf);
+    }
+    if (input.empty()) return;
+    const bool shiftEnter = (GetKeyState(VK_MENU) & 0x8000) != 0;  // Alt+Enter: new tab
+    EndAddressEdit(true);
+    if (shiftEnter) NewTab(WebViewManager::ResolveInput(input), true, m_activeId);
+    else NavigateActive(input);
+}
 
-            if (input.empty()) return 0;
+void MainWindow::UpdateSuggestions() {
+    if (m_suppressSuggest || !m_isAddressFocused) return;
+    const int len = GetWindowTextLengthW(m_hEditAddress);
+    std::wstring text(static_cast<size_t>(len) + 1, L'\0');
+    GetWindowTextW(m_hEditAddress, text.data(), len + 1);
+    text.resize(static_cast<size_t>(len));
+    text = Trim(text);
+    if (text.empty()) {
+        HideSuggestions();
+        return;
+    }
+    m_suggestQuery = text;
+    m_suggestions = m_private ? std::vector<Suggestion>{}
+                              : AppShell::Instance().Lib().Suggest(StringUtils::WideToUtf8(text), 7);
+    m_suggestSel = 0;
+    m_suggestHover = -1;
+    if (!m_hSuggest) {
+        m_hSuggest = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, kSuggestClass, L"",
+                                     WS_POPUP, 0, 0, 10, 10, m_hWnd, nullptr, m_hInstance, this);
+    }
+    if (!m_hSuggest) return;
+    const int rowH = S(34);
+    const int rows = 1 + static_cast<int>(m_suggestions.size());
+    RECT anchor = m_rcActive;
+    const int width = (std::max)(static_cast<int>(anchor.right - anchor.left), S(460));
+    POINT pt{anchor.left, anchor.bottom + S(4)};
+    ClientToScreen(m_hWnd, &pt);
+    SetWindowPos(m_hSuggest, HWND_TOPMOST, pt.x, pt.y, width, rows * rowH + S(12), SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    HRGN rgn = CreateRoundRectRgn(0, 0, width + 1, rows * rowH + S(12) + 1, S(16), S(16));
+    SetWindowRgn(m_hSuggest, rgn, TRUE);
+    InvalidateRect(m_hSuggest, nullptr, FALSE);
+}
 
-            if (self && self->m_webViewManager) {
-                self->m_webViewManager->Navigate(input);
-                if (self->m_webViewManager->GetController()) {
-                    self->m_webViewManager->GetController()->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+void MainWindow::HideSuggestions() {
+    if (m_hSuggest) ShowWindow(m_hSuggest, SW_HIDE);
+    m_suggestSel = 0;
+}
+
+void MainWindow::MoveSuggestion(int delta) {
+    if (!m_hSuggest || !IsWindowVisible(m_hSuggest)) return;
+    const int count = 1 + static_cast<int>(m_suggestions.size());
+    m_suggestSel = ((m_suggestSel + delta) % count + count) % count;
+    m_suppressSuggest = true;
+    const std::wstring text = m_suggestSel == 0 ? m_suggestQuery
+        : StringUtils::Utf8ToWide(m_suggestions[static_cast<size_t>(m_suggestSel - 1)].url);
+    SetWindowTextW(m_hEditAddress, text.c_str());
+    SendMessageW(m_hEditAddress, EM_SETSEL, text.size(), text.size());
+    m_suppressSuggest = false;
+    InvalidateRect(m_hSuggest, nullptr, FALSE);
+}
+
+LRESULT CALLBACK MainWindow::SuggestWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_NCCREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        SetWindowLongPtrW(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+    }
+    auto* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+    if (!self) return DefWindowProcW(hWnd, msg, wParam, lParam);
+    const int rowH = self->S(34);
+    const int pad = self->S(6);
+    switch (msg) {
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_MOUSEMOVE: {
+        const int row = (GET_Y_LPARAM(lParam) - pad) / rowH;
+        if (row != self->m_suggestHover) {
+            self->m_suggestHover = row;
+            InvalidateRect(hWnd, nullptr, FALSE);
+        }
+        TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hWnd, 0};
+        TrackMouseEvent(&tme);
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        self->m_suggestHover = -1;
+        InvalidateRect(hWnd, nullptr, FALSE);
+        return 0;
+    case WM_LBUTTONDOWN: {
+        const int row = (GET_Y_LPARAM(lParam) - pad) / rowH;
+        if (row >= 0 && row <= static_cast<int>(self->m_suggestions.size())) {
+            self->m_suggestSel = row;
+            if (row == 0) {
+                self->m_suppressSuggest = true;
+                SetWindowTextW(self->m_hEditAddress, self->m_suggestQuery.c_str());
+                self->m_suppressSuggest = false;
+            }
+            self->CommitAddress();
+        }
+        return 0;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc{};
+        GetClientRect(hWnd, &rc);
+        HDC mem = CreateCompatibleDC(hdc);
+        HBITMAP bmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
+        HGDIOBJ old = SelectObject(mem, bmp);
+        {
+            Gdiplus::Graphics g(mem);
+            g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
+            Gdiplus::SolidBrush bg(Gdiplus::Color(255, 40, 42, 48));
+            g.FillRectangle(&bg, 0, 0, rc.right, rc.bottom);
+            Gdiplus::Font font(mem, self->m_hAddressFont);
+            Gdiplus::Font smallFont2(mem, self->m_hUiFont);
+            Gdiplus::StringFormat fmt(Gdiplus::StringFormatFlagsNoWrap);
+            fmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            fmt.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+            const int count = 1 + static_cast<int>(self->m_suggestions.size());
+            for (int i = 0; i < count; ++i) {
+                const Gdiplus::REAL y = static_cast<Gdiplus::REAL>(pad + i * rowH);
+                const bool sel = i == self->m_suggestSel;
+                const bool hover = i == self->m_suggestHover;
+                if (sel || hover) {
+                    Gdiplus::SolidBrush hb(sel ? Gdiplus::Color(255, 61, 111, 240) : Gdiplus::Color(255, 56, 59, 66));
+                    g.FillRectangle(&hb, static_cast<Gdiplus::REAL>(pad), y, static_cast<Gdiplus::REAL>(rc.right - 2 * pad), static_cast<Gdiplus::REAL>(rowH));
+                }
+                const Gdiplus::Color fg = sel ? Gdiplus::Color(255, 255, 255, 255) : Gdiplus::Color(255, 232, 233, 236);
+                const Gdiplus::Color dim = sel ? Gdiplus::Color(255, 220, 228, 255) : Gdiplus::Color(255, 140, 143, 150);
+                const Gdiplus::RectF iconBox(static_cast<Gdiplus::REAL>(pad + self->S(10)), y + (rowH - self->S(16)) / 2.0f,
+                                             static_cast<Gdiplus::REAL>(self->S(16)), static_cast<Gdiplus::REAL>(self->S(16)));
+                const Gdiplus::REAL textX = iconBox.X + self->S(28);
+                const Gdiplus::REAL textW = rc.right - textX - pad - self->S(10);
+                Gdiplus::SolidBrush fgBrush(fg), dimBrush(dim);
+                if (i == 0) {
+                    Icons::Draw(g, Icon::Search, iconBox, dim);
+                    const std::wstring label = L"搜索“" + self->m_suggestQuery + L"”";
+                    g.DrawString(label.c_str(), -1, &font, Gdiplus::RectF(textX, y, textW, static_cast<Gdiplus::REAL>(rowH)), &fmt, &fgBrush);
+                } else {
+                    const auto& s = self->m_suggestions[static_cast<size_t>(i - 1)];
+                    Icons::Draw(g, s.bookmark ? Icon::Bookmark : Icon::Clock, iconBox, dim);
+                    const std::wstring title = StringUtils::Utf8ToWide(s.title.empty() ? s.url : s.title);
+                    const std::wstring url = StringUtils::Utf8ToWide(s.url);
+                    const Gdiplus::REAL titleW = textW * 0.58f;
+                    g.DrawString(title.c_str(), -1, &font, Gdiplus::RectF(textX, y, titleW, static_cast<Gdiplus::REAL>(rowH)), &fmt, &fgBrush);
+                    g.DrawString(url.c_str(), -1, &smallFont2, Gdiplus::RectF(textX + titleW + self->S(12), y, textW - titleW - self->S(12), static_cast<Gdiplus::REAL>(rowH)), &fmt, &dimBrush);
                 }
             }
-            return 0;
-        } else if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
-            SendMessageW(hWnd, EM_SETSEL, 0, -1);
-            return 0;
-        } else if (wParam == VK_ESCAPE) {
-            if (self && self->m_webViewManager && self->m_webViewManager->GetWebView()) {
-                wil::unique_cotaskmem_string uri;
-                if (SUCCEEDED(self->m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
-                    SetWindowTextW(hWnd, uri.get());
-                }
-                if (self->m_webViewManager->GetController()) {
-                    self->m_webViewManager->GetController()->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
-                }
-            }
-            return 0;
         }
-        break;
-
-    case WM_CHAR:
-        if (wParam == VK_RETURN) {
-            return 0; // Suppress beep
-        }
-        break;
-
+        BitBlt(hdc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+        SelectObject(mem, old);
+        DeleteObject(bmp);
+        DeleteDC(mem);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
     default:
         break;
     }
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
+}
 
+LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData) {
+    auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+    switch (uMsg) {
+    case WM_KILLFOCUS: {
+        const LRESULT res = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+        if (self) self->EndAddressEdit(false);
+        return res;
+    }
+    case WM_KEYDOWN:
+        if (!self) break;
+        if (wParam == VK_RETURN) {
+            self->CommitAddress();
+            return 0;
+        }
+        if (wParam == VK_ESCAPE) {
+            self->EndAddressEdit(true);
+            return 0;
+        }
+        if (wParam == VK_DOWN) { self->MoveSuggestion(1); return 0; }
+        if (wParam == VK_UP) { self->MoveSuggestion(-1); return 0; }
+        if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessageW(hWnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
+        break;
+    case WM_CHAR:
+        if (wParam == VK_RETURN || wParam == VK_ESCAPE || wParam == 1 /* Ctrl+A */) return 0;  // no beep
+        break;
+    default:
+        break;
+    }
     return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
+// ------------------------------------------------------------------ find bar
+
+void MainWindow::ShowFindBar() {
+    if (m_isFullScreen) return;
+    if (!m_findVisible) {
+        m_findVisible = true;
+        UpdateLayout();
+    }
+    SetFocus(m_hFindEdit);
+    SendMessageW(m_hFindEdit, EM_SETSEL, 0, -1);
+    InvalidateRect(m_hWnd, &m_rcFindBar, FALSE);
+}
+
+void MainWindow::HideFindBar() {
+    if (!m_findVisible) return;
+    m_findVisible = false;
+    if (Tab* t = ActiveTab(); t && t->view && t->view->GetWebView()) {
+        t->view->GetWebView()->ExecuteScript(InternalPages::FindScript(L"clear", L"").c_str(), nullptr);
+    }
+    m_findQuery.clear();
+    m_findCount = m_findIndex = 0;
+    UpdateLayout();
+    if (Tab* t = ActiveTab(); t && t->view && t->view->GetController()) {
+        t->view->GetController()->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+    }
+}
+
+void MainWindow::RunFind(const wchar_t* action) {
+    Tab* t = ActiveTab();
+    if (!t || !t->view || !t->view->GetWebView() || !m_hFindEdit) return;
+    const int len = GetWindowTextLengthW(m_hFindEdit);
+    std::wstring q(static_cast<size_t>(len) + 1, L'\0');
+    GetWindowTextW(m_hFindEdit, q.data(), len + 1);
+    q.resize(static_cast<size_t>(len));
+    m_findQuery = q;
+    if (q.empty()) {
+        m_findCount = m_findIndex = 0;
+        t->view->GetWebView()->ExecuteScript(InternalPages::FindScript(L"clear", L"").c_str(), nullptr);
+        InvalidateRect(m_hWnd, &m_rcFindBar, FALSE);
+        return;
+    }
+    const HWND hwnd = m_hWnd;
+    t->view->GetWebView()->ExecuteScript(InternalPages::FindScript(action, q).c_str(),
+        Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>([this, hwnd](HRESULT hr, LPCWSTR result) -> HRESULT {
+            if (!IsWindow(hwnd) || m_destroyed) return S_OK;
+            m_findCount = m_findIndex = 0;
+            if (SUCCEEDED(hr) && result) {
+                try {
+                    const auto r = json::parse(StringUtils::WideToUtf8(result));
+                    if (r.is_object()) {
+                        m_findCount = r.value("count", 0);
+                        m_findIndex = r.value("index", 0);
+                    }
+                } catch (...) {}
+            }
+            InvalidateRect(m_hWnd, &m_rcFindBar, FALSE);
+            return S_OK;
+        }).Get());
+}
+
+LRESULT CALLBACK MainWindow::FindEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData) {
+    auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+    if (self) {
+        if (uMsg == WM_KEYDOWN) {
+            if (wParam == VK_RETURN) {
+                self->RunFind((GetKeyState(VK_SHIFT) & 0x8000) ? L"prev" : L"next");
+                return 0;
+            }
+            if (wParam == VK_ESCAPE) {
+                self->HideFindBar();
+                return 0;
+            }
+        } else if (uMsg == WM_CHAR && (wParam == VK_RETURN || wParam == VK_ESCAPE)) {
+            return 0;
+        } else if (uMsg == WM_SETFOCUS || uMsg == WM_KILLFOCUS) {
+            InvalidateRect(self->m_hWnd, &self->m_rcFindBar, FALSE);
+        }
+    }
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
+// ------------------------------------------------------------------ toast
+
+LRESULT CALLBACK MainWindow::ToastWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_NCCREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        SetWindowLongPtrW(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+    }
+    auto* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+    if (msg == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+    if (msg == WM_ERASEBKGND) return 1;
+    if (msg == WM_PAINT && self) {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc{};
+        GetClientRect(hWnd, &rc);
+        HBRUSH bg = CreateSolidBrush(RGB(24, 25, 29));
+        FillRect(hdc, &rc, bg);
+        DeleteObject(bg);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(240, 240, 244));
+        HGDIOBJ old = SelectObject(hdc, self->m_hUiFont);
+        DrawTextW(hdc, self->m_toastText.c_str(), -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(hdc, old);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+void MainWindow::ShowToast(const std::wstring& text) {
+    m_toastText = text;
+    if (!m_hToast) {
+        m_hToast = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT, kToastClass, L"",
+                                   WS_POPUP, 0, 0, 10, 10, m_hWnd, nullptr, m_hInstance, this);
+        if (!m_hToast) return;
+        SetLayeredWindowAttributes(m_hToast, 0, 235, LWA_ALPHA);
+    }
+    HDC hdc = GetDC(m_hToast);
+    HGDIOBJ old = SelectObject(hdc, m_hUiFont);
+    SIZE size{};
+    GetTextExtentPoint32W(hdc, text.c_str(), static_cast<int>(text.size()), &size);
+    SelectObject(hdc, old);
+    ReleaseDC(m_hToast, hdc);
+    const int w = size.cx + S(36), h = S(36);
+    const RECT content = ContentRect();
+    POINT pt{(content.left + content.right - w) / 2, content.top + S(18)};
+    ClientToScreen(m_hWnd, &pt);
+    SetWindowPos(m_hToast, HWND_TOPMOST, pt.x, pt.y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    SetWindowRgn(m_hToast, CreateRoundRectRgn(0, 0, w + 1, h + 1, S(14), S(14)), TRUE);
+    InvalidateRect(m_hToast, nullptr, TRUE);
+    SetTimer(m_hWnd, IDT_TOAST, 1800, nullptr);
+}
+
+// ------------------------------------------------------------------ commands
+
+void MainWindow::OnCommand(WORD id) {
+    Tab* tab = ActiveTab();
+    m_lastInteractionTick = GetTickCount64();
+    switch (id) {
+    case IDM_NEW_TAB:
+        if (m_overviewVisible) HideOverview();
+        NewTab(NewTabUrl(), true);
+        BeginAddressEdit(L"", false);
+        return;
+    case IDM_NEW_WINDOW: AppShell::Instance().OpenWindow(false); return;
+    case IDM_NEW_PRIVATE_WINDOW: AppShell::Instance().OpenWindow(true); return;
+    case IDM_CLOSE_TAB: if (tab) CloseTab(tab->id); return;
+    case IDM_CLOSE_WINDOW: PostMessageW(m_hWnd, WM_CLOSE, 0, 0); return;
+    case IDM_REOPEN_TAB: ReopenClosedTab(); return;
+    case IDM_NEXT_TAB:
+    case IDM_PREV_TAB: {
+        if (m_tabs.size() < 2) return;
+        const int n = static_cast<int>(m_tabs.size());
+        const int idx = (IndexOf(m_activeId) + (id == IDM_NEXT_TAB ? 1 : n - 1)) % n;
+        ActivateTab(m_tabs[static_cast<size_t>(idx)]->id);
+        return;
+    }
+    case IDM_BACK: if (tab && tab->view) tab->view->GoBack(); return;
+    case IDM_FORWARD: if (tab && tab->view) tab->view->GoForward(); return;
+    case IDM_RELOAD: if (tab && tab->view) tab->view->Reload(); return;
+    case IDM_STOP: if (tab && tab->view) tab->view->Stop(); return;
+    case IDM_HOME: NavigateActive(Config::Instance().GetSettings().startUrl); return;
+    case IDM_FOCUS_ADDRESS_BAR:
+        if (tab) BeginAddressEdit(DisplayUrl(*tab), true);
+        return;
+    case IDM_TOGGLE_FULLSCREEN: ToggleFullScreen(); return;
+    case IDM_EXIT_FULLSCREEN:
+        if (m_overviewVisible) HideOverview();
+        if (m_isFullScreen) SetFullScreen(false);
+        return;
+    case IDM_ZOOM_IN: if (tab && tab->view) tab->view->ZoomIn(); return;
+    case IDM_ZOOM_OUT: if (tab && tab->view) tab->view->ZoomOut(); return;
+    case IDM_ZOOM_RESET: if (tab && tab->view) tab->view->ZoomReset(); return;
+    case IDM_BOOKMARKS: OpenInternalPage(L"bookmarks.html", true); return;
+    case IDM_HISTORY: OpenInternalPage(L"history.html", true); return;
+    case IDM_PRIVACY_REPORT: OpenInternalPage(L"privacy.html", true); return;
+    case IDM_SETTINGS: OpenInternalPage(L"settings.html", true); return;
+    case IDM_READING_LIST: ToggleSidebar(L"reading"); return;
+    case IDM_SIDEBAR: ToggleSidebar(); return;
+    case IDM_OVERVIEW: ToggleOverview(); return;
+    case IDM_DOWNLOADS:
+        if (tab && tab->view && tab->view->GetWebView()) {
+            wil::com_ptr<ICoreWebView2_9> wv9;
+            if (SUCCEEDED(tab->view->GetWebView()->QueryInterface(IID_PPV_ARGS(&wv9))) && wv9) {
+                BOOL open = FALSE;
+                wv9->get_IsDefaultDownloadDialogOpen(&open);
+                if (open) wv9->CloseDefaultDownloadDialog();
+                else wv9->OpenDefaultDownloadDialog();
+            }
+        }
+        return;
+    case IDM_PRINT:
+        if (tab && tab->view && tab->view->GetWebView()) {
+            wil::com_ptr<ICoreWebView2_16> wv16;
+            if (SUCCEEDED(tab->view->GetWebView()->QueryInterface(IID_PPV_ARGS(&wv16))) && wv16) {
+                wv16->ShowPrintUI(COREWEBVIEW2_PRINT_DIALOG_KIND_BROWSER);
+            }
+        }
+        return;
+    case IDM_READER: ToggleReader(); return;
+    case IDM_FIND: ShowFindBar(); return;
+    case IDM_FIND_NEXT:
+        if (!m_findVisible) ShowFindBar();
+        else RunFind(L"next");
+        return;
+    case IDM_FIND_PREV:
+        if (!m_findVisible) ShowFindBar();
+        else RunFind(L"prev");
+        return;
+    case IDM_FIND_CLOSE: HideFindBar(); return;
+    case IDM_ADD_BOOKMARK: AddBookmark(kBookmarksFolder); return;
+    case IDM_ADD_FAVORITE: AddBookmark(kFavoritesFolder); return;
+    case IDM_ADD_READING: AddToReadingList(); return;
+    case IDM_MENU: ShowMainMenu(); return;
+    case IDM_SHARE: ShowShareMenu(); return;
+    case IDM_SHARE_COPY_URL:
+        if (tab && !DisplayUrl(*tab).empty()) {
+            CopyTextToClipboard(m_hWnd, DisplayUrl(*tab));
+            ShowToast(L"已拷贝链接");
+        }
+        return;
+    case IDM_SHARE_OPEN_DEFAULT:
+        if (tab && !DisplayUrl(*tab).empty()) ShellExecuteW(m_hWnd, L"open", DisplayUrl(*tab).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        return;
+    default:
+        break;
+    }
+    if (id > IDM_SELECT_TAB_BASE && id <= IDM_SELECT_TAB_BASE + 9) {
+        const int n = id - IDM_SELECT_TAB_BASE;
+        if (m_tabs.empty()) return;
+        // Ctrl+9 always means the last tab.
+        const size_t idx = n == 9 ? m_tabs.size() - 1 : static_cast<size_t>(n - 1);
+        if (idx < m_tabs.size()) ActivateTab(m_tabs[idx]->id);
+        return;
+    }
+    HandleMenuCommand(id);
+}
+
+void MainWindow::OnClose() {
+    if (m_closing) return;
+    m_closing = true;
+    KillTimer(m_hWnd, IDT_TAB_SUSPEND);
+    KillTimer(m_hWnd, IDT_LIBRARY_SAVE);
+    if (AppShell::Instance().IsLastWindow(this)) {
+        AppShell::Instance().PrepareExit(this);
+    }
+    ShowWindow(m_hWnd, SW_HIDE);
+    if (m_hSuggest) ShowWindow(m_hSuggest, SW_HIDE);
+    if (m_hToast) ShowWindow(m_hToast, SW_HIDE);
+    for (auto& t : m_tabs) {
+        if (t->view) AppShell::Instance().Retire(std::move(t->view));
+    }
+    m_tabs.clear();
+    if (m_sidebar.controller) { m_sidebar.controller->Close(); m_sidebar = {}; }
+    if (m_overview.controller) { m_overview.controller->Close(); m_overview = {}; }
+    DestroyWindow(m_hWnd);
+}
+
+// ------------------------------------------------------------------ window procedure
+
+LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    MainWindow* self = nullptr;
+    if (msg == WM_NCCREATE) {
+        auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        self = reinterpret_cast<MainWindow*>(create->lpCreateParams);
+        SetWindowLongPtrW(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        self->m_hWnd = hWnd;
+    } else {
+        self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+    }
+    if (self) return self->HandleMessage(msg, wParam, lParam);
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
 LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
-    case WM_NCCALCSIZE: {
+    case WM_NCCALCSIZE:
         if (wParam == TRUE) {
             if (m_isFullScreen || IsZoomed(m_hWnd)) {
                 auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
                 HMONITOR hMon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
-                MONITORINFO mi{ sizeof(MONITORINFO) };
+                MONITORINFO mi{sizeof(MONITORINFO)};
                 if (GetMonitorInfoW(hMon, &mi)) {
-                    params->rgrc[0] = CalculateClientBounds(
-                        params->rgrc[0], mi.rcMonitor, mi.rcWork,
-                        m_isFullScreen, IsZoomed(m_hWnd) != FALSE);
+                    params->rgrc[0] = CalculateClientBounds(params->rgrc[0], mi.rcMonitor, mi.rcWork,
+                                                            m_isFullScreen, IsZoomed(m_hWnd) != FALSE);
                 }
             }
-            return 0; // Remove standard Windows caption and frame
+            return 0;  // Remove standard Windows caption and frame
         }
         break;
-    }
 
     case WM_NCHITTEST: {
-        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        RECT rcWin;
+        POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        RECT rcWin{};
         GetWindowRect(m_hWnd, &rcWin);
-
-        // Native resize borders
         if (!IsZoomed(m_hWnd) && !m_isFullScreen) {
-            int b = MulDiv(6, m_dpi, 96);
-            bool left = (pt.x >= rcWin.left && pt.x < rcWin.left + b);
-            bool right = (pt.x < rcWin.right && pt.x >= rcWin.right - b);
-            bool top = (pt.y >= rcWin.top && pt.y < rcWin.top + b);
-            bool bottom = (pt.y < rcWin.bottom && pt.y >= rcWin.bottom - b);
-
+            const int b = S(6);
+            const bool left = pt.x >= rcWin.left && pt.x < rcWin.left + b;
+            const bool right = pt.x < rcWin.right && pt.x >= rcWin.right - b;
+            const bool top = pt.y >= rcWin.top && pt.y < rcWin.top + b;
+            const bool bottom = pt.y < rcWin.bottom && pt.y >= rcWin.bottom - b;
             if (top && left) return HTTOPLEFT;
             if (top && right) return HTTOPRIGHT;
             if (bottom && left) return HTBOTTOMLEFT;
@@ -709,1221 +808,306 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             if (top) return HTTOP;
             if (bottom) return HTBOTTOM;
         }
-
-        POINT clientPt = pt;
-        ScreenToClient(m_hWnd, &clientPt);
-
-        if (clientPt.y >= 0 && clientPt.y < m_topbarHeight && !m_isFullScreen) {
-            // Check macOS Traffic Lights
-            if (PtInRect(&m_rcTrafficGroup, clientPt)) {
-                return HTCLIENT;
-            }
-            // Check child controls
-            HWND hChild = ChildWindowFromPointEx(m_hWnd, clientPt, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
-            if (hChild && hChild != m_hWnd) {
-                return HTCLIENT;
-            }
-            // Draggable empty toolbar area
-            return HTCAPTION;
+        POINT client = pt;
+        ScreenToClient(m_hWnd, &client);
+        if (!m_isFullScreen && client.y >= 0 && client.y < m_topbarHeight) {
+            if (HitTest(client).kind != Hit::None) return HTCLIENT;
+            if (m_isAddressFocused && PtInRect(&m_rcActive, client)) return HTCLIENT;
+            return HTCAPTION;  // drag the window from empty toolbar space
         }
-
         return HTCLIENT;
     }
 
     case WM_CREATE: {
-        CreateToolbarControls();
-
-        m_webViewManager->SetTitleChangedCallback([this](const std::wstring& title) {
-            if (title.empty()) {
-                SetWindowTextW(m_hWnd, L"Safari");
-            } else {
-                SetWindowTextW(m_hWnd, (title + L" — Safari").c_str());
-            }
-        });
-
-        m_webViewManager->SetSourceChangedCallback([this](const std::wstring& uri) {
-            if (GetFocus() != m_hEditAddress) {
-                SetWindowTextW(m_hEditAddress, uri.c_str());
-            }
-        });
-
-        m_webViewManager->SetNavigationStateCallback([this](bool isLoading) {
-            m_isLoading = isLoading;
-            if (m_hBtnReload) {
-                SetWindowTextW(m_hBtnReload, isLoading ? L"✕" : L"↻");
-            }
-        });
-
-        m_webViewManager->SetFullScreenCallback([this](bool fs) {
-            SetFullScreen(fs);
-        });
-
-        m_webViewManager->SetZoomFactorChangedCallback([this](double zoom) {
-            UpdateZoomDisplay(zoom);
-        });
-
-        m_webViewManager->SetAudioPlayingCallback([this](bool isPlayingAudio) {
-            if (m_webViewManager && m_webViewManager->GetWebView() &&
-                PowerManager::Instance().IsBackgrounded()) {
-                KillTimer(m_hWnd, IDT_AUDIO_STOP_GRACE);
-                if (isPlayingAudio) {
-                    PowerManager::Instance().HandleWindowMinimize(
-                        m_webViewManager->GetController(),
-                        m_webViewManager->GetWebView(),
-                        true
-                    );
-                } else {
-                    // Playlists pause briefly between tracks; suspending at once would stop autoplay.
-                    SetTimer(m_hWnd, IDT_AUDIO_STOP_GRACE, 60000, nullptr);
-                }
-            }
-        });
-
-        m_webViewManager->SetUserActivityCallback([this]() {
-            m_lastInteractionTick = GetTickCount64();
-            if (m_webViewManager && m_webViewManager->GetWebView() &&
-                PowerManager::Instance().IsBackgrounded()) {
-                PowerManager::Instance().HandleActivityResume(
-                    m_webViewManager->GetController(),
-                    m_webViewManager->GetWebView()
-                );
-            }
-        });
+        UpdateDpiScaling(GetDpiForWindow(m_hWnd));
+        m_hEditAddress = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL | ES_LEFT,
+                                         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_EDIT_ADDRESS), m_hInstance, nullptr);
+        SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索或输入网站名称"));
+        SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+        SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+        m_hFindEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL | ES_LEFT,
+                                      0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_EDIT_FIND), m_hInstance, nullptr);
+        SetWindowSubclass(m_hFindEdit, FindEditSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+        UpdateDpiScaling(m_dpi);
 
         m_lastInteractionTick = GetTickCount64();
+        SetTimer(m_hWnd, IDT_TAB_SUSPEND, 30000, nullptr);
+        SetTimer(m_hWnd, IDT_LIBRARY_SAVE, 30000, nullptr);
+        m_sidebarVisible = Config::Instance().GetSettings().sidebarVisible;
 
-        HRESULT hrInit = m_webViewManager->Initialize(m_hWnd, [this]() {
-            RECT client;
-            GetClientRect(m_hWnd, &client);
-            UpdateLayout(client.right, client.bottom);
-            UpdateZoomDisplay(m_webViewManager->GetZoomFactor());
-            DnsManager::Instance().ApplySettings();
-            m_webViewManager->Navigate(Config::Instance().GetSettings().startUrl);
-        });
-        if (FAILED(hrInit)) {
-            // Error alert already displayed with troubleshooting instructions
+        // Initial tabs
+        if (m_initialUrls.empty()) {
+            NewTab(m_private ? InternalPages::Url(L"start.html") : NewTabUrl(), true);
+        } else {
+            bool first = true;
+            for (const auto& url : m_initialUrls) {
+                NewTab(url, first);
+                first = false;
+            }
         }
-
+        if (m_sidebarVisible) {
+            m_sidebarVisible = false;
+            ToggleSidebar();
+        }
+        UpdateWindowTitle();
         return 0;
-    }
-
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(m_hWnd, &ps);
-
-        RECT client;
-        GetClientRect(m_hWnd, &client);
-        int w = client.right;
-        int topH = m_topbarHeight;
-
-        if (!m_isFullScreen && w > 0 && topH > 0) {
-            HDC memDC = CreateCompatibleDC(hdc);
-            HBITMAP memBmp = CreateCompatibleBitmap(hdc, w, topH);
-            HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
-
-            // Fill toolbar background
-            RECT rcTop{ 0, 0, w, topH };
-            FillRect(memDC, &rcTop, m_hBrTopBarBg);
-
-            // Draw subtle bottom separator line
-            HGDIOBJ oldPen = SelectObject(memDC, m_hPenSeparator);
-            MoveToEx(memDC, 0, topH - 1, nullptr);
-            LineTo(memDC, w, topH - 1);
-
-            // 1. Render macOS Traffic Lights (Red, Yellow, Green)
-            int trafficR = MulDiv(6, m_dpi, 96);
-            int circleD = trafficR * 2;
-            int trafficCenterY = topH / 2;
-
-            int closeX = MulDiv(20, m_dpi, 96);
-            int minX = closeX + circleD + MulDiv(8, m_dpi, 96);
-            int maxX = minX + circleD + MulDiv(8, m_dpi, 96);
-
-            // Close (Red)
-            COLORREF colClose = (m_isWindowActive || m_isTrafficGroupHovered)
-                ? (m_trafficPressedBtn == 1 ? RGB(214, 69, 61) : RGB(255, 95, 86))
-                : RGB(72, 72, 76);
-            COLORREF penClose = (m_isWindowActive || m_isTrafficGroupHovered) ? RGB(224, 68, 62) : RGB(60, 60, 64);
-            HBRUSH hBrClose = CreateSolidBrush(colClose);
-            HPEN hPenClose = CreatePen(PS_SOLID, 1, penClose);
-            SelectObject(memDC, hBrClose);
-            SelectObject(memDC, hPenClose);
-            Ellipse(memDC, closeX - trafficR, trafficCenterY - trafficR, closeX + trafficR, trafficCenterY + trafficR);
-            DeleteObject(hBrClose);
-            DeleteObject(hPenClose);
-
-            // Minimize (Yellow)
-            COLORREF colMin = (m_isWindowActive || m_isTrafficGroupHovered)
-                ? (m_trafficPressedBtn == 2 ? RGB(214, 153, 30) : RGB(255, 189, 46))
-                : RGB(72, 72, 76);
-            COLORREF penMin = (m_isWindowActive || m_isTrafficGroupHovered) ? RGB(222, 161, 35) : RGB(60, 60, 64);
-            HBRUSH hBrMin = CreateSolidBrush(colMin);
-            HPEN hPenMin = CreatePen(PS_SOLID, 1, penMin);
-            SelectObject(memDC, hBrMin);
-            SelectObject(memDC, hPenMin);
-            Ellipse(memDC, minX - trafficR, trafficCenterY - trafficR, minX + trafficR, trafficCenterY + trafficR);
-            DeleteObject(hBrMin);
-            DeleteObject(hPenMin);
-
-            // Zoom / Maximize (Green)
-            COLORREF colMax = (m_isWindowActive || m_isTrafficGroupHovered)
-                ? (m_trafficPressedBtn == 3 ? RGB(30, 160, 48) : RGB(39, 201, 63))
-                : RGB(72, 72, 76);
-            COLORREF penMax = (m_isWindowActive || m_isTrafficGroupHovered) ? RGB(26, 171, 41) : RGB(60, 60, 64);
-            HBRUSH hBrMax = CreateSolidBrush(colMax);
-            HPEN hPenMax = CreatePen(PS_SOLID, 1, penMax);
-            SelectObject(memDC, hBrMax);
-            SelectObject(memDC, hPenMax);
-            Ellipse(memDC, maxX - trafficR, trafficCenterY - trafficR, maxX + trafficR, trafficCenterY + trafficR);
-            DeleteObject(hBrMax);
-            DeleteObject(hPenMax);
-
-            // Hover symbols inside Traffic Lights
-            if (m_isTrafficGroupHovered) {
-                int arm = MulDiv(3, m_dpi, 96);
-
-                // Red '✕'
-                HPEN hPenSymClose = CreatePen(PS_SOLID, 1, RGB(77, 0, 0));
-                SelectObject(memDC, hPenSymClose);
-                MoveToEx(memDC, closeX - arm, trafficCenterY - arm, nullptr);
-                LineTo(memDC, closeX + arm + 1, trafficCenterY + arm + 1);
-                MoveToEx(memDC, closeX - arm, trafficCenterY + arm, nullptr);
-                LineTo(memDC, closeX + arm + 1, trafficCenterY - arm - 1);
-                DeleteObject(hPenSymClose);
-
-                // Yellow '–'
-                HPEN hPenSymMin = CreatePen(PS_SOLID, 1, RGB(153, 87, 0));
-                SelectObject(memDC, hPenSymMin);
-                MoveToEx(memDC, minX - arm, trafficCenterY, nullptr);
-                LineTo(memDC, minX + arm + 1, trafficCenterY);
-                DeleteObject(hPenSymMin);
-
-                // Green '⤢'
-                HPEN hPenSymMax = CreatePen(PS_SOLID, 1, RGB(0, 100, 0));
-                SelectObject(memDC, hPenSymMax);
-                MoveToEx(memDC, maxX + arm, trafficCenterY - arm, nullptr);
-                LineTo(memDC, maxX + 1, trafficCenterY - arm);
-                MoveToEx(memDC, maxX + arm, trafficCenterY - arm, nullptr);
-                LineTo(memDC, maxX + arm, trafficCenterY);
-                MoveToEx(memDC, maxX - arm, trafficCenterY + arm, nullptr);
-                LineTo(memDC, maxX - 1, trafficCenterY + arm);
-                MoveToEx(memDC, maxX - arm, trafficCenterY + arm, nullptr);
-                LineTo(memDC, maxX - arm, trafficCenterY);
-                DeleteObject(hPenSymMax);
-            }
-
-            // 2. Render macOS Safari Centered Address Bar Capsule
-            if (m_rcAddressCapsule.right > m_rcAddressCapsule.left) {
-                HPEN activePen = m_isAddressFocused ? m_hPenAddressBorderFocus : m_hPenAddressBorder;
-                SelectObject(memDC, activePen);
-                HGDIOBJ oldBrush = SelectObject(memDC, m_hBrAddressBg);
-
-                int radius = MulDiv(9, m_dpi, 96);
-                RoundRect(memDC, m_rcAddressCapsule.left, m_rcAddressCapsule.top, m_rcAddressCapsule.right, m_rcAddressCapsule.bottom, radius * 2, radius * 2);
-                SelectObject(memDC, oldBrush);
-
-                // Draw SSL Lock Icon on left inside capsule
-                RECT rcLock{
-                    m_rcAddressCapsule.left + MulDiv(7, m_dpi, 96),
-                    m_rcAddressCapsule.top,
-                    m_rcAddressCapsule.left + MulDiv(24, m_dpi, 96),
-                    m_rcAddressCapsule.bottom
-                };
-                SetBkMode(memDC, TRANSPARENT);
-                SetTextColor(memDC, m_isAddressFocused ? RGB(10, 132, 255) : RGB(140, 140, 145));
-                HGDIOBJ oldFont = SelectObject(memDC, m_hUiFont);
-                DrawTextW(memDC, L"🔒", -1, &rcLock, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                SelectObject(memDC, oldFont);
-            }
-
-            SelectObject(memDC, oldPen);
-
-            BitBlt(hdc, 0, 0, w, topH, memDC, 0, 0, SRCCOPY);
-            SelectObject(memDC, oldBmp);
-            DeleteObject(memBmp);
-            DeleteDC(memDC);
-        }
-
-        EndPaint(m_hWnd, &ps);
-        return 0;
-    }
-
-    case WM_MOUSEMOVE: {
-        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        if (PtInRect(&m_rcTrafficGroup, pt)) {
-            if (!m_isTrafficGroupHovered) {
-                m_isTrafficGroupHovered = true;
-                TRACKMOUSEEVENT tme{ sizeof(TRACKMOUSEEVENT), TME_LEAVE, m_hWnd, 0 };
-                TrackMouseEvent(&tme);
-                InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
-            }
-
-            int prevHover = m_trafficHoveredBtn;
-            if (PtInRect(&m_rcTrafficClose, pt)) m_trafficHoveredBtn = 1;
-            else if (PtInRect(&m_rcTrafficMin, pt)) m_trafficHoveredBtn = 2;
-            else if (PtInRect(&m_rcTrafficMax, pt)) m_trafficHoveredBtn = 3;
-            else m_trafficHoveredBtn = 0;
-
-            if (prevHover != m_trafficHoveredBtn) {
-                InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
-            }
-        } else if (m_isTrafficGroupHovered) {
-            m_isTrafficGroupHovered = false;
-            m_trafficHoveredBtn = 0;
-            InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
-        }
-        break;
-    }
-
-    case WM_MOUSELEAVE: {
-        if (m_isTrafficGroupHovered) {
-            m_isTrafficGroupHovered = false;
-            m_trafficHoveredBtn = 0;
-            m_trafficPressedBtn = 0;
-            InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
-        }
-        break;
-    }
-
-    case WM_LBUTTONDOWN: {
-        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        if (PtInRect(&m_rcTrafficGroup, pt)) {
-            if (PtInRect(&m_rcTrafficClose, pt)) m_trafficPressedBtn = 1;
-            else if (PtInRect(&m_rcTrafficMin, pt)) m_trafficPressedBtn = 2;
-            else if (PtInRect(&m_rcTrafficMax, pt)) m_trafficPressedBtn = 3;
-
-            if (m_trafficPressedBtn != 0) {
-                SetCapture(m_hWnd);
-                InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
-                return 0;
-            }
-        }
-        break;
-    }
-
-    case WM_LBUTTONUP: {
-        if (m_trafficPressedBtn != 0) {
-            ReleaseCapture();
-            POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-            int pressed = m_trafficPressedBtn;
-            m_trafficPressedBtn = 0;
-            InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
-
-            if (pressed == 1 && PtInRect(&m_rcTrafficClose, pt)) {
-                PostMessageW(m_hWnd, WM_CLOSE, 0, 0);
-            } else if (pressed == 2 && PtInRect(&m_rcTrafficMin, pt)) {
-                ShowWindow(m_hWnd, SW_MINIMIZE);
-            } else if (pressed == 3 && PtInRect(&m_rcTrafficMax, pt)) {
-                ShowWindow(m_hWnd, IsZoomed(m_hWnd) ? SW_RESTORE : SW_MAXIMIZE);
-            }
-            return 0;
-        }
-        break;
     }
 
     case WM_ERASEBKGND:
         return 1;
 
-    case WM_CTLCOLOREDIT:
-    case WM_CTLCOLORSTATIC: {
-        HWND hTarget = reinterpret_cast<HWND>(lParam);
-        if (hTarget == m_hEditAddress) {
-            HDC hdcEdit = reinterpret_cast<HDC>(wParam);
-            SetTextColor(hdcEdit, RGB(255, 255, 255));
-            SetBkColor(hdcEdit, RGB(48, 48, 52));
-            return reinterpret_cast<LRESULT>(m_hBrAddressBg);
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(m_hWnd, &ps);
+        RECT client{};
+        GetClientRect(m_hWnd, &client);
+        const int w = client.right;
+        const int h = m_isFullScreen ? 0 : m_topbarHeight + (m_findVisible ? S(40) : 0);
+        if (w > 0 && h > 0) {
+            HDC mem = CreateCompatibleDC(hdc);
+            HBITMAP bmp = CreateCompatibleBitmap(hdc, w, h);
+            HGDIOBJ old = SelectObject(mem, bmp);
+            RECT all{0, 0, w, h};
+            HBRUSH bg = CreateSolidBrush(RGB(30, 32, 37));
+            FillRect(mem, &all, bg);
+            DeleteObject(bg);
+            PaintToolbar(mem, w);
+            PaintFindBar(mem);
+            BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
+            SelectObject(mem, old);
+            DeleteObject(bmp);
+            DeleteDC(mem);
         }
-        break;
+        // Area under not-yet-ready web views
+        RECT rest{0, h, client.right, client.bottom};
+        if (rest.bottom > rest.top) {
+            HBRUSH bg = CreateSolidBrush(RGB(30, 32, 37));
+            FillRect(hdc, &rest, bg);
+            DeleteObject(bg);
+        }
+        EndPaint(m_hWnd, &ps);
+        return 0;
     }
 
-    case WM_TIMER: {
-        if (wParam == IDT_INACTIVITY_CHECK) {
-            KillTimer(m_hWnd, IDT_INACTIVITY_CHECK);
-            // Only a minimized window may be hidden and suspended; an unfocused but visible
-            // window (e.g. on a second monitor) must keep rendering.
-            if (IsIconic(m_hWnd)) {
-                if (m_webViewManager && m_webViewManager->GetWebView()) {
-                    bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
-                    PowerManager::Instance().HandleInactivitySuspend(
-                        m_webViewManager->GetController(),
-                        m_webViewManager->GetWebView(),
-                        isPlayingAudio
-                    );
-                }
-            }
-            return 0;
+    case WM_MOUSEMOVE:
+        OnToolbarMouseMove({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+        return 0;
+
+    case WM_MOUSELEAVE:
+        m_trackingMouse = false;
+        if (m_hover.kind != Hit::None || m_isTrafficGroupHovered) {
+            m_hover = {};
+            m_isTrafficGroupHovered = false;
+            m_trafficHoveredBtn = 0;
+            InvalidateToolbar();
+            if (m_findVisible) InvalidateRect(m_hWnd, &m_rcFindBar, FALSE);
         }
-        if (wParam == IDT_AUDIO_STOP_GRACE) {
-            KillTimer(m_hWnd, IDT_AUDIO_STOP_GRACE);
-            if (m_webViewManager && m_webViewManager->GetWebView() &&
-                PowerManager::Instance().IsBackgrounded() &&
-                !m_webViewManager->IsDocumentPlayingAudio()) {
-                PowerManager::Instance().HandleWindowMinimize(
-                    m_webViewManager->GetController(),
-                    m_webViewManager->GetWebView(),
-                    false
-                );
-            }
-            return 0;
-        }
-        break;
+        return 0;
+
+    case WM_LBUTTONDOWN:
+        OnToolbarButtonDown({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+        return 0;
+
+    case WM_LBUTTONUP:
+        OnToolbarButtonUp({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+        return 0;
+
+    case WM_LBUTTONDBLCLK:
+        return 0;
+
+    case WM_MBUTTONUP:
+        OnToolbarMiddleUp({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+        return 0;
+
+    case WM_RBUTTONUP:
+        OnToolbarRightUp({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+        return 0;
+
+    case WM_CTLCOLOREDIT: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(hdc, RGB(242, 242, 246));
+        SetBkColor(hdc, RGB(30, 32, 37));
+        return reinterpret_cast<LRESULT>(m_hBrAddressBg);
     }
 
     case WM_ACTIVATE: {
-        m_isWindowActive = (LOWORD(wParam) != WA_INACTIVE);
-        InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
-
+        m_isWindowActive = LOWORD(wParam) != WA_INACTIVE;
+        InvalidateToolbar();
         if (m_isWindowActive) {
-            // Cancel background idle timer immediately on window focus
             KillTimer(m_hWnd, IDT_INACTIVITY_CHECK);
             m_lastInteractionTick = GetTickCount64();
-            if (m_webViewManager && m_webViewManager->GetWebView() &&
-                PowerManager::Instance().IsBackgrounded()) {
-                PowerManager::Instance().HandleActivityResume(
-                    m_webViewManager->GetController(),
-                    m_webViewManager->GetWebView()
-                );
+            Tab* t = ActiveTab();
+            if (m_backgrounded && t && t->view && t->view->GetWebView()) {
+                m_backgrounded = false;
+                PowerManager::Instance().HandleActivityResume(t->view->GetController(), t->view->GetWebView());
             }
         } else {
-            // Start a single 5-minute timer to suspend if user remains unfocused
+            HideSuggestions();
+            // Start a single 5-minute timer to suspend if the user stays away
             SetTimer(m_hWnd, IDT_INACTIVITY_CHECK, 300000, nullptr);
         }
         break;
     }
 
-    case WM_SETFOCUS: {
-        m_lastInteractionTick = GetTickCount64();
-        if (m_webViewManager && m_webViewManager->GetWebView() &&
-            PowerManager::Instance().IsBackgrounded()) {
-            PowerManager::Instance().HandleActivityResume(
-                m_webViewManager->GetController(),
-                m_webViewManager->GetWebView()
-            );
+    case WM_TIMER: {
+        const UINT_PTR timer = wParam;
+        Tab* active = ActiveTab();
+        if (timer == IDT_INACTIVITY_CHECK) {
+            KillTimer(m_hWnd, IDT_INACTIVITY_CHECK);
+            // Only a minimized window may be hidden and suspended; an unfocused but visible
+            // window (e.g. on a second monitor) must keep rendering.
+            if (IsIconic(m_hWnd) && active && active->view && active->view->GetWebView()) {
+                m_backgrounded = true;
+                PowerManager::Instance().HandleInactivitySuspend(active->view->GetController(), active->view->GetWebView(),
+                                                                 active->view->IsDocumentPlayingAudio());
+            }
+            return 0;
+        }
+        if (timer == IDT_AUDIO_STOP_GRACE) {
+            KillTimer(m_hWnd, IDT_AUDIO_STOP_GRACE);
+            if (active && active->view && active->view->GetWebView() && m_backgrounded && !active->view->IsDocumentPlayingAudio()) {
+                PowerManager::Instance().HandleWindowMinimize(active->view->GetController(), active->view->GetWebView(), false);
+            }
+            return 0;
+        }
+        if (timer == IDT_TAB_SUSPEND) {
+            SuspendBackgroundTabs(false);
+            return 0;
+        }
+        if (timer == IDT_LIBRARY_SAVE) {
+            AppShell::Instance().Lib().Save();
+            return 0;
+        }
+        if (timer == IDT_PROGRESS) {
+            if (!active || !active->loading) KillTimer(m_hWnd, IDT_PROGRESS);
+            if (m_rcActive.right > m_rcActive.left) InvalidateRect(m_hWnd, &m_rcActive, FALSE);
+            return 0;
+        }
+        if (timer == IDT_FIND_DEBOUNCE) {
+            KillTimer(m_hWnd, IDT_FIND_DEBOUNCE);
+            RunFind(L"search");
+            return 0;
+        }
+        if (timer == IDT_TOAST) {
+            KillTimer(m_hWnd, IDT_TOAST);
+            if (m_hToast) ShowWindow(m_hToast, SW_HIDE);
+            return 0;
+        }
+        if (timer == IDT_THUMB) {
+            KillTimer(m_hWnd, IDT_THUMB);
+            if (!IsIconic(m_hWnd) && !m_overviewVisible) CaptureThumbnail(m_activeId, nullptr);
+            return 0;
+        }
+        if (timer >= 6000 && timer < 6000 + 100000) {
+            KillTimer(m_hWnd, timer);
+            const int tabId = static_cast<int>(timer - 6000);
+            Tab* t = FindTab(tabId);
+            if (t && tabId == m_activeId && t->readerSource.empty() && t->readerAvailable) ToggleReader();
+            return 0;
         }
         break;
     }
 
     case WM_SIZE: {
+        Tab* active = ActiveTab();
         if (wParam == SIZE_MINIMIZED) {
-            if (m_webViewManager && m_webViewManager->GetWebView()) {
-                bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
-                PowerManager::Instance().HandleWindowMinimize(
-                    m_webViewManager->GetController(),
-                    m_webViewManager->GetWebView(),
-                    isPlayingAudio
-                );
+            HideSuggestions();
+            if (active && active->view && active->view->GetWebView()) {
+                if (AppShell::Instance().VisibleWindowCount() == 0) {
+                    m_backgrounded = true;
+                    PowerManager::Instance().HandleWindowMinimize(active->view->GetController(), active->view->GetWebView(),
+                                                                  active->view->IsDocumentPlayingAudio());
+                } else if (!active->audio) {
+                    // Other windows stay in the foreground: suspend just this tab, keep EcoQoS off.
+                    active->view->SetVisible(false);
+                }
             }
             return 0;
-        } else if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) {
-            if (m_webViewManager && m_webViewManager->GetWebView() &&
-                PowerManager::Instance().IsBackgrounded()) {
-                PowerManager::Instance().HandleWindowRestore(
-                    m_webViewManager->GetController(),
-                    m_webViewManager->GetWebView()
-                );
-            }
         }
-        int w = LOWORD(lParam);
-        int h = HIWORD(lParam);
-        UpdateLayout(w, h);
+        if ((wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) && active && active->view && active->view->GetWebView()) {
+            if (m_backgrounded) {
+                m_backgrounded = false;
+                PowerManager::Instance().HandleWindowRestore(active->view->GetController(), active->view->GetWebView());
+            }
+            if (!m_overviewVisible) active->view->SetVisible(true);
+        }
+        UpdateLayout();
         return 0;
     }
 
-    case WM_MOVE: {
-        if (m_webViewManager) {
-            m_webViewManager->NotifyParentWindowPositionChanged();
+    case WM_MOVE:
+        for (auto& t : m_tabs) {
+            if (t->view) t->view->NotifyParentWindowPositionChanged();
         }
+        if (m_sidebar.controller) m_sidebar.controller->NotifyParentWindowPositionChanged();
+        if (m_overview.controller) m_overview.controller->NotifyParentWindowPositionChanged();
+        HideSuggestions();
         break;
-    }
-
-    case WM_KEYDOWN: {
-        m_lastInteractionTick = GetTickCount64();
-        if (wParam == VK_F11) {
-            ToggleFullScreen();
-            return 0;
-        }
-        if (wParam == VK_ESCAPE) {
-            if (m_isFullScreen) {
-                SetFullScreen(false);
-                return 0;
-            }
-        }
-        break;
-    }
 
     case WM_DROPFILES: {
         HDROP hDrop = reinterpret_cast<HDROP>(wParam);
-        UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
-        if (fileCount > 0) {
-            wchar_t filePath[MAX_PATH]{};
-            if (DragQueryFileW(hDrop, 0, filePath, MAX_PATH)) {
-                if (m_webViewManager) {
-                    m_webViewManager->Navigate(filePath);
-                }
-            }
+        wchar_t filePath[MAX_PATH]{};
+        if (DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0) > 0 && DragQueryFileW(hDrop, 0, filePath, MAX_PATH)) {
+            NavigateActive(filePath);
         }
         DragFinish(hDrop);
         return 0;
     }
 
     case WM_COMMAND: {
-        WORD id = LOWORD(wParam);
-        switch (id) {
-        case IDC_BTN_BACK:
-            m_webViewManager->GoBack();
-            break;
-        case IDC_BTN_FORWARD:
-            m_webViewManager->GoForward();
-            break;
-        case IDC_BTN_RELOAD:
-            if (m_isLoading) {
-                m_webViewManager->Stop();
-            } else {
-                m_webViewManager->Reload();
-            }
-            break;
-        case IDC_BTN_NEWTAB:
-            m_webViewManager->Navigate(Config::Instance().GetSettings().startUrl);
-            SetFocus(m_hEditAddress);
-            SendMessageW(m_hEditAddress, EM_SETSEL, 0, -1);
-            break;
-        case IDM_FOCUS_ADDRESS_BAR:
-            SetFocus(m_hEditAddress);
-            SendMessageW(m_hEditAddress, EM_SETSEL, 0, -1);
-            break;
-        case IDM_TOGGLE_FULLSCREEN:
-            ToggleFullScreen();
-            break;
-        case IDM_EXIT_FULLSCREEN:
-            if (m_isFullScreen) SetFullScreen(false);
-            break;
-        case IDM_ZOOM_IN:
-            if (m_webViewManager) m_webViewManager->ZoomIn();
-            break;
-        case IDM_ZOOM_OUT:
-            if (m_webViewManager) m_webViewManager->ZoomOut();
-            break;
-        case IDM_ZOOM_RESET:
-            if (m_webViewManager) m_webViewManager->ZoomReset();
-            break;
-        case IDC_BTN_ZOOM:
-            ShowZoomMenu();
-            break;
-        case IDC_BTN_SHARE:
-            ShowShareMenu();
-            break;
-        case IDM_SHARE_COPY_URL: {
-            if (m_webViewManager && m_webViewManager->GetWebView()) {
-                wil::unique_cotaskmem_string uri;
-                if (SUCCEEDED(m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
-                    CopyTextToClipboard(m_hWnd, uri.get());
-                    MessageBoxW(m_hWnd, (L"已拷贝当前网页链接到剪贴板:\n" + std::wstring(uri.get())).c_str(), L"Safari 分享", MB_OK | MB_ICONINFORMATION);
-                }
-            }
-            break;
+        const WORD id = LOWORD(wParam);
+        const WORD notify = HIWORD(wParam);
+        if (id == IDC_EDIT_ADDRESS) {
+            if (notify == EN_CHANGE) UpdateSuggestions();
+            return 0;
         }
-        case IDM_SHARE_OPEN_DEFAULT: {
-            if (m_webViewManager && m_webViewManager->GetWebView()) {
-                wil::unique_cotaskmem_string uri;
-                if (SUCCEEDED(m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
-                    ShellExecuteW(m_hWnd, L"open", uri.get(), nullptr, nullptr, SW_SHOWNORMAL);
-                }
-            }
-            break;
+        if (id == IDC_EDIT_FIND) {
+            if (notify == EN_CHANGE) SetTimer(m_hWnd, IDT_FIND_DEBOUNCE, 160, nullptr);
+            return 0;
         }
-        case IDC_BTN_DNS:
-            ShowDnsMenu();
-            break;
-        case IDM_DNS_TOGGLE_ENABLE: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.enablePublicDns = !settings.enablePublicDns;
-            Config::Instance().Save();
-            DnsManager::Instance().ApplySettings();
-            UpdateDnsDisplay();
-            std::wstring infoMsg = settings.enablePublicDns
-                ? L"已开启公共安全 DNS (DoH 加密解析)！\n设置将在重启浏览器后完全生效。"
-                : L"已关闭公共 DNS，恢复系统默认解析。\n设置将在重启浏览器后完全生效。";
-            MessageBoxW(m_hWnd, infoMsg.c_str(), L"安全 DNS 设置", MB_OK | MB_ICONINFORMATION);
-            break;
-        }
-        case IDM_DNS_OPEN_SETTINGS:
-            DnsManager::Instance().ShowDnsDialog(m_hWnd);
-            UpdateDnsDisplay();
-            break;
-        case IDM_UA_DEFAULT:
-        case IDM_UA_MACOS_EDGE: {
-            const std::string profile = id == IDM_UA_MACOS_EDGE ? "macos-edge" : "default";
-            auto& settings = Config::Instance().GetSettings();
-            if (settings.userAgentProfile == profile) break;
-            const HRESULT hr = m_webViewManager ? m_webViewManager->ApplyUserAgentProfile(profile, true) : E_PENDING;
-            if (SUCCEEDED(hr)) {
-                settings.userAgentProfile = profile;
-                Config::Instance().Save();
-            } else {
-                MessageBoxW(m_hWnd, L"UA 切换失败，设置未保存。请等待页面初始化，或更新 WebView2 Runtime 后重试。", L"浏览器标识", MB_OK | MB_ICONWARNING);
-            }
-            break;
-        }
-        case IDM_UA_SELFTEST:
-            if (m_webViewManager) m_webViewManager->OpenIdentitySelfTest();
-            break;
-        case IDM_ABOUT:
-            ShowAboutDialog();
-            break;
-        case IDC_BTN_SOUND:
-            ShowSoundMenu();
-            break;
-        case IDM_AUDIO_NATIVE:
-        case IDM_AUDIO_ENHANCED: {
-            auto& settings = Config::Instance().GetSettings();
-            const bool native = id == IDM_AUDIO_NATIVE;
-            if (settings.systemAudioPassthrough != native) {
-                settings.systemAudioPassthrough = native;
-                Config::Instance().Save();
-                if (m_webViewManager) m_webViewManager->UpdateAudioEnhancer(true);
-                UpdateSoundDisplay();
-            }
-            break;
-        }
-        case IDM_AUDIO_DEESSER:
-        case IDM_AUDIO_NIGHT: {
-            auto& settings = Config::Instance().GetSettings();
-            if (id == IDM_AUDIO_DEESSER) settings.enableDeEsser = !settings.enableDeEsser;
-            else settings.enableNightMode = !settings.enableNightMode;
-            Config::Instance().Save();
-            if (m_webViewManager) m_webViewManager->UpdateAudioEnhancer();
-            break;
-        }
-        case IDM_AUDIO_DIAGNOSTICS:
-            if (m_webViewManager) m_webViewManager->ShowMediaDiagnostics();
-            break;
-        case IDM_AUDIO_WINDOWS_SETTINGS:
-            ShellExecuteW(m_hWnd, L"open", L"ms-settings:sound", nullptr, nullptr, SW_SHOWNORMAL);
-            break;
-        case IDM_AUDIO_DIALOGUE: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.enableSurroundSound = true;
-            settings.surroundSoundMode = "dialogue";
-            Config::Instance().Save();
-            if (m_webViewManager) m_webViewManager->UpdateAudioEnhancer();
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_TOGGLE: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.enableSurroundSound = !settings.enableSurroundSound;
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_MODE_LIGHT: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.enableSurroundSound = true;
-            settings.surroundSoundMode = "light";
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_MODE_STANDARD: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.enableSurroundSound = true;
-            settings.surroundSoundMode = "standard";
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_MODE_CINEMA: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.enableSurroundSound = true;
-            settings.surroundSoundMode = "cinema";
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_VOCAL_BOOST: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.enableVocalBoost = !settings.enableVocalBoost;
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_BOOST_100: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.audioVolumeBoost = 1.0;
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_BOOST_150: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.audioVolumeBoost = 1.5;
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_BOOST_200: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.audioVolumeBoost = 2.0;
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_BOOST_300: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.audioVolumeBoost = 3.0;
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_MONO_DOWNMIX: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.enableMonoDownmix = !settings.enableMonoDownmix;
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            UpdateSoundDisplay();
-            break;
-        }
-        case IDM_SURROUND_DEV_AUTO: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.audioDeviceMode = "auto";
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            break;
-        }
-        case IDM_SURROUND_DEV_HEADPHONES: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.audioDeviceMode = "headphones";
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            break;
-        }
-        case IDM_SURROUND_DEV_SPEAKERS: {
-            auto& settings = Config::Instance().GetSettings();
-            settings.audioDeviceMode = "speakers";
-            Config::Instance().Save();
-            if (m_webViewManager) {
-                m_webViewManager->UpdateAudioEnhancer();
-            }
-            break;
-        }
-        case IDC_EDIT_ADDRESS: {
-            WORD notify = HIWORD(wParam);
-            if (notify == EN_KILLFOCUS) {
-                if (m_webViewManager && m_webViewManager->GetWebView()) {
-                    wil::unique_cotaskmem_string uri;
-                    if (SUCCEEDED(m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
-                        SetWindowTextW(m_hEditAddress, uri.get());
-                    }
-                }
-            }
-            break;
-        }
-        case IDC_BTN_BLOCKER:
-            ShowBlockerMenu();
-            break;
-        case IDM_BLOCKER_PICKER:
-            ElementBlocker::Instance().TogglePickerMode(m_webViewManager->GetWebView());
-            break;
-        case IDM_BLOCKER_TOGGLE_NATIVE: {
-            bool nextState = !NativeRequestFilter::Instance().IsEnabled();
-            NativeRequestFilter::Instance().SetEnabled(nextState);
-            std::wstring infoMsg = nextState
-                ? L"原生网络请求拦截已开启！\n广告与恶意跟踪器将直接在网络底层阻断，网页加载提速 40%+。"
-                : L"原生网络请求拦截已关闭。";
-            MessageBoxW(m_hWnd, infoMsg.c_str(), L"原生请求拦截", MB_OK | MB_ICONINFORMATION);
-            break;
-        }
-        case IDM_BLOCKER_CLEAR_RULES: {
-            std::string host = StringUtils::WideToUtf8(ElementBlocker::Instance().GetCurrentHost());
-            if (!host.empty()) {
-                Config::Instance().ClearBlockRulesForHost(host);
-                ElementBlocker::Instance().UpdateRulesScript(m_webViewManager->GetWebView());
-                m_webViewManager->Reload();
-                std::wstring infoMsg = L"已清空网站 [" + ElementBlocker::Instance().GetCurrentHost() + L"] 的全部元素屏蔽规则并刷新。";
-                MessageBoxW(m_hWnd, infoMsg.c_str(), L"清空规则", MB_OK | MB_ICONINFORMATION);
-            } else {
-                MessageBoxW(m_hWnd, L"当前页面未识别到有效域名。", L"清空规则", MB_OK | MB_ICONINFORMATION);
-            }
-            break;
-        }
-        default:
-            if (id >= IDM_ZOOM_SET_BASE && id < IDM_ZOOM_SET_BASE + static_cast<WORD>(std::size(kPresetZoomPercentages))) {
-                size_t idx = id - IDM_ZOOM_SET_BASE;
-                if (m_webViewManager) {
-                    m_webViewManager->SetZoomFactor(kPresetZoomPercentages[idx] / 100.0);
-                }
-            } else if (id >= IDM_DNS_SELECT_BASE && id < IDM_DNS_SELECT_BASE + 50) {
-                size_t pIdx = id - IDM_DNS_SELECT_BASE;
-                const auto& providers = DnsManager::Instance().GetProviders();
-                if (pIdx < providers.size()) {
-                    auto& settings = Config::Instance().GetSettings();
-                    settings.enablePublicDns = true;
-                    settings.selectedDnsProvider = providers[pIdx].id;
-                    Config::Instance().Save();
-                    DnsManager::Instance().ApplySettings();
-                    UpdateDnsDisplay();
-                    std::wstring infoMsg = L"已切换至安全 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已保存，重启浏览器后将完全生效。";
-                    MessageBoxW(m_hWnd, infoMsg.c_str(), L"安全 DNS 已更新", MB_OK | MB_ICONINFORMATION);
-                }
-            }
-            break;
-        }
+        OnCommand(id);
         return 0;
     }
 
-    case WM_SYSCOMMAND: {
-        if ((wParam & 0xFFF0) == SC_MINIMIZE) {
-            if (m_webViewManager && m_webViewManager->GetWebView()) {
-                bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
-                PowerManager::Instance().HandleWindowMinimize(
-                    m_webViewManager->GetController(),
-                    m_webViewManager->GetWebView(),
-                    isPlayingAudio
-                );
-            }
-        } else if ((wParam & 0xFFF0) == SC_RESTORE) {
-            if (m_webViewManager && m_webViewManager->GetWebView()) {
-                PowerManager::Instance().HandleWindowRestore(
-                    m_webViewManager->GetController(),
-                    m_webViewManager->GetWebView()
-                );
+    case WM_SYSCOMMAND:
+        if ((wParam & 0xFFF0) == SC_RESTORE) {
+            if (Tab* t = ActiveTab(); t && t->view && t->view->GetWebView() && m_backgrounded) {
+                m_backgrounded = false;
+                PowerManager::Instance().HandleWindowRestore(t->view->GetController(), t->view->GetWebView());
             }
         }
         break;
-    }
 
     case WM_DPICHANGED: {
-        auto* lprc = reinterpret_cast<RECT*>(lParam);
-        SetWindowPos(m_hWnd, nullptr, lprc->left, lprc->top, lprc->right - lprc->left, lprc->bottom - lprc->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        auto* rc = reinterpret_cast<RECT*>(lParam);
         UpdateDpiScaling(HIWORD(wParam));
-        RECT client;
-        GetClientRect(m_hWnd, &client);
-        UpdateLayout(client.right, client.bottom);
+        SetWindowPos(m_hWnd, nullptr, rc->left, rc->top, rc->right - rc->left, rc->bottom - rc->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        UpdateLayout();
         return 0;
     }
 
-    case WM_CLOSE: {
-        ShowWindow(m_hWnd, SW_HIDE);
-        if (m_webViewManager) {
-            m_webViewManager->ShutdownAndPurgeData();
-        }
-        DestroyWindow(m_hWnd);
+    case WM_GETMINMAXINFO: {
+        auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+        mmi->ptMinTrackSize = {S(560), S(360)};
         return 0;
     }
 
-    case WM_DESTROY: {
-        PostQuitMessage(0);
+    case WM_CLOSE:
+        OnClose();
         return 0;
+
+    case WM_NCDESTROY: {
+        m_destroyed = true;
+        SetWindowLongPtrW(m_hWnd, GWLP_USERDATA, 0);
+        const LRESULT r = DefWindowProcW(m_hWnd, msg, wParam, lParam);
+        AppShell::Instance().OnWindowDestroyed(this);
+        return r;
     }
 
     default:
         break;
     }
-
     return DefWindowProcW(m_hWnd, msg, wParam, lParam);
-}
-
-LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    MainWindow* pThis = nullptr;
-
-    if (msg == WM_NCCREATE) {
-        auto* pCreate = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        pThis = reinterpret_cast<MainWindow*>(pCreate->lpCreateParams);
-        SetWindowLongPtrW(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
-        pThis->m_hWnd = hWnd;
-    } else {
-        pThis = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
-    }
-
-    if (pThis) {
-        return pThis->HandleMessage(msg, wParam, lParam);
-    }
-
-    return DefWindowProcW(hWnd, msg, wParam, lParam);
-}
-
-void MainWindow::UpdateZoomDisplay(double zoom) {
-    if (!m_hBtnZoom) return;
-    int percent = static_cast<int>(std::round(zoom * 100.0));
-    wchar_t buf[32]{};
-    swprintf_s(buf, L"%d%%", percent);
-    SetWindowTextW(m_hBtnZoom, buf);
-}
-
-void MainWindow::ShowZoomMenu() {
-    HMENU hMenu = CreatePopupMenu();
-    if (!hMenu) return;
-
-    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_IN, L"放大页面\tCtrl + +");
-    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_OUT, L"缩小页面\tCtrl + -");
-    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_RESET, L"实际大小 (100%)\tCtrl + 0");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-
-    double currentZoom = m_webViewManager ? m_webViewManager->GetZoomFactor() : 1.0;
-    int currentPercent = static_cast<int>(std::round(currentZoom * 100.0));
-
-    int closestIdx = -1;
-    int minDiff = 10000;
-    for (size_t i = 0; i < std::size(kPresetZoomPercentages); ++i) {
-        int diff = std::abs(kPresetZoomPercentages[i] - currentPercent);
-        if (diff < minDiff) {
-            minDiff = diff;
-            closestIdx = static_cast<int>(i);
-        }
-    }
-
-    for (size_t i = 0; i < std::size(kPresetZoomPercentages); ++i) {
-        wchar_t itemText[32]{};
-        swprintf_s(itemText, L"%d%%", kPresetZoomPercentages[i]);
-        UINT flags = MF_STRING;
-        if (static_cast<int>(i) == closestIdx && minDiff <= 3) {
-            flags |= MF_CHECKED;
-        }
-        AppendMenuW(hMenu, flags, IDM_ZOOM_SET_BASE + static_cast<WORD>(i), itemText);
-    }
-
-    RECT btnRect{};
-    GetWindowRect(m_hBtnZoom, &btnRect);
-
-    TrackPopupMenu(
-        hMenu,
-        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
-        btnRect.left, btnRect.bottom,
-        0, m_hWnd, nullptr
-    );
-
-    DestroyMenu(hMenu);
-}
-
-void MainWindow::UpdateDnsDisplay() {
-    if (!m_hBtnDns) return;
-    const auto& settings = Config::Instance().GetSettings();
-    if (!settings.enablePublicDns) {
-        SetWindowTextW(m_hBtnDns, L"🌐 DNS [系统]");
-    } else {
-        if (settings.selectedDnsProvider == "custom") {
-            SetWindowTextW(m_hBtnDns, L"🌐 DNS [自定义]");
-        } else {
-            const auto* p = DnsManager::Instance().GetActiveProvider();
-            if (p) {
-                std::wstring label;
-                if (p->id == "alidns") label = L"🌐 阿里 DNS";
-                else if (p->id == "dnspod") label = L"🌐 腾讯 DNS";
-                else if (p->id == "baidu") label = L"🌐 百度 DNS";
-                else if (p->id == "114") label = L"🌐 114 DNS";
-                else if (p->id == "cloudflare") label = L"🌐 1.1.1.1";
-                else if (p->id == "google") label = L"🌐 8.8.8.8";
-                else if (p->id == "quad9") label = L"🌐 Quad9";
-                else if (p->id == "opendns") label = L"🌐 OpenDNS";
-                else if (p->id == "cnnic") label = L"🌐 CNNIC";
-                else label = L"🌐 " + p->name;
-                SetWindowTextW(m_hBtnDns, label.c_str());
-            } else {
-                SetWindowTextW(m_hBtnDns, L"🌐 DNS [开]");
-            }
-        }
-    }
-}
-
-void MainWindow::ShowDnsMenu() {
-    HMENU hMenu = CreatePopupMenu();
-    if (!hMenu) return;
-
-    const auto& settings = Config::Instance().GetSettings();
-    const auto& providers = DnsManager::Instance().GetProviders();
-
-    UINT toggleFlags = MF_STRING | (settings.enablePublicDns ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hMenu, toggleFlags, IDM_DNS_TOGGLE_ENABLE, L"✔  启用公共安全 DNS (DoH 隐私加密)");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-
-    for (size_t i = 0; i < providers.size(); ++i) {
-        const auto& p = providers[i];
-        std::wstring itemText = p.name;
-        if (!p.ipv6Primary.empty() && p.ipv6Primary != L"(暂无)") {
-            itemText += L"  [IPv4/IPv6]";
-        } else {
-            itemText += L"  [IPv4]";
-        }
-        UINT pFlags = MF_STRING;
-        if (settings.enablePublicDns && settings.selectedDnsProvider == p.id) {
-            pFlags |= MF_CHECKED;
-        }
-        AppendMenuW(hMenu, pFlags, IDM_DNS_SELECT_BASE + static_cast<WORD>(i), itemText.c_str());
-    }
-
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING, IDM_DNS_OPEN_SETTINGS, L"⚙  公共 DNS 详细 IPv4/IPv6 与高级设置...");
-
-    RECT btnRect{};
-    GetWindowRect(m_hBtnDns, &btnRect);
-
-    TrackPopupMenu(
-        hMenu,
-        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
-        btnRect.left, btnRect.bottom,
-        0, m_hWnd, nullptr
-    );
-
-    DestroyMenu(hMenu);
-}
-
-void MainWindow::ShowBlockerMenu() {
-    HMENU hMenu = CreatePopupMenu();
-    if (!hMenu) return;
-
-    bool nativeEnabled = NativeRequestFilter::Instance().IsEnabled();
-    uint64_t blockedCount = NativeRequestFilter::Instance().GetBlockedCount();
-
-    AppendMenuW(hMenu, MF_STRING, IDM_BLOCKER_PICKER, L"🎯 选取网页元素屏蔽 (Ctrl + Shift + H)");
-
-    std::wstring nativeStr = nativeEnabled ? L"⚡ 原生请求拦截: [已开启]" : L"⚡ 原生请求拦截: [已关闭]";
-    AppendMenuW(hMenu, MF_STRING | (nativeEnabled ? MF_CHECKED : MF_UNCHECKED), IDM_BLOCKER_TOGGLE_NATIVE, nativeStr.c_str());
-
-    std::wstring countStr = L"📊 已阻断请求: " + std::to_wstring(blockedCount) + L" 个 (提速40%+)";
-    AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, countStr.c_str());
-
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-
-    std::wstring currentHost = ElementBlocker::Instance().GetCurrentHost();
-    std::wstring clearStr = currentHost.empty()
-        ? L"🗑️ 清空当前网站元素规则"
-        : (L"🗑️ 清空 " + currentHost + L" 元素规则");
-    AppendMenuW(hMenu, MF_STRING, IDM_BLOCKER_CLEAR_RULES, clearStr.c_str());
-
-    RECT btnRect{};
-    GetWindowRect(m_hBtnBlocker, &btnRect);
-
-    TrackPopupMenu(
-        hMenu,
-        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
-        btnRect.left, btnRect.bottom,
-        0, m_hWnd, nullptr
-    );
-
-    DestroyMenu(hMenu);
-}
-
-void MainWindow::ShowAboutDialog() {
-    TASKDIALOGCONFIG dialog{};
-    dialog.cbSize = sizeof(dialog);
-    dialog.hwndParent = m_hWnd;
-    dialog.dwFlags = TDF_ENABLE_HYPERLINKS | TDF_ALLOW_DIALOG_CANCELLATION;
-    dialog.dwCommonButtons = TDCBF_CLOSE_BUTTON;
-    dialog.pszWindowTitle = L"关于 UltraLightBrowser";
-    dialog.pszMainInstruction = L"UltraLightBrowser " ULB_VERSION_STRING;
-    dialog.pszContent = L"Windows 原生浏览器 · Microsoft Edge WebView2\n\n项目源码与问题反馈：\n<a href=\"https://github.com/Freecode100Year/UltraLightBrowser\">https://github.com/Freecode100Year/UltraLightBrowser</a>";
-    dialog.pfCallback = [](HWND owner, UINT notification, WPARAM, LPARAM link, LONG_PTR) -> HRESULT {
-        if (notification == TDN_HYPERLINK_CLICKED && link &&
-            std::wstring(reinterpret_cast<LPCWSTR>(link)) == L"https://github.com/Freecode100Year/UltraLightBrowser") {
-            ShellExecuteW(owner, L"open", reinterpret_cast<LPCWSTR>(link), nullptr, nullptr, SW_SHOWNORMAL);
-        }
-        return S_OK;
-    };
-    if (FAILED(TaskDialogIndirect(&dialog, nullptr, nullptr, nullptr))) {
-        MessageBoxW(m_hWnd, L"UltraLightBrowser " ULB_VERSION_STRING L"\n项目：https://github.com/Freecode100Year/UltraLightBrowser", L"关于", MB_OK);
-    }
-}
-
-void MainWindow::ShowShareMenu() {
-    HMENU hMenu = CreatePopupMenu();
-    if (!hMenu) return;
-
-    AppendMenuW(hMenu, MF_STRING, IDM_SHARE_COPY_URL, L"📋  拷贝当前网页链接 (Copy URL)");
-    AppendMenuW(hMenu, MF_STRING, IDM_SHARE_OPEN_DEFAULT, L"🌐  在系统默认浏览器中打开");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_FULLSCREEN, m_isFullScreen ? L"🖥️  退出全屏视图 (F11)" : L"🖥️  全屏视图 (F11)");
-
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    HMENU uaMenu = CreatePopupMenu();
-    if (uaMenu) {
-        const bool mac = Config::Instance().GetSettings().userAgentProfile == "macos-edge";
-        AppendMenuW(uaMenu, MF_STRING | (!mac ? MF_CHECKED : 0), IDM_UA_DEFAULT, L"Windows Edge（默认）");
-        AppendMenuW(uaMenu, MF_STRING | (mac ? MF_CHECKED : 0), IDM_UA_MACOS_EDGE, L"macOS Edge");
-        AppendMenuW(uaMenu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(uaMenu, MF_STRING, IDM_UA_SELFTEST, L"标识自检页");
-        AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(uaMenu), L"浏览器 UA 标识（切换会刷新）");
-    }
-
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING, IDM_ABOUT, L"关于 UltraLightBrowser");
-
-    RECT btnRect{};
-    GetWindowRect(m_hBtnShare, &btnRect);
-
-    TrackPopupMenu(
-        hMenu,
-        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
-        btnRect.left, btnRect.bottom,
-        0, m_hWnd, nullptr
-    );
-
-    DestroyMenu(hMenu);
-}
-
-void MainWindow::UpdateSoundDisplay() {
-    if (!m_hBtnSound) return;
-    const auto& settings = Config::Instance().GetSettings();
-    std::wstring label;
-    if (settings.systemAudioPassthrough) {
-        label = L"🔊 原声";
-    } else if (!settings.enableSurroundSound) {
-        if (settings.audioVolumeBoost > 1.05) {
-            int pct = static_cast<int>(std::round(settings.audioVolumeBoost * 100));
-            label = L"🔊 " + std::to_wstring(pct) + L"%";
-        } else {
-            label = L"🎧 环绕 [关]";
-        }
-    } else if (settings.surroundSoundMode == "dialogue") {
-        label = L"🗣️ 对白";
-    } else if (settings.surroundSoundMode == "light") {
-        label = L"🎧 环绕 [轻]";
-    } else if (settings.surroundSoundMode == "cinema") {
-        label = L"🎧 环绕 [影]";
-    } else {
-        label = L"🎧 环绕 [标]";
-    }
-    SetWindowTextW(m_hBtnSound, label.c_str());
-    InvalidateRect(m_hBtnSound, nullptr, TRUE);
-}
-
-void MainWindow::ShowSoundMenu() {
-    HMENU hMenu = CreatePopupMenu();
-    if (!hMenu) return;
-
-    const auto& settings = Config::Instance().GetSettings();
-
-    AppendMenuW(hMenu, MF_STRING | (settings.systemAudioPassthrough ? MF_CHECKED : 0),
-                IDM_AUDIO_NATIVE, L"🔊 原声输出 / 配合 Windows 空间音效 (切换会刷新页面)");
-    AppendMenuW(hMenu, MF_STRING | (!settings.systemAudioPassthrough ? MF_CHECKED : 0),
-                IDM_AUDIO_ENHANCED, L"🎧 浏览器音频增强 (切换会刷新页面)");
-    AppendMenuW(hMenu, MF_STRING, IDM_AUDIO_WINDOWS_SETTINGS, L"⚙️ Windows 声音设置 / Dolby Atmos");
-    AppendMenuW(hMenu, MF_STRING, IDM_AUDIO_DIAGNOSTICS, L"📊 播放诊断 / 视频丢帧统计");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    HMENU hDspMenu = CreatePopupMenu();
-    if (!hDspMenu) { DestroyMenu(hMenu); return; }
-
-    // 1. Master toggle
-    UINT toggleFlags = MF_STRING | (settings.enableSurroundSound ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hDspMenu, toggleFlags, IDM_SURROUND_TOGGLE, L"✔  开启 2 声道虚拟环绕立体声 (DSP)");
-    AppendMenuW(hDspMenu, MF_SEPARATOR, 0, nullptr);
-
-    UINT dialogueFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "dialogue") ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hDspMenu, dialogueFlags, IDM_AUDIO_DIALOGUE, L"🗣️ 对白模式 (清晰度 EQ + 轻度动态压缩)");
-
-    // 2. Presets
-    UINT lightFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "light") ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hDspMenu, lightFlags, IDM_SURROUND_MODE_LIGHT, L"🍃  轻柔模式 (自然声场加宽 1.15x，适合人声/播客)");
-
-    UINT stdFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "standard") ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hDspMenu, stdFlags, IDM_SURROUND_MODE_STANDARD, L"🎧  标准模式 (声场加宽 + 耳机交叉反馈)");
-
-    UINT cinemaFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "cinema") ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hDspMenu, cinemaFlags, IDM_SURROUND_MODE_CINEMA, L"🎬  影院模式 (1.55x加宽 + ±110°后置环绕 + 低音居中)");
-
-    AppendMenuW(hDspMenu, MF_SEPARATOR, 0, nullptr);
-
-    // 3. Audio Device Detection / Selection Submenu
-    HMENU hDevMenu = CreatePopupMenu();
-    if (hDevMenu) {
-        AudioEndpointType detected = m_webViewManager ? m_webViewManager->GetDetectedAudioEndpoint() : AudioEndpointType::Headphones;
-        std::wstring autoLabel = L"🤖 自动检测 [当前: " +
-            std::wstring(detected == AudioEndpointType::Headphones ? L"耳机 (HRTF+交叉反馈)" : L"音箱 (优化立体声加宽)") + L"]";
-
-        UINT autoFlags = MF_STRING | (settings.audioDeviceMode == "auto" ? MF_CHECKED : MF_UNCHECKED);
-        AppendMenuW(hDevMenu, autoFlags, IDM_SURROUND_DEV_AUTO, autoLabel.c_str());
-
-        UINT hpFlags = MF_STRING | (settings.audioDeviceMode == "headphones" ? MF_CHECKED : MF_UNCHECKED);
-        AppendMenuW(hDevMenu, hpFlags, IDM_SURROUND_DEV_HEADPHONES, L"🎧 强制耳机模式 (HRTF 3D虚拟音箱 + Bauer反馈)");
-
-        UINT spkFlags = MF_STRING | (settings.audioDeviceMode == "speakers" ? MF_CHECKED : MF_UNCHECKED);
-        AppendMenuW(hDevMenu, spkFlags, IDM_SURROUND_DEV_SPEAKERS, L"🔊 强制音箱模式 (优化立体声加宽)");
-
-        AppendMenuW(hDspMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hDevMenu), L"🎛️  输出设备优化");
-    }
-
-    // 4. Vocal Dialogue Boost (+4.5dB peaking filter)
-    UINT vocalFlags = MF_STRING | (settings.enableVocalBoost ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hDspMenu, vocalFlags, IDM_SURROUND_VOCAL_BOOST, L"🗣️  人声对白清晰度增强 (+4.5dB @ 3kHz)");
-
-    AppendMenuW(hDspMenu, MF_STRING | (settings.enableDeEsser ? MF_CHECKED : 0),
-                IDM_AUDIO_DEESSER, L"🗣️ 齿音抑制 (高频动态控制)");
-    AppendMenuW(hDspMenu, MF_STRING | (settings.enableNightMode ? MF_CHECKED : 0),
-                IDM_AUDIO_NIGHT, L"🌙 夜间模式 (减小音量起伏)");
-
-    // 5. Volume Boost Submenu (100% ~ 300%)
-    HMENU hVolMenu = CreatePopupMenu();
-    if (hVolMenu) {
-        UINT b100Flags = MF_STRING | (settings.audioVolumeBoost <= 1.05 ? MF_CHECKED : MF_UNCHECKED);
-        AppendMenuW(hVolMenu, b100Flags, IDM_SURROUND_BOOST_100, L"100% (标准音量)");
-
-        UINT b150Flags = MF_STRING | (std::abs(settings.audioVolumeBoost - 1.5) < 0.1 ? MF_CHECKED : MF_UNCHECKED);
-        AppendMenuW(hVolMenu, b150Flags, IDM_SURROUND_BOOST_150, L"150% (小幅放大，防破音压限)");
-
-        UINT b200Flags = MF_STRING | (std::abs(settings.audioVolumeBoost - 2.0) < 0.1 ? MF_CHECKED : MF_UNCHECKED);
-        AppendMenuW(hVolMenu, b200Flags, IDM_SURROUND_BOOST_200, L"200% (2倍音量增强)");
-
-        UINT b300Flags = MF_STRING | (std::abs(settings.audioVolumeBoost - 3.0) < 0.1 ? MF_CHECKED : MF_UNCHECKED);
-        AppendMenuW(hVolMenu, b300Flags, IDM_SURROUND_BOOST_300, L"300% (高增益，可能失真)");
-
-        std::wstring volSubTitle = L"🔊  前级音量放大 (当前: " +
-            std::to_wstring(static_cast<int>(std::round(settings.audioVolumeBoost * 100))) + L"%)";
-        AppendMenuW(hDspMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hVolMenu), volSubTitle.c_str());
-    }
-
-    // 6. Mono Downmix (Single earphone mode)
-    UINT monoFlags = MF_STRING | (settings.enableMonoDownmix ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hDspMenu, monoFlags, IDM_SURROUND_MONO_DOWNMIX, L"👂  单耳/单声道合并 (单边耳机听完整声音)");
-
-    AppendMenuW(hDspMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hDspMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"🛡️ 软件动态压缩保护；高增益仍可能失真");
-
-    AppendMenuW(hMenu, MF_POPUP | (settings.systemAudioPassthrough ? MF_GRAYED : 0),
-                reinterpret_cast<UINT_PTR>(hDspMenu), L"🎛️ 浏览器增强选项");
-
-    RECT btnRect{};
-    GetWindowRect(m_hBtnSound, &btnRect);
-
-    TrackPopupMenu(
-        hMenu,
-        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
-        btnRect.left, btnRect.bottom,
-        0, m_hWnd, nullptr
-    );
-
-    DestroyMenu(hMenu);
 }
 
 } // namespace UltraLight

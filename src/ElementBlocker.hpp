@@ -5,6 +5,7 @@
 #include <wil/com.h>
 #include <WebView2.h>
 #include <string>
+#include <unordered_map>
 
 namespace UltraLight {
 
@@ -12,11 +13,13 @@ class ElementBlocker {
 public:
     static ElementBlocker& Instance();
 
-    // Sets up pre-render CSS injection for zero flicker
+    // Sets up pre-render CSS injection for zero flicker (one registration per tab)
     void Initialize(ICoreWebView2* webView);
+    void Unregister(ICoreWebView2* webView);
 
     // Synchronize and update pre-render injection script
     void UpdateRulesScript(ICoreWebView2* webView);
+    void UpdateAllRulesScripts();
 
     // Updates injection rules based on domain navigation
     void OnNavigationStarting(ICoreWebView2* webView, const std::wstring& uri);
@@ -25,7 +28,7 @@ public:
     void TogglePickerMode(ICoreWebView2* webView);
 
     // Handles messages from Web (WebMessageReceived) with verified source origin
-    bool HandleWebMessage(const std::wstring& messageJson, const std::wstring& sourceUri = L"");
+    bool HandleWebMessage(ICoreWebView2* sender, const std::wstring& messageJson, const std::wstring& sourceUri = L"");
 
     bool IsPickerActive() const { return m_pickerActive; }
     const std::wstring& GetCurrentHost() const { return m_currentHost; }
@@ -41,8 +44,8 @@ private:
 
     bool m_pickerActive = false;
     std::wstring m_currentHost;
-    std::wstring m_injectedScriptId;
-    ICoreWebView2* m_webView = nullptr;
+    std::unordered_map<ICoreWebView2*, std::wstring> m_injectedScriptIds;
+    ICoreWebView2* m_pickerWebView = nullptr;
 };
 
 } // namespace UltraLight

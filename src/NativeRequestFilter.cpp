@@ -224,29 +224,37 @@ bool NativeRequestFilter::IsThirdParty(const std::wstring& reqHost, const std::w
     return GetBaseDomain(reqHost) != GetBaseDomain(topHost);
 }
 
-void NativeRequestFilter::SetMainFrameNavigation(const std::wstring& uri) {
+void NativeRequestFilter::SetMainFrameNavigation(ICoreWebView2* webView, const std::wstring& uri) {
     std::lock_guard<std::mutex> lock(m_navMutex);
-    m_pendingMainNavigationUri = uri;
-    m_currentMainHost = ExtractHost(uri);
+    auto& nav = m_nav[webView];
+    nav.pendingUri = uri;
+    nav.mainHost = ExtractHost(uri);
 }
 
-void NativeRequestFilter::ClearMainFrameNavigation() {
+void NativeRequestFilter::ClearMainFrameNavigation(ICoreWebView2* webView) {
     std::lock_guard<std::mutex> lock(m_navMutex);
-    m_pendingMainNavigationUri.clear();
+    const auto it = m_nav.find(webView);
+    if (it != m_nav.end()) it->second.pendingUri.clear();
 }
 
-bool NativeRequestFilter::IsMainFrameNavigation(const std::wstring& uri) const {
+bool NativeRequestFilter::IsMainFrameNavigation(ICoreWebView2* webView, const std::wstring& uri) const {
     std::lock_guard<std::mutex> lock(m_navMutex);
-    if (m_pendingMainNavigationUri.empty()) return false;
-    if (uri == m_pendingMainNavigationUri) return true;
-    std::wstring navHost = m_currentMainHost;
-    std::wstring reqHost = ExtractHost(uri);
-    return (!navHost.empty() && navHost == reqHost);
+    const auto it = m_nav.find(webView);
+    if (it == m_nav.end() || it->second.pendingUri.empty()) return false;
+    if (uri == it->second.pendingUri) return true;
+    const std::wstring reqHost = ExtractHost(uri);
+    return !it->second.mainHost.empty() && it->second.mainHost == reqHost;
 }
 
-std::wstring NativeRequestFilter::GetCurrentMainHost() const {
+std::wstring NativeRequestFilter::GetCurrentMainHost(ICoreWebView2* webView) const {
     std::lock_guard<std::mutex> lock(m_navMutex);
-    return m_currentMainHost;
+    const auto it = m_nav.find(webView);
+    return it != m_nav.end() ? it->second.mainHost : std::wstring();
+}
+
+void NativeRequestFilter::Unregister(ICoreWebView2* webView) {
+    std::lock_guard<std::mutex> lock(m_navMutex);
+    m_nav.erase(webView);
 }
 
 bool NativeRequestFilter::ShouldBlock(const std::wstring& uri) {
@@ -287,9 +295,13 @@ bool NativeRequestFilter::ShouldBlock(const std::wstring& uri) {
     return false;
 }
 
-void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment) {
+void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment, bool isPrivate) {
     if (!webView || !environment) return;
     m_environment = environment;
+    {
+        std::lock_guard<std::mutex> lock(m_navMutex);
+        m_nav[webView].isPrivate = isPrivate;
+    }
 
     // Register request filters (scripts, documents/iframes, images, XHR, fetch, ping, other)
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT);
@@ -306,7 +318,7 @@ void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Enviro
                 return this->HandleWebResourceRequested(sender, args);
             }
         ).Get(),
-        &m_resourceRequestedToken
+        nullptr
     );
 }
 
@@ -326,21 +338,26 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, I
 
     // 1. If this request is for the main frame document navigation, ALWAYS allow directly!
     if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) {
-        if (IsMainFrameNavigation(uri.get())) {
+        if (IsMainFrameNavigation(sender, uri.get())) {
             return S_OK;
         }
     }
 
+    std::wstring topHost = GetCurrentMainHost(sender);
+    if (topHost.empty() && sender) {
+        wil::unique_cotaskmem_string topUri;
+        if (SUCCEEDED(sender->get_Source(&topUri)) && topUri.get()) {
+            topHost = ExtractHost(topUri.get());
+        }
+    }
+    // Per-site exception ("此网站的设置 → 拦截广告" off).
+    if (!topHost.empty() && m_siteAllowsAds && m_siteAllowsAds(topHost)) {
+        return S_OK;
+    }
+    const std::wstring reqHost = ExtractHost(uri.get());
+
     // 2. For documents (subframes/iframes) and images (tracking pixels), only inspect third-party requests
     if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE || context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) {
-        std::wstring topHost = GetCurrentMainHost();
-        if (topHost.empty() && sender) {
-            wil::unique_cotaskmem_string topUri;
-            if (SUCCEEDED(sender->get_Source(&topUri)) && topUri.get()) {
-                topHost = ExtractHost(topUri.get());
-            }
-        }
-        std::wstring reqHost = ExtractHost(uri.get());
         if (!topHost.empty() && !reqHost.empty() && !IsThirdParty(reqHost, topHost)) {
             // First-party subframe or image: allow directly without blocking
             return S_OK;
@@ -362,6 +379,13 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, I
         if (SUCCEEDED(hr) && response) {
             args->put_Response(response.get());
             m_blockedCount.fetch_add(1);
+            bool isPrivate = false;
+            {
+                std::lock_guard<std::mutex> lock(m_navMutex);
+                const auto it = m_nav.find(sender);
+                isPrivate = it != m_nav.end() && it->second.isPrivate;
+            }
+            if (!isPrivate && m_onBlocked) m_onBlocked(reqHost, topHost);
         }
     }
 

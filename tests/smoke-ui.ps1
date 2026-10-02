@@ -1,0 +1,138 @@
+param([string]$Exe, [string]$Out)
+$ErrorActionPreference = 'Continue'
+New-Item -ItemType Directory -Force $Out | Out-Null
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class U {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr FindWindow(string c, string t);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+}
+"@
+function Shot($name) {
+  $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+  $bmp.Save("$Out\$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+  $g.Dispose(); $bmp.Dispose()
+  "shot $name"
+}
+function Win { [U]::FindWindow("UltraLightBrowserMainWindow", [NullString]::Value) }
+function Focus { $h = Win; if ($h -ne [IntPtr]::Zero) { [U]::SetForegroundWindow($h) | Out-Null }; Start-Sleep -Milliseconds 300 }
+function Keys($k, $wait = 1500) { Focus; [System.Windows.Forms.SendKeys]::SendWait($k); Start-Sleep -Milliseconds $wait }
+function ClickRel($dx, $dy, $fromRight = $false) {
+  $r = New-Object U+RECT; [U]::GetClientRect((Win), [ref]$r) | Out-Null
+  $pt = New-Object U+POINT; $pt.X = $(if ($fromRight) { $r.R - $dx } else { $dx }); $pt.Y = $dy
+  [U]::ClientToScreen((Win), [ref]$pt) | Out-Null
+  [U]::SetCursorPos($pt.X, $pt.Y) | Out-Null
+  [U]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); [U]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+  Start-Sleep -Milliseconds 1200
+}
+"Screen: " + [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
+npm i --silent --prefix $env:RUNNER_TEMP ws | Out-Null
+$env:NODE_PATH = Join-Path $env:RUNNER_TEMP 'node_modules'
+@'
+const WebSocket = require('ws');
+(async () => {
+  const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
+  for (const t of list) {
+    console.log('TARGET', t.type, t.url, '|', t.title);
+    if (!t.url.includes('ulb.internal')) continue;
+    const ws = new WebSocket(t.webSocketDebuggerUrl);
+    await new Promise(r => ws.on('open', r));
+    const logs = [];
+    ws.on('message', m => { const d = JSON.parse(m); if (d.id === 1) console.log('  RESULT', JSON.stringify(d.result).slice(0, 600)); if (d.method) logs.push(d.method + ' ' + JSON.stringify(d.params).slice(0, 300)); });
+    ws.send(JSON.stringify({id: 1, method: 'Runtime.evaluate', params: {returnByValue: true, expression:
+      `JSON.stringify({ready: document.readyState, href: location.href, ulb: typeof ULB, wv: !!(window.chrome && chrome.webview), body: (document.body ? document.body.innerText : '').slice(0, 160), bg: getComputedStyle(document.body).backgroundColor, scripts: [...document.scripts].map(s => s.src)})`}}));
+    ws.send(JSON.stringify({id: 2, method: 'Log.enable'}));
+    ws.send(JSON.stringify({id: 3, method: 'Runtime.enable'}));
+    await new Promise(r => setTimeout(r, 800));
+    ws.on('message', () => {});
+    console.log('  EVAL', logs.length, logs.join('\n  ').slice(0, 1500));
+    ws.close();
+  }
+  process.exit(0);
+})().catch(e => { console.log('CDP-ERR', e.message); process.exit(0); });
+'@ | Set-Content cdp.js
+$p = Start-Process $Exe -PassThru
+Start-Sleep 12
+$h = Win
+"window: $h"
+# maximize for a stable layout
+Add-Type -Name W -Namespace N -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);'
+[N.W]::ShowWindow($h, 3) | Out-Null
+Start-Sleep 2
+Shot "01-start"
+node cdp.js
+Keys "^l" 500; Keys "example.com{ENTER}" 5000; Shot "02-example"
+Keys "^t" 1500; Keys "en.wikipedia.org/wiki/Web_browser{ENTER}" 7000; Shot "03-two-tabs"
+ClickRel 27 26 $true; Shot "04-menu"; Keys "{ESC}" 800
+ClickRel 135 26 $true; Shot "05-share"; Keys "{ESC}" 800
+Keys "^+r" 4000; Shot "06-reader"
+Keys "^+r" 3000
+Keys "^f" 800; Keys "browser" 2000; Shot "07-find"; Keys "{ESC}" 800
+Keys "^+l" 3000; Shot "08-sidebar"
+Keys "^+\" 3000; Shot "09-overview"; Keys "{ESC}" 1000
+Keys "^h" 3000; Shot "10-history"
+Keys "^d" 1500; Keys "^+b" 3000; Shot "11-bookmarks"
+Keys "^," 3000; Shot "12-settings"
+Keys "^l" 500; Keys "ulb.internal/privacy.html{ENTER}" 3000; Shot "13-privacy-blocked-from-address?"
+Keys "^t" 2500; Shot "14-new-start"
+Keys "^+n" 6000; Shot "15-private"
+Keys "^+w" 2500
+Keys "^2" 1500; Keys "^d" 1200; Keys "^+d" 1200; Shot "16-bookmarked-toast"
+Keys "^l" 500; Keys "wiki" 1500; Shot "17-suggest"; Keys "{ESC}" 500
+Keys "^w" 1500; Shot "18-closed"; Keys "^+t" 4000; Shot "19-reopened"
+"alive before exit: " + (-not $p.HasExited)
+[U]::PostMessage((Win), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+Start-Sleep 8
+"exited after close: " + $p.HasExited + " code=" + $(if ($p.HasExited) { $p.ExitCode } else { 'n/a' })
+Get-ChildItem "$env:LOCALAPPDATA\UltraLightBrowser" | Select-Object Name, Length | Format-Table | Out-String
+Get-Content "$env:LOCALAPPDATA\UltraLightBrowser\library.json" -ErrorAction SilentlyContinue
+$p = Start-Process $Exe -PassThru
+Start-Sleep 10
+[N.W]::ShowWindow((Win), 3) | Out-Null
+Start-Sleep 1
+Keys "^+b" 3000; Shot "20-restart-bookmarks"
+ClickRel 27 26 $true; Keys "{DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{ENTER}" 3000; Shot "21-reading-list"
+Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
+Start-Sleep 3
+$cfgPath = "$env:LOCALAPPDATA\UltraLightBrowser\config.json"
+$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+$cfg.settings.userAgentProfile = 'macos-edge'
+$cfg | ConvertTo-Json -Depth 8 | Set-Content $cfgPath -Encoding utf8NoBOM
+$p = Start-Process $Exe -PassThru
+Start-Sleep 10
+Keys "^t" 1500; Keys "example.com{ENTER}" 5000
+Keys "^t" 1500; Keys "example.org{ENTER}" 5000; Shot "22-mac-tabs"
+@'
+const WebSocket = require('ws');
+(async () => {
+  const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
+  for (const t of list.filter(t => t.type === 'page' && /example\.(com|org)/.test(t.url))) {
+    const ws = new WebSocket(t.webSocketDebuggerUrl);
+    await new Promise(r => ws.on('open', r));
+    ws.send(JSON.stringify({id: 1, method: 'Runtime.evaluate', params: {returnByValue: true, awaitPromise: true, expression:
+      `navigator.userAgentData.getHighEntropyValues(['platformVersion']).then(h => [location.host, navigator.platform, navigator.userAgentData.platform, h.platformVersion, navigator.userAgent.includes('Macintosh')].join(' '))`}}));
+    await new Promise(r => ws.on('message', m => { const d = JSON.parse(m); if (d.id === 1) { console.log('MAC', JSON.stringify(d.result.result.value)); r(); } }));
+    ws.close();
+  }
+  process.exit(0);
+})().catch(e => { console.log('CDP-ERR', e.message); process.exit(0); });
+'@ | Set-Content mac.js
+node mac.js
+"alive: " + (-not $p.HasExited)
+Get-Process UltraLightBrowser -ErrorAction SilentlyContinue | Select-Object Id, MainWindowTitle | Format-Table | Out-String
+Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue |
+  Where-Object { $_.ProviderName -in 'Application Error','Windows Error Reporting' } | ForEach-Object { $_.Message } | Select-Object -First 3
+Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue

@@ -100,6 +100,38 @@ void Config::Load() {
                 m_settings.audioVolumeBoost = s["audioVolumeBoost"].get<double>();
             }
             if (s.contains("enableMonoDownmix")) m_settings.enableMonoDownmix = s["enableMonoDownmix"];
+
+            auto readChoice = [&s](const char* key, std::string& target, std::initializer_list<const char*> allowed) {
+                if (!s.contains(key) || !s[key].is_string()) return;
+                const auto v = s[key].get<std::string>();
+                for (const char* a : allowed) {
+                    if (v == a) { target = v; return; }
+                }
+            };
+            auto readBool = [&s](const char* key, bool& target) {
+                if (s.contains(key) && s[key].is_boolean()) target = s[key].get<bool>();
+            };
+            auto readInt = [&s](const char* key, int& target, int lo, int hi) {
+                if (s.contains(key) && s[key].is_number_integer()) {
+                    const int v = s[key].get<int>();
+                    if (v >= lo && v <= hi) target = v;
+                }
+            };
+            readChoice("startupPage", m_settings.startupPage, {"start", "home", "restore"});
+            readChoice("newTabPage", m_settings.newTabPage, {"start", "blank", "home"});
+            readChoice("searchEngine", m_settings.searchEngine, {"google", "bing", "duckduckgo", "startpage", "baidu"});
+            readBool("saveHistory", m_settings.saveHistory);
+            readBool("clearHistoryOnExit", m_settings.clearHistoryOnExit);
+            readInt("tabSuspendMinutes", m_settings.tabSuspendMinutes, 0, 240);
+            readBool("startShowFavorites", m_settings.startShowFavorites);
+            readBool("startShowFrequent", m_settings.startShowFrequent);
+            readBool("startShowPrivacy", m_settings.startShowPrivacy);
+            readBool("startShowReading", m_settings.startShowReading);
+            readChoice("startBackground", m_settings.startBackground, {"aurora", "ocean", "sunset", "plain"});
+            readChoice("readerTheme", m_settings.readerTheme, {"light", "sepia", "gray", "dark"});
+            readChoice("readerFont", m_settings.readerFont, {"serif", "sans"});
+            readInt("readerFontSize", m_settings.readerFontSize, 12, 40);
+            readBool("sidebarVisible", m_settings.sidebarVisible);
         }
 
         if (root.contains("blockRules") && root["blockRules"].is_object()) {
@@ -143,7 +175,22 @@ void Config::Save() {
             {"enableNightMode", m_settings.enableNightMode},
             {"enableVocalBoost", m_settings.enableVocalBoost},
             {"audioVolumeBoost", m_settings.audioVolumeBoost},
-            {"enableMonoDownmix", m_settings.enableMonoDownmix}
+            {"enableMonoDownmix", m_settings.enableMonoDownmix},
+            {"startupPage", m_settings.startupPage},
+            {"newTabPage", m_settings.newTabPage},
+            {"searchEngine", m_settings.searchEngine},
+            {"saveHistory", m_settings.saveHistory},
+            {"clearHistoryOnExit", m_settings.clearHistoryOnExit},
+            {"tabSuspendMinutes", m_settings.tabSuspendMinutes},
+            {"startShowFavorites", m_settings.startShowFavorites},
+            {"startShowFrequent", m_settings.startShowFrequent},
+            {"startShowPrivacy", m_settings.startShowPrivacy},
+            {"startShowReading", m_settings.startShowReading},
+            {"startBackground", m_settings.startBackground},
+            {"readerTheme", m_settings.readerTheme},
+            {"readerFont", m_settings.readerFont},
+            {"readerFontSize", m_settings.readerFontSize},
+            {"sidebarVisible", m_settings.sidebarVisible}
         };
 
         json rulesObj = json::object();

@@ -39,6 +39,9 @@ inline constexpr const wchar_t* kMacStealthScript = LR"js((() => {
     hookGetter(P, "device", "");
     hookGetter(P, "description", "");
   }
+  // The DevTools override does not always reach navigator.platform in documents that
+  // share a renderer with earlier pages; pin it here as well.
+  if (G.Navigator && !G.WorkerNavigator) hookGetter(G.Navigator.prototype, "platform", "MacIntel");
   // Workers are outside Emulation.setUserAgentOverride's navigator.platform reach,
   // and service workers also keep the real navigator.userAgent.
   if (G.WorkerNavigator) {

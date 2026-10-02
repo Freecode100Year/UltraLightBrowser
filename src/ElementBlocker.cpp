@@ -5,6 +5,7 @@
 #include <wininet.h>
 #include <shlwapi.h>
 #include <sstream>
+#include <vector>
 
 #if __has_include(<nlohmann/json.hpp>)
 #include <nlohmann/json.hpp>
@@ -34,17 +35,33 @@ std::string ElementBlocker::ExtractHostFromUri(const std::wstring& uri) {
 
 void ElementBlocker::Initialize(ICoreWebView2* webView) {
     if (!webView) return;
-    m_webView = webView;
+    m_injectedScriptIds.emplace(webView, std::wstring());
     UpdateRulesScript(webView);
+}
+
+void ElementBlocker::Unregister(ICoreWebView2* webView) {
+    m_injectedScriptIds.erase(webView);
+    if (m_pickerWebView == webView) {
+        m_pickerWebView = nullptr;
+        m_pickerActive = false;
+    }
+}
+
+void ElementBlocker::UpdateAllRulesScripts() {
+    std::vector<ICoreWebView2*> views;
+    for (const auto& [view, id] : m_injectedScriptIds) views.push_back(view);
+    for (auto* view : views) UpdateRulesScript(view);
 }
 
 void ElementBlocker::UpdateRulesScript(ICoreWebView2* webView) {
     if (!webView) return;
 
     // Remove previously registered script to prevent accumulation across updates
-    if (!m_injectedScriptId.empty()) {
-        webView->RemoveScriptToExecuteOnDocumentCreated(m_injectedScriptId.c_str());
-        m_injectedScriptId.clear();
+    auto registered = m_injectedScriptIds.find(webView);
+    if (registered == m_injectedScriptIds.end()) return;
+    if (!registered->second.empty()) {
+        webView->RemoveScriptToExecuteOnDocumentCreated(registered->second.c_str());
+        registered->second.clear();
     }
 
 #if __has_include(<nlohmann/json.hpp>)
@@ -113,9 +130,11 @@ void ElementBlocker::UpdateRulesScript(ICoreWebView2* webView) {
     webView->AddScriptToExecuteOnDocumentCreated(
         initScript.c_str(),
         Microsoft::WRL::Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
-            [this](HRESULT hr, LPCWSTR id) -> HRESULT {
+            [this, webView](HRESULT hr, LPCWSTR id) -> HRESULT {
                 if (SUCCEEDED(hr) && id) {
-                    m_injectedScriptId = id;
+                    const auto it = m_injectedScriptIds.find(webView);
+                    if (it != m_injectedScriptIds.end()) it->second = id;
+                    else webView->RemoveScriptToExecuteOnDocumentCreated(id);  // tab closed meanwhile
                 }
                 return S_OK;
             }
@@ -131,7 +150,8 @@ void ElementBlocker::OnNavigationStarting(ICoreWebView2* /*webView*/, const std:
 void ElementBlocker::TogglePickerMode(ICoreWebView2* webView) {
     if (!webView) return;
 
-    m_pickerActive = !m_pickerActive;
+    m_pickerActive = !(m_pickerActive && m_pickerWebView == webView);
+    m_pickerWebView = webView;
 
     std::wstring pickerJs = LR"(
         (function() {
@@ -209,10 +229,10 @@ void ElementBlocker::TogglePickerMode(ICoreWebView2* webView) {
     webView->ExecuteScript(pickerJs.c_str(), nullptr);
 }
 
-bool ElementBlocker::HandleWebMessage(const std::wstring& messageJson, const std::wstring& sourceUri) {
+bool ElementBlocker::HandleWebMessage(ICoreWebView2* sender, const std::wstring& messageJson, const std::wstring& sourceUri) {
 #if __has_include(<nlohmann/json.hpp>)
     // Guard against malicious web pages spoofing messages when picker mode is inactive
-    if (!m_pickerActive) return false;
+    if (!m_pickerActive || sender != m_pickerWebView) return false;
 
     try {
         std::string narrowMsg = StringUtils::WideToUtf8(messageJson);
@@ -239,14 +259,11 @@ bool ElementBlocker::HandleWebMessage(const std::wstring& messageJson, const std
             Config::Instance().AddBlockRule(verifiedHost, selector);
             m_pickerActive = false;
 
-            if (m_webView) {
-                UpdateRulesScript(m_webView);
-
-                // Instantly apply the block rule on currently loaded document
-                std::wstring hideNowJs = L"(function(){ const s = document.createElement('style'); s.textContent = '"
-                    + StringUtils::Utf8ToWide(selector) + L" { display: none !important; }'; (document.head||document.documentElement).appendChild(s); })();";
-                m_webView->ExecuteScript(hideNowJs.c_str(), nullptr);
-            }
+            UpdateAllRulesScripts();
+            // Instantly apply the block rule on the currently loaded document
+            const std::wstring hideNowJs = L"(function(s){ const st = document.createElement('style'); st.textContent = s + ' { display: none !important; }'; (document.head||document.documentElement).appendChild(st); })("
+                + StringUtils::Utf8ToWide(json(selector).dump()) + L");";
+            sender->ExecuteScript(hideNowJs.c_str(), nullptr);
             return true;
         }
     } catch (...) {

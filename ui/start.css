@@ -1,0 +1,27 @@
+body{min-height:100vh}
+body.bg-aurora{background:radial-gradient(1200px 600px at 30% 0%,#3a2f5c 0%,transparent 60%),radial-gradient(900px 500px at 90% 100%,#1f4a5c 0%,transparent 60%),#1e2026 fixed}
+body.bg-ocean{background:radial-gradient(1100px 650px at 20% 10%,#14406a 0%,transparent 60%),radial-gradient(900px 500px at 85% 90%,#0f5e5a 0%,transparent 60%),#161b22 fixed}
+body.bg-sunset{background:radial-gradient(1100px 600px at 25% 0%,#6a2f3a 0%,transparent 60%),radial-gradient(900px 600px at 90% 100%,#6a4a1f 0%,transparent 60%),#201c1e fixed}
+body.bg-plain{background:#1e2026}
+.start{max-width:1000px;margin:0 auto;padding:46px 40px 60px}
+.start h2{font-size:20px;margin:0 0 14px}
+.start section{margin-bottom:34px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:18px 10px}
+.site{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px;color:#c9cbd1;position:relative;padding:6px 2px;border-radius:12px}
+.site:hover{background:#ffffff0d}
+.site .name{max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+.site .tile{box-shadow:0 2px 8px #0005}
+.site .rm{position:absolute;top:0;right:8px;width:20px;height:20px;border-radius:50%;background:#000a;color:#fff;font-size:12px;display:none;align-items:center;justify-content:center;padding:0}
+.site:hover .rm{display:flex}
+.site.add .tile{background:#2b2f36!important;border:1px dashed #666;color:#999;box-shadow:none}
+.stretch{align-items:stretch}
+.stretch>.card{flex:1;min-width:0}
+.pr{display:flex;align-items:center;gap:16px}
+.shield{width:46px;height:46px;border-radius:12px;background:#2d6a4f;display:flex;align-items:center;justify-content:center;flex:none}
+.big{font-size:30px;font-weight:600;line-height:1.1}
+.rl div{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #ffffff10;font-size:12.5px}
+.rl div:last-child{border-bottom:0}
+.read-card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.read-card:hover,.pr-card:hover{background:#ffffff16}
+.foot{text-align:center;font-size:12px;margin-top:10px}
+.hidden{display:none}

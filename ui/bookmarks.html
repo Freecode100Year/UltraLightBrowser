@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>书签</title><link rel="stylesheet" href="ui.css">
+<style>
+.layout{display:flex;gap:24px;align-items:flex-start}
+.folders{width:210px;flex:none;position:sticky;top:20px}
+.folder{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer}
+.folder:hover{background:var(--hover)}
+.folder.on{background:#ffffff1f}
+.folder .n{margin-left:auto;color:var(--faint);font-size:12px}
+.folder .fx{display:none}
+.folder:hover .fx{display:inline-block}
+.main{flex:1;min-width:0}
+.url{font-size:12px;color:var(--faint)}
+.item.drop{box-shadow:inset 0 2px 0 var(--accent)}
+.tools{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.tools input{flex:1;min-width:160px}
+</style></head><body>
+<div class="page" style="max-width:1100px">
+  <h1>书签</h1>
+  <div class="layout">
+    <div class="folders"><div id="folders"></div>
+      <button style="margin-top:10px;width:100%" id="new-folder">＋ 新建文件夹</button></div>
+    <div class="main">
+      <div class="tools">
+        <input type="search" id="q" placeholder="搜索书签">
+        <button class="primary" id="add">添加书签</button>
+        <button id="import">导入…</button>
+        <button id="export">导出…</button>
+      </div>
+      <div class="list" id="list"></div>
+    </div>
+  </div>
+</div>
+<script src="ui.js"></script><script src="bookmarks.js"></script>
+</body></html>

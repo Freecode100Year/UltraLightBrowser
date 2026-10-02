@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>标签页总览</title><link rel="stylesheet" href="ui.css">
+<style>
+html,body{background:#18191d;height:100%;overflow:auto}
+.wrap{padding:30px 56px 50px}
+.search{display:block;width:380px;margin:0 auto 26px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:26px}
+.th{border-radius:10px;overflow:hidden;background:#2a2c32;box-shadow:0 6px 20px #0007;cursor:pointer;transition:transform .12s;position:relative}
+.th:hover{transform:translateY(-2px)}
+.th.act{box-shadow:0 0 0 3px var(--accent),0 6px 20px #0007}
+.shot{height:150px;background:#202227 center top/cover no-repeat;display:flex;align-items:center;justify-content:center}
+.tt{display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:12.5px;min-width:0}
+.tt .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font-size:10.5px;border-radius:4px;padding:1px 6px;flex:none}
+.badge.sleep{color:#9ad08a;background:#2d4a33}
+.badge.audio{color:#9cc3ff;background:#22385a}
+.close{position:absolute;top:6px;left:6px;width:22px;height:22px;border-radius:50%;background:#000b;color:#fff;display:none;align-items:center;justify-content:center;font-size:12px;padding:0}
+.th:hover .close{display:flex}
+.new{border:2px dashed #444;background:none;box-shadow:none;display:flex;align-items:center;justify-content:center;min-height:186px;font-size:30px;color:#777}
+.new:hover{color:#bbb;border-color:#666}
+</style></head><body>
+<div class="wrap">
+  <input type="search" class="search" id="q" placeholder="搜索标签页">
+  <div class="grid" id="grid"></div>
+</div>
+<script src="ui.js"></script><script src="overview.js"></script>
+</body></html>

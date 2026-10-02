@@ -27,6 +27,23 @@ struct AppSettings {
     bool enableVocalBoost = false;
     double audioVolumeBoost = 1.0;              // 1.0, 1.5, 2.0, 3.0
     bool enableMonoDownmix = false;
+
+    // Browser (v2.0)
+    std::string startupPage = "start";          // start / home / restore
+    std::string newTabPage = "start";           // start / blank / home
+    std::string searchEngine = "google";        // google / bing / duckduckgo / startpage / baidu
+    bool saveHistory = true;
+    bool clearHistoryOnExit = false;
+    int tabSuspendMinutes = 10;                 // 0 = never
+    bool startShowFavorites = true;
+    bool startShowFrequent = true;
+    bool startShowPrivacy = true;
+    bool startShowReading = true;
+    std::string startBackground = "aurora";     // aurora / ocean / sunset / plain
+    std::string readerTheme = "sepia";          // light / sepia / gray / dark
+    std::string readerFont = "serif";           // serif / sans
+    int readerFontSize = 19;
+    bool sidebarVisible = false;
 };
 
 class Config {

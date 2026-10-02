@@ -75,3 +75,13 @@ compressor lookahead is checked too. This is not an end-to-end sound-quality tes
 ## Video diagnostics
 
 `node tests/video_diagnostics_test.cjs` executes the shipped script with deterministic media boundaries and checks frame deltas, drop percentage, buffer range, reset and unsupported stats. It does not play video.
+
+## Browser library and built-in pages (v2.0)
+
+`g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/library_test.cpp src/Library.cpp -o /tmp/library-tests && /tmp/library-tests` covers bookmarks, folders, Netscape HTML import/export, history ranking and clearing, suggestions, reading list, tab groups, per-site settings, privacy statistics and persistence.
+
+`python3 tests/ui_resources_test.py` checks that every file under `ui/` is embedded by `resources/resource.rc`, extracted by `InternalPages.cpp`, and that every page carries a Content-Security-Policy without inline scripts.
+
+## Windows UI smoke test
+
+`tests/smoke-ui.ps1` (run by the manual "UI smoke" workflow) launches the Release build on a Windows runner, drives it with keyboard and mouse (tabs, menu, share, reader, find, sidebar, overview, history, bookmarks, settings, private window, close/restart persistence, macOS identity in several tabs) and uploads screenshots.

@@ -9,6 +9,8 @@
 #include <unordered_set>
 #include <atomic>
 #include <mutex>
+#include <functional>
+#include <unordered_map>
 
 namespace UltraLight {
 
@@ -16,8 +18,15 @@ class NativeRequestFilter {
 public:
     static NativeRequestFilter& Instance();
 
-    // Attach native network request interceptor to WebView2
-    void Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment);
+    // Attach native network request interceptor to a tab's WebView2
+    void Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment, bool isPrivate = false);
+    void Unregister(ICoreWebView2* webView);
+
+    // Site exceptions and privacy statistics are owned by the browser library.
+    using SiteAllowsAdsCallback = std::function<bool(const std::wstring& topHost)>;
+    using BlockedCallback = std::function<void(const std::wstring& requestHost, const std::wstring& topHost)>;
+    void SetSiteAllowsAdsCallback(SiteAllowsAdsCallback cb) { m_siteAllowsAds = std::move(cb); }
+    void SetBlockedCallback(BlockedCallback cb) { m_onBlocked = std::move(cb); }
 
     // Test whether an outgoing request URI should be intercepted and blocked
     bool ShouldBlock(const std::wstring& uri);
@@ -31,10 +40,10 @@ public:
     void ResetBlockedCount() { m_blockedCount.store(0); }
 
     // Main-frame navigation tracking to prevent false-positive blocking of top-level navigations
-    void SetMainFrameNavigation(const std::wstring& uri);
-    void ClearMainFrameNavigation();
-    bool IsMainFrameNavigation(const std::wstring& uri) const;
-    std::wstring GetCurrentMainHost() const;
+    void SetMainFrameNavigation(ICoreWebView2* webView, const std::wstring& uri);
+    void ClearMainFrameNavigation(ICoreWebView2* webView);
+    bool IsMainFrameNavigation(ICoreWebView2* webView, const std::wstring& uri) const;
+    std::wstring GetCurrentMainHost(ICoreWebView2* webView) const;
 
     // Event handler for WebResourceRequested
     HRESULT HandleWebResourceRequested(ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args);
@@ -58,11 +67,15 @@ private:
     bool m_enabled = true;
     std::atomic<uint64_t> m_blockedCount{0};
     ICoreWebView2Environment* m_environment = nullptr;
-    EventRegistrationToken m_resourceRequestedToken{};
-
+    struct NavState {
+        std::wstring pendingUri;
+        std::wstring mainHost;
+        bool isPrivate = false;
+    };
     mutable std::mutex m_navMutex;
-    std::wstring m_pendingMainNavigationUri;
-    std::wstring m_currentMainHost;
+    std::unordered_map<ICoreWebView2*, NavState> m_nav;
+    SiteAllowsAdsCallback m_siteAllowsAds;
+    BlockedCallback m_onBlocked;
 
     std::unordered_set<std::wstring> m_blockedDomainSet;
     std::vector<std::wstring> m_blockedKeywords;

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(UltraLightBrowser
-    VERSION 1.6.9
+    VERSION 2.0.0
     DESCRIPTION "Minimal, Ultra-Fast Windows 11 Native Browser Shell (macOS Safari UI Edition)"
     LANGUAGES CXX C
 )
@@ -59,8 +59,21 @@ find_package(nlohmann_json CONFIG QUIET)
 # Source files
 set(SOURCE_FILES
     src/main.cpp
+    src/AppShell.cpp
+    src/AppShell.hpp
     src/MainWindow.cpp
+    src/MainWindowTabs.cpp
+    src/MainWindowPaint.cpp
+    src/MainWindowPages.cpp
+    src/MainWindowMenus.cpp
     src/MainWindow.hpp
+    src/Commands.hpp
+    src/Icons.cpp
+    src/Icons.hpp
+    src/InternalPages.cpp
+    src/InternalPages.hpp
+    src/Library.cpp
+    src/Library.hpp
     src/WebViewManager.cpp
     src/WebViewManager.hpp
     src/NativeRequestFilter.cpp
@@ -149,6 +162,9 @@ target_link_libraries(UltraLightBrowser PRIVATE
     uxtheme.lib
     wininet.lib
     propsys.lib
+    gdiplus.lib
+    crypt32.lib
+    comdlg32.lib
 )
 
 # Embed Manifest

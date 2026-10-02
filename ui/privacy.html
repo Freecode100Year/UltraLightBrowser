@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>隐私报告</title><link rel="stylesheet" href="ui.css">
+<style>
+.hero{display:flex;align-items:center;gap:22px}
+.shield{width:64px;height:64px;border-radius:16px;background:#2d6a4f;display:flex;align-items:center;justify-content:center;font-size:30px}
+.big{font-size:40px;font-weight:600;line-height:1.1}
+.chart{display:flex;align-items:flex-end;gap:10px;height:150px;padding:10px 0 0}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.bar i{display:block;width:100%;max-width:46px;background:linear-gradient(#5b9dff,#3d6ff0);border-radius:6px 6px 2px 2px;min-height:2px}
+.bar span{font-size:11px;color:var(--muted)}
+.cols{display:flex;gap:16px}.cols>.card{flex:1;min-width:0}
+.cnt{color:var(--muted);font-size:12px}
+.off{color:#ffd479}
+</style></head><body>
+<div class="page">
+  <h1>隐私报告</h1>
+  <div class="card hero" id="hero"></div>
+  <h2>过去 7 天</h2>
+  <div class="card"><div class="chart" id="chart"></div></div>
+  <div class="cols" style="margin-top:16px">
+    <div class="card"><h2 style="margin-top:4px">拦截最多的跟踪器</h2><div class="list" id="trackers"></div></div>
+    <div class="card"><h2 style="margin-top:4px">跟踪器最多的网站</h2><div class="list" id="sites"></div></div>
+  </div>
+  <p class="faint" style="font-size:12px;margin-top:18px">统计只保存在本机。拦截基于内置的广告与跟踪域名列表，同时启用了 WebView2 严格防跟踪。</p>
+</div>
+<script src="ui.js"></script><script src="privacy.js"></script>
+</body></html>

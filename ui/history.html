@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>历史记录</title><link rel="stylesheet" href="ui.css">
+<style>
+.top{position:sticky;top:0;background:var(--bg);padding:20px 0 12px;z-index:5;display:flex;gap:10px;align-items:center}
+.top input{flex:1}
+.day{font-size:13px;font-weight:600;color:var(--muted);margin:22px 10px 6px}
+.time{width:48px;color:var(--faint);font-size:12px;flex:none}
+.url{font-size:12px;color:var(--faint)}
+</style></head><body>
+<div class="page">
+  <h1>历史记录</h1>
+  <div class="top">
+    <input type="search" id="q" placeholder="搜索历史记录" autofocus>
+    <select id="range">
+      <option value="">清除历史记录…</option>
+      <option value="hour">最近一小时</option>
+      <option value="today">今天</option>
+      <option value="twodays">今天和昨天</option>
+      <option value="all">所有历史记录</option>
+    </select>
+  </div>
+  <div id="off" class="card muted" style="display:none;margin-bottom:10px">已在设置中关闭“记录浏览历史”，不会再记录新的访问。</div>
+  <div class="list" id="list"></div>
+</div>
+<script src="ui.js"></script><script src="history.js"></script>
+</body></html>

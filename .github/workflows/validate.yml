@@ -28,6 +28,12 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/user_agent_test.cpp -o ua-tests
           ./ua-tests
+      - name: Test the user library (bookmarks, history, sites, privacy)
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/library_test.cpp src/Library.cpp -o library-tests
+          ./library-tests
+      - name: Check embedded built-in pages
+        run: python3 tests/ui_resources_test.py
       - name: Test fullscreen and maximized client bounds
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/window_geometry_test.cpp -o geometry-tests
