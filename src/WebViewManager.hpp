@@ -11,6 +11,12 @@
 
 namespace UltraLight {
 
+enum class AudioEndpointType {
+    Headphones,
+    Speakers,
+    Unknown
+};
+
 class WebViewManager {
 public:
     using ReadyCallback = std::function<void()>;
@@ -64,9 +70,10 @@ public:
     bool IsVisible() const;
     void ApplyMemoryUsageTargetLow();
 
-    // 2-Channel Virtual Surround Sound (v1.5.0)
-    void SetSurroundSound(bool enabled, const std::string& mode);
+    // Audio Enhancement & Virtual Surround (v1.6.0)
+    void UpdateAudioEnhancer();
     void InjectSurroundSoundScript();
+    AudioEndpointType GetDetectedAudioEndpoint() const;
 
     // Direct interface access
     ICoreWebView2Environment* GetEnvironment() const { return m_environment.get(); }

@@ -1201,7 +1201,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             settings.enableSurroundSound = !settings.enableSurroundSound;
             Config::Instance().Save();
             if (m_webViewManager) {
-                m_webViewManager->SetSurroundSound(settings.enableSurroundSound, settings.surroundSoundMode);
+                m_webViewManager->UpdateAudioEnhancer();
             }
             UpdateSoundDisplay();
             break;
@@ -1212,7 +1212,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             settings.surroundSoundMode = "light";
             Config::Instance().Save();
             if (m_webViewManager) {
-                m_webViewManager->SetSurroundSound(settings.enableSurroundSound, settings.surroundSoundMode);
+                m_webViewManager->UpdateAudioEnhancer();
             }
             UpdateSoundDisplay();
             break;
@@ -1223,7 +1223,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             settings.surroundSoundMode = "standard";
             Config::Instance().Save();
             if (m_webViewManager) {
-                m_webViewManager->SetSurroundSound(settings.enableSurroundSound, settings.surroundSoundMode);
+                m_webViewManager->UpdateAudioEnhancer();
             }
             UpdateSoundDisplay();
             break;
@@ -1234,9 +1234,96 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             settings.surroundSoundMode = "cinema";
             Config::Instance().Save();
             if (m_webViewManager) {
-                m_webViewManager->SetSurroundSound(settings.enableSurroundSound, settings.surroundSoundMode);
+                m_webViewManager->UpdateAudioEnhancer();
             }
             UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_VOCAL_BOOST: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.enableVocalBoost = !settings.enableVocalBoost;
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_BOOST_100: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.audioVolumeBoost = 1.0;
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_BOOST_150: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.audioVolumeBoost = 1.5;
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_BOOST_200: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.audioVolumeBoost = 2.0;
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_BOOST_300: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.audioVolumeBoost = 3.0;
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_MONO_DOWNMIX: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.enableMonoDownmix = !settings.enableMonoDownmix;
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_DEV_AUTO: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.audioDeviceMode = "auto";
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
+            break;
+        }
+        case IDM_SURROUND_DEV_HEADPHONES: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.audioDeviceMode = "headphones";
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
+            break;
+        }
+        case IDM_SURROUND_DEV_SPEAKERS: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.audioDeviceMode = "speakers";
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->UpdateAudioEnhancer();
+            }
             break;
         }
         case IDC_EDIT_ADDRESS: {
@@ -1563,7 +1650,12 @@ void MainWindow::UpdateSoundDisplay() {
     const auto& settings = Config::Instance().GetSettings();
     std::wstring label;
     if (!settings.enableSurroundSound) {
-        label = L"🎧 环绕 [关]";
+        if (settings.audioVolumeBoost > 1.05) {
+            int pct = static_cast<int>(std::round(settings.audioVolumeBoost * 100));
+            label = L"🔊 " + std::to_wstring(pct) + L"%";
+        } else {
+            label = L"🎧 环绕 [关]";
+        }
     } else if (settings.surroundSoundMode == "light") {
         label = L"🎧 环绕 [轻]";
     } else if (settings.surroundSoundMode == "cinema") {
@@ -1581,21 +1673,72 @@ void MainWindow::ShowSoundMenu() {
 
     const auto& settings = Config::Instance().GetSettings();
 
+    // 1. Master toggle
     UINT toggleFlags = MF_STRING | (settings.enableSurroundSound ? MF_CHECKED : MF_UNCHECKED);
     AppendMenuW(hMenu, toggleFlags, IDM_SURROUND_TOGGLE, L"✔  开启 2 声道虚拟环绕立体声 (DSP)");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
+    // 2. Presets
     UINT lightFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "light") ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hMenu, lightFlags, IDM_SURROUND_MODE_LIGHT, L"🍃  轻柔模式 (自然声场加宽，适合人声播客)");
+    AppendMenuW(hMenu, lightFlags, IDM_SURROUND_MODE_LIGHT, L"🍃  轻柔模式 (自然声场加宽 1.15x，适合人声/播客)");
 
     UINT stdFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "standard") ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hMenu, stdFlags, IDM_SURROUND_MODE_STANDARD, L"🎧  标准模式 (Bauer交叉反馈+房间反射，默认)");
+    AppendMenuW(hMenu, stdFlags, IDM_SURROUND_MODE_STANDARD, L"🎧  标准模式 (Bauer交叉反馈 + 35ms小房间混响，默认)");
 
     UINT cinemaFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "cinema") ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hMenu, cinemaFlags, IDM_SURROUND_MODE_CINEMA, L"🎬  影院模式 (极限声场沉浸+低频饱满，影视爆棚)");
+    AppendMenuW(hMenu, cinemaFlags, IDM_SURROUND_MODE_CINEMA, L"🎬  影院模式 (1.55x加宽 + ±110°后置环绕 + 低音居中)");
 
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"💡 针对耳机优化，带动态防破音压限器 (实时生效)");
+
+    // 3. Audio Device Detection / Selection Submenu
+    HMENU hDevMenu = CreatePopupMenu();
+    if (hDevMenu) {
+        AudioEndpointType detected = m_webViewManager ? m_webViewManager->GetDetectedAudioEndpoint() : AudioEndpointType::Headphones;
+        std::wstring autoLabel = L"🤖 自动检测 [当前: " +
+            std::wstring(detected == AudioEndpointType::Headphones ? L"耳机 (HRTF+交叉反馈)" : L"音箱 (优化立体声加宽)") + L"]";
+
+        UINT autoFlags = MF_STRING | (settings.audioDeviceMode == "auto" ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuW(hDevMenu, autoFlags, IDM_SURROUND_DEV_AUTO, autoLabel.c_str());
+
+        UINT hpFlags = MF_STRING | (settings.audioDeviceMode == "headphones" ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuW(hDevMenu, hpFlags, IDM_SURROUND_DEV_HEADPHONES, L"🎧 强制耳机模式 (HRTF 3D虚拟音箱 + Bauer反馈)");
+
+        UINT spkFlags = MF_STRING | (settings.audioDeviceMode == "speakers" ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuW(hDevMenu, spkFlags, IDM_SURROUND_DEV_SPEAKERS, L"🔊 强制音箱模式 (优化立体声加宽)");
+
+        AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hDevMenu), L"🎛️  输出设备优化");
+    }
+
+    // 4. Vocal Dialogue Boost (+4.5dB peaking filter)
+    UINT vocalFlags = MF_STRING | (settings.enableVocalBoost ? MF_CHECKED : MF_UNCHECKED);
+    AppendMenuW(hMenu, vocalFlags, IDM_SURROUND_VOCAL_BOOST, L"🗣️  人声对白清晰度增强 (+4.5dB @ 3kHz)");
+
+    // 5. Volume Boost Submenu (100% ~ 300%)
+    HMENU hVolMenu = CreatePopupMenu();
+    if (hVolMenu) {
+        UINT b100Flags = MF_STRING | (settings.audioVolumeBoost <= 1.05 ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuW(hVolMenu, b100Flags, IDM_SURROUND_BOOST_100, L"100% (标准音量)");
+
+        UINT b150Flags = MF_STRING | (std::abs(settings.audioVolumeBoost - 1.5) < 0.1 ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuW(hVolMenu, b150Flags, IDM_SURROUND_BOOST_150, L"150% (小幅放大，防破音压限)");
+
+        UINT b200Flags = MF_STRING | (std::abs(settings.audioVolumeBoost - 2.0) < 0.1 ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuW(hVolMenu, b200Flags, IDM_SURROUND_BOOST_200, L"200% (2倍音量增强)");
+
+        UINT b300Flags = MF_STRING | (std::abs(settings.audioVolumeBoost - 3.0) < 0.1 ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuW(hVolMenu, b300Flags, IDM_SURROUND_BOOST_300, L"300% (3倍极限放大，内置限幅)");
+
+        std::wstring volSubTitle = L"🔊  前级音量放大 (当前: " +
+            std::to_wstring(static_cast<int>(std::round(settings.audioVolumeBoost * 100))) + L"%)";
+        AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hVolMenu), volSubTitle.c_str());
+    }
+
+    // 6. Mono Downmix (Single earphone mode)
+    UINT monoFlags = MF_STRING | (settings.enableMonoDownmix ? MF_CHECKED : MF_UNCHECKED);
+    AppendMenuW(hMenu, monoFlags, IDM_SURROUND_MONO_DOWNMIX, L"👂  单耳/单声道合并 (单边耳机听完整声音)");
+
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"🛡️ 150Hz低音保护 + -1dB硬件级砖墙限幅 (零破音)");
 
     RECT btnRect{};
     GetWindowRect(m_hBtnSound, &btnRect);

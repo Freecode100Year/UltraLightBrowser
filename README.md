@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.3/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.5.3%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.6.0/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.6.0%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -23,12 +23,12 @@
 
 ---
 
-## 📥 最新版便携下载 / Direct Download (v1.5.3 启动崩溃彻底根治与内核自愈版)
+## 📥 最新版便携下载 / Direct Download (v1.6.0 专业级空间音频与声学设备自适应增强版)
 
 可在 GitHub Releases 页面直接下载最新构建的预编译二进制文件：
 
-* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.5.3)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.3/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
-* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.5.3-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.3/UltraLightBrowser-v1.5.3-windows-x64.zip)**
+* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.6.0)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.6.0/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
+* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.6.0-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.6.0/UltraLightBrowser-v1.6.0-windows-x64.zip)**
 * 🌟 **[访问 GitHub Latest Release 最新发布页](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**
 * 🔗 **[查看所有历史版本与构建产物](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
@@ -207,6 +207,46 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
   * 支持一键拷贝当前网页 URL 到系统剪贴板。
   * 支持将当前网页一键移交（Handoff）到系统默认浏览器打开。
   * 整合一键全屏视图（F11）。
+
+---
+
+## 🎧 v1.6.0 专业级空间音频 DSP 与声学设备自适应增强 (Professional Audio DSP Engine)
+
+在 **v1.6.0** 版本中，UltraLightBrowser 针对音频渲染管线实施了全维度的声学演进与专业 DSP 架构重构，彻底解决声场发虚、人声漂移、低频浑浊与音量抽吸问题：
+
+### 1. 🎵 激进声场宽度修正与科学梯度设计
+* **收敛过度加宽**：将原影院模式 2.3x 极端加宽收敛为 1.55x（标准模式 1.35x，轻柔模式 1.15x），杜绝高频相位乱真与声场中空发虚。
+* **低频居中保护（150Hz Highpass Mono Bass）**：在 Side 声道插入 150Hz 2阶高通滤波，确保 150Hz 以下低频与超低音 100% 锁定在 Mid 声道居中直出，保留打击乐与低音贝斯的澎湃下潜与结像实体感。
+
+### 2. 🛡️ 硬件级砖墙真峰值限幅器（True Brickwall Peak Limiter）
+* **消灭音量抽吸（Pumping）**：重构动态压缩器为砖墙限幅管线（阈值 `-1.0dB`、硬拐点 `knee: 0.0`、极限压缩比 `ratio: 20:1`、超瞬态启动 `attack: 1ms`、平滑释放 `release: 50ms`），完全消除大音量时的音量忽大忽小问题，零削波失真。
+
+### 3. ⏱️ 交互级超低延迟架构（Interactive Low-Latency）
+* **告别音画不同步**：音频上下文初始化强制启用 `latencyHint: "interactive"`，将内核音频缓冲从 `playback` 的数百毫秒骤降至极低延迟级别，杜绝口型与声轨微小漂移。
+
+### 4. 🏛️ 35ms 演播室小房间脉冲混响（Synthesized Studio Impulse Response）
+* **告别粗糙双抽头延迟**：改用真正的 `ConvolverNode` 卷积混响，动态合成 35ms 室内声学指数衰减脉冲响应，赋予声音自然、通透的物理空间声场。
+
+### 5. 🎧 双耳 HRTF 3D 虚拟音箱（Headphone 3D Spatial Audio）
+* **前方 ±30° 虚拟音箱**：采用 Chromium 原生优化的 HRTF 头部相关传递函数，将双声道声源精准定位在双耳前方 30° 黄金听音位。
+* **影院模式后置 ±110° 环绕声**：提取侧向差分信号经 15ms 延时送入后置虚拟音箱，形成沉浸式 3D 包围声场。
+
+### 6. 🤖 Windows CoreAudio 设备智能感知与声学路由
+* **原生硬件设备侦测**：通过 Windows CoreAudio `IMMDeviceEnumerator` 与 `PKEY_AudioEndpoint_FormFactor` 自动判定当前音频输出是耳机（Headphones/Headset）还是外放音箱（Speakers）。
+* **自适应管线切换**：耳机输出自动激活 HRTF 3D + Bauer 交叉反馈；音箱输出自动切换为立体声串扰消除加宽，杜绝音箱外放下 HRTF 引起的相位抵消。
+
+### 7. 🗣️ 人声对白清晰度增强（Vocal Clarity Boost）
+* **Mid 总线峰值滤波器**：在 Mid 总线上配置高精度 `peaking` 滤波器（中心频率 3000Hz，品质因数 Q=1.2，增益 `+4.5dB`），大幅增强电影对白、网课与播客的人声清晰度与咬字辨识度。
+
+### 8. 🔊 前级音量无损放大（Preamp Volume Boost 100% ~ 300%）
+* **突破系统音量极限**：针对录音音量过小的老旧视频或外网低电平音源，提供 100%、150%、200%、300% 四档前级增益。
+* **限幅器安全托底**：放大后的音频直接经过 -1.0dB 砖墙限幅器，即使音量放大到 300% 也绝不爆音削波。
+
+### 9. 👂 单耳单声道合并（Mono Downmix）
+* **单边耳机无损倾听**：支持将左右声道无损合并为纯单声道，在仅佩戴单边耳机时不会遗漏任何左/右独立音轨或配乐。
+
+### 10. ⚡ 零 CPU 功耗闲置自动挂起（Zero-CPU Idle Auto-Suspend）
+* **1 秒静音自动挂起**：当页面媒体暂停或播放结束超过 1 秒，`AudioContext` 自动执行 `suspend()`，CPU 占用立即降至 0.0%；用户点击或媒体恢复播放时微秒级无感 `resume()`。
 
 ---
 

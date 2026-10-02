@@ -18,6 +18,10 @@ struct AppSettings {
     std::string customDnsTemplate = "";
     bool enableSurroundSound = true;
     std::string surroundSoundMode = "standard"; // "light", "standard", "cinema"
+    std::string audioDeviceMode = "auto";       // "auto", "headphones", "speakers"
+    bool enableVocalBoost = false;
+    double audioVolumeBoost = 1.0;              // 1.0, 1.5, 2.0, 3.0
+    bool enableMonoDownmix = false;
 };
 
 class Config {

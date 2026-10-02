@@ -76,6 +76,14 @@ void Config::Load() {
             if (s.contains("surroundSoundMode") && s["surroundSoundMode"].is_string()) {
                 m_settings.surroundSoundMode = s["surroundSoundMode"].get<std::string>();
             }
+            if (s.contains("audioDeviceMode") && s["audioDeviceMode"].is_string()) {
+                m_settings.audioDeviceMode = s["audioDeviceMode"].get<std::string>();
+            }
+            if (s.contains("enableVocalBoost")) m_settings.enableVocalBoost = s["enableVocalBoost"];
+            if (s.contains("audioVolumeBoost") && s["audioVolumeBoost"].is_number()) {
+                m_settings.audioVolumeBoost = s["audioVolumeBoost"].get<double>();
+            }
+            if (s.contains("enableMonoDownmix")) m_settings.enableMonoDownmix = s["enableMonoDownmix"];
         }
 
         if (root.contains("blockRules") && root["blockRules"].is_object()) {
@@ -110,7 +118,11 @@ void Config::Save() {
             {"selectedDnsProvider", m_settings.selectedDnsProvider},
             {"customDnsTemplate", m_settings.customDnsTemplate},
             {"enableSurroundSound", m_settings.enableSurroundSound},
-            {"surroundSoundMode", m_settings.surroundSoundMode}
+            {"surroundSoundMode", m_settings.surroundSoundMode},
+            {"audioDeviceMode", m_settings.audioDeviceMode},
+            {"enableVocalBoost", m_settings.enableVocalBoost},
+            {"audioVolumeBoost", m_settings.audioVolumeBoost},
+            {"enableMonoDownmix", m_settings.enableMonoDownmix}
         };
 
         json rulesObj = json::object();

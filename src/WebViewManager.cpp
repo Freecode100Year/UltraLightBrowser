@@ -10,6 +10,10 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <mmdeviceapi.h>
+#include <functiondiscoverykeys_devpkey.h>
+
+#pragma comment(lib, "propsys.lib")
 
 #if __has_include(<nlohmann/json.hpp>)
 #include <nlohmann/json.hpp>
@@ -715,34 +719,98 @@ void WebViewManager::ShutdownAndPurgeData() {
     PurgeAllCacheAndTempFiles();
 }
 
+AudioEndpointType WebViewManager::GetDetectedAudioEndpoint() const {
+    AudioEndpointType result = AudioEndpointType::Speakers;
+    wil::com_ptr<IMMDeviceEnumerator> pEnum;
+    HRESULT hr = CoCreateInstance(
+        __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&pEnum)
+    );
+    if (FAILED(hr) || !pEnum) return result;
+
+    wil::com_ptr<IMMDevice> pDevice;
+    hr = pEnum->GetDefaultAudioEndpoint(eRender, eMultimedia, &pDevice);
+    if (FAILED(hr) || !pDevice) return result;
+
+    wil::com_ptr<IPropertyStore> pProps;
+    hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
+    if (FAILED(hr) || !pProps) return result;
+
+    PROPVARIANT var;
+    PropVariantInit(&var);
+    hr = pProps->GetValue(PKEY_AudioEndpoint_FormFactor, &var);
+    if (SUCCEEDED(hr) && var.vt == VT_UI4) {
+        // 3: Headphones, 5: Headset
+        if (var.ulVal == 3 || var.ulVal == 5) {
+            result = AudioEndpointType::Headphones;
+        } else {
+            result = AudioEndpointType::Speakers;
+        }
+    } else {
+        PropVariantClear(&var);
+        hr = pProps->GetValue(PKEY_Device_FriendlyName, &var);
+        if (SUCCEEDED(hr) && var.vt == VT_LPWSTR && var.pwszVal) {
+            std::wstring name = var.pwszVal;
+            std::wstring lower;
+            for (wchar_t c : name) lower += towlower(c);
+            if (lower.find(L"headphone") != std::wstring::npos ||
+                lower.find(L"headset") != std::wstring::npos ||
+                lower.find(L"earphone") != std::wstring::npos ||
+                lower.find(L"airpods") != std::wstring::npos ||
+                lower.find(L"buds") != std::wstring::npos ||
+                lower.find(L"耳机") != std::wstring::npos) {
+                result = AudioEndpointType::Headphones;
+            }
+        }
+    }
+    PropVariantClear(&var);
+    return result;
+}
+
 void WebViewManager::InjectSurroundSoundScript() {
     if (!m_webView) return;
 
     const auto& settings = Config::Instance().GetSettings();
     std::string initMode = settings.surroundSoundMode.empty() ? "standard" : settings.surroundSoundMode;
     std::string initEnabled = settings.enableSurroundSound ? "true" : "false";
+    std::string effectiveDevice = settings.audioDeviceMode;
+    if (effectiveDevice == "auto") {
+        AudioEndpointType detected = GetDetectedAudioEndpoint();
+        effectiveDevice = (detected == AudioEndpointType::Headphones) ? "headphones" : "speakers";
+    }
+    std::string initVocalBoost = settings.enableVocalBoost ? "true" : "false";
+    std::string initVolumeBoost = std::to_string(settings.audioVolumeBoost);
+    std::string initMonoDownmix = settings.enableMonoDownmix ? "true" : "false";
 
     std::string jsCode = R"raw(
 (function() {
     if (window.__UltraLightSurroundInstalled) return;
     window.__UltraLightSurroundInstalled = true;
 
-    let currentMode = ")raw" + initMode + R"raw(";
-    let isEnabled = )raw" + initEnabled + R"raw(;
+    let cfg = {
+        enabled: )raw" + initEnabled + R"raw(,
+        mode: ")raw" + initMode + R"raw(",
+        device: ")raw" + effectiveDevice + R"raw(",
+        vocalBoost: )raw" + initVocalBoost + R"raw(,
+        volumeBoost: )raw" + initVolumeBoost + R"raw(,
+        monoDownmix: )raw" + initMonoDownmix + R"raw(
+    };
 
     const PRESETS = {
-        off: { width: 1.0, crossfeed: 0.0, earlyReflection: 0.0 },
-        light: { width: 1.35, crossfeed: 0.15, earlyReflection: 0.08 },
-        standard: { width: 1.75, crossfeed: 0.22, earlyReflection: 0.14 },
-        cinema: { width: 2.30, crossfeed: 0.28, earlyReflection: 0.20 }
+        off: { width: 1.0, crossfeed: 0.0, reverbAmount: 0.0 },
+        light: { width: 1.15, crossfeed: 0.12, reverbAmount: 0.06 },
+        standard: { width: 1.35, crossfeed: 0.20, reverbAmount: 0.10 },
+        cinema: { width: 1.55, crossfeed: 0.25, reverbAmount: 0.16 }
     };
 
     const attachedElements = new WeakMap();
     const pageClaimedElements = new WeakSet();
     const pendingPlayElements = new WeakSet();
     let audioCtx = null;
+    let cachedReverbBuffer = null;
+    let idleTimer = null;
 
-    // 5. Let page-owned Web Audio take priority
+    // 1. Give precedence to web-page native Web Audio
     try {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (AC && AC.prototype && AC.prototype.createMediaElementSource) {
@@ -761,19 +829,43 @@ void WebViewManager::InjectSurroundSoundScript() {
         }
     } catch (e) {}
 
+    // 2. Interactive Low-Latency AudioContext (avoids lip-sync drift)
     function getAudioContext() {
         if (!audioCtx) {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!AudioContextClass) return null;
             try {
-                audioCtx = new AudioContextClass({ latencyHint: "playback" });
+                audioCtx = new AudioContextClass({ latencyHint: "interactive" });
             } catch (e) {
-                return null;
+                try { audioCtx = new AudioContextClass(); } catch (e2) { return null; }
             }
         }
         return audioCtx;
     }
 
+    // 3. Synthesized Small-Room Impulse Response (Reverb)
+    function getSmallRoomBuffer(ctx) {
+        if (cachedReverbBuffer && cachedReverbBuffer.sampleRate === ctx.sampleRate) {
+            return cachedReverbBuffer;
+        }
+        const rate = ctx.sampleRate;
+        const duration = 0.035; // 35ms studio acoustic space
+        const numSamples = Math.floor(rate * duration);
+        const buf = ctx.createBuffer(2, numSamples, rate);
+        const left = buf.getChannelData(0);
+        const right = buf.getChannelData(1);
+        const decay = 0.009;
+        for (let i = 0; i < numSamples; ++i) {
+            const env = Math.exp(-(i / rate) / decay);
+            const damp = 1.0 - (i / numSamples) * 0.45;
+            left[i] = (Math.random() * 2 - 1) * env * damp * 0.5;
+            right[i] = (Math.random() * 2 - 1) * env * damp * 0.5;
+        }
+        cachedReverbBuffer = buf;
+        return buf;
+    }
+
+    // 4. Safe URL & CORS Check
     function isSafeUrl(urlStr, el) {
         if (!urlStr || typeof urlStr !== "string") return false;
         if (urlStr.startsWith("blob:") || urlStr.startsWith("data:")) return true;
@@ -791,7 +883,7 @@ void WebViewManager::InjectSurroundSoundScript() {
 
     function canProcessElement(el) {
         if (!el || attachedElements.has(el) || pageClaimedElements.has(el)) return false;
-        // Skip encrypted DRM videos (Netflix, Spotify, Apple TV+, etc.)
+        // Strict guard: Skip DRM encrypted media (Netflix, Spotify, Apple TV+, etc.)
         if (el.mediaKeys) return false;
 
         const src = el.currentSrc || el.src;
@@ -799,7 +891,6 @@ void WebViewManager::InjectSurroundSoundScript() {
             return isSafeUrl(src, el);
         }
 
-        // If no direct src, check children <source> tags
         const sources = el.querySelectorAll ? el.querySelectorAll("source") : [];
         if (sources.length > 0) {
             let hasAnySafe = false;
@@ -819,12 +910,46 @@ void WebViewManager::InjectSurroundSoundScript() {
         return false;
     }
 
+    // 5. Idle Auto-Suspend / Wakeup
+    function wakeAudioContext() {
+        if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+        }
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === "suspended") {
+            ctx.resume().catch(() => {});
+        }
+    }
+
+    function scheduleIdleSuspend() {
+        let anyPlaying = false;
+        try {
+            document.querySelectorAll("video, audio").forEach(m => {
+                if (!m.paused && !m.ended && m.readyState > 2) anyPlaying = true;
+            });
+        } catch (e) {}
+
+        if (!anyPlaying) {
+            if (!idleTimer) {
+                idleTimer = setTimeout(() => {
+                    idleTimer = null;
+                    const ctx = getAudioContext();
+                    if (ctx && ctx.state === "running") {
+                        ctx.suspend().catch(() => {});
+                    }
+                }, 1000);
+            }
+        }
+    }
+
     function trySetupSurround(el) {
-        if (!isEnabled || !canProcessElement(el)) return;
+        if (!canProcessElement(el)) return;
         const ctx = getAudioContext();
         if (!ctx) return;
 
-        // 1. AudioContext must be running to avoid muting!
+        wakeAudioContext();
+
         if (ctx.state !== "running") {
             pendingPlayElements.add(el);
             ctx.resume().then(() => {
@@ -839,6 +964,7 @@ void WebViewManager::InjectSurroundSoundScript() {
         setupSurroundForElement(el);
     }
 
+    // 6. Build the Full DSP Graph for Media Element
     function setupSurroundForElement(el) {
         if (!canProcessElement(el)) return;
         const ctx = getAudioContext();
@@ -851,102 +977,212 @@ void WebViewManager::InjectSurroundSoundScript() {
             return;
         }
 
-        // --- DSP GRAPH CREATION ---
-        const splitter = ctx.createChannelSplitter(2);
-        sourceNode.connect(splitter);
+        // --- DSP GRAPH ---
+        // A. Input Preamp Boost Gain (100% ~ 300%)
+        const preampGain = ctx.createGain();
+        preampGain.gain.setValueAtTime(cfg.volumeBoost || 1.0, ctx.currentTime);
+        sourceNode.connect(preampGain);
 
+        // B. Channel Splitter
+        const splitter = ctx.createChannelSplitter(2);
+        preampGain.connect(splitter);
+
+        // C. Mid Bus = 0.5 * L + 0.5 * R
         const midL = ctx.createGain(); midL.gain.value = 0.5;
         const midR = ctx.createGain(); midR.gain.value = 0.5;
         const midBus = ctx.createGain();
         splitter.connect(midL, 0); midL.connect(midBus);
         splitter.connect(midR, 1); midR.connect(midBus);
 
+        // Vocal Boost: Peaking Filter on Mid Bus (3000Hz, Q=1.2, +4.5dB)
+        const vocalFilter = ctx.createBiquadFilter();
+        vocalFilter.type = "peaking";
+        vocalFilter.frequency.value = 3000;
+        vocalFilter.Q.value = 1.2;
+        vocalFilter.gain.value = cfg.vocalBoost ? 4.5 : 0.0;
+        midBus.connect(vocalFilter);
+
+        // D. Side Bus = 0.5 * L - 0.5 * R
         const sideL = ctx.createGain(); sideL.gain.value = 0.5;
         const sideR = ctx.createGain(); sideR.gain.value = -0.5;
         const sideBus = ctx.createGain();
         splitter.connect(sideL, 0); sideL.connect(sideBus);
         splitter.connect(sideR, 1); sideR.connect(sideBus);
 
+        // Mono Bass Protection: 150Hz Highpass Filter on Side
+        // Low frequencies (<150Hz) stay 100% in Mid, never phase-widened or attenuated!
+        const sideHighpass = ctx.createBiquadFilter();
+        sideHighpass.type = "highpass";
+        sideHighpass.frequency.value = 150;
+        sideHighpass.Q.value = 0.707;
+        sideBus.connect(sideHighpass);
+
         const sideWidthGain = ctx.createGain();
-        sideBus.connect(sideWidthGain);
+        sideHighpass.connect(sideWidthGain);
 
         const sideToLeft = ctx.createGain(); sideToLeft.gain.value = 1.0;
         const sideToRight = ctx.createGain(); sideToRight.gain.value = -1.0;
         sideWidthGain.connect(sideToLeft);
         sideWidthGain.connect(sideToRight);
 
+        // Reconstructed widened signals
         const postWidenerL = ctx.createGain();
         const postWidenerR = ctx.createGain();
-        midBus.connect(postWidenerL);
+        vocalFilter.connect(postWidenerL);
         sideToLeft.connect(postWidenerL);
-        midBus.connect(postWidenerR);
+        vocalFilter.connect(postWidenerR);
         sideToRight.connect(postWidenerR);
 
-        // Crossfeed Network (~0.3ms ITD delay + 2.5kHz head shadow lowpass)
+        // E. Crossfeed Network (~0.3ms ITD delay + 2.5kHz head shadow lowpass)
         const delayLR = ctx.createDelay(0.01); delayLR.delayTime.value = 0.0003;
         const filterLR = ctx.createBiquadFilter(); filterLR.type = "lowpass"; filterLR.frequency.value = 2500;
         const crossGainLR = ctx.createGain();
         postWidenerL.connect(delayLR); delayLR.connect(filterLR); filterLR.connect(crossGainLR);
-        crossGainLR.connect(postWidenerR);
 
         const delayRL = ctx.createDelay(0.01); delayRL.delayTime.value = 0.0003;
         const filterRL = ctx.createBiquadFilter(); filterRL.type = "lowpass"; filterRL.frequency.value = 2500;
         const crossGainRL = ctx.createGain();
         postWidenerR.connect(delayRL); delayRL.connect(filterRL); filterRL.connect(crossGainRL);
-        crossGainRL.connect(postWidenerL);
 
-        // Subtle Early Room Reflections (16ms & 21ms)
-        const earlyDelayL = ctx.createDelay(0.05); earlyDelayL.delayTime.value = 0.016;
-        const earlyFilterL = ctx.createBiquadFilter(); earlyFilterL.type = "lowpass"; earlyFilterL.frequency.value = 3500;
-        const earlyGainL = ctx.createGain();
-        postWidenerL.connect(earlyDelayL); earlyDelayL.connect(earlyFilterL); earlyFilterL.connect(earlyGainL);
+        const crossMergedL = ctx.createGain();
+        const crossMergedR = ctx.createGain();
+        postWidenerL.connect(crossMergedL);
+        crossGainRL.connect(crossMergedL);
+        postWidenerR.connect(crossMergedR);
+        crossGainLR.connect(crossMergedR);
 
-        const earlyDelayR = ctx.createDelay(0.05); earlyDelayR.delayTime.value = 0.021;
-        const earlyFilterR = ctx.createBiquadFilter(); earlyFilterR.type = "lowpass"; earlyFilterR.frequency.value = 3500;
-        const earlyGainR = ctx.createGain();
-        postWidenerR.connect(earlyDelayR); earlyDelayR.connect(earlyFilterR); earlyFilterR.connect(earlyGainR);
+        // F. Virtual 3D HRTF Speakers (Headphones)
+        const pannerL = ctx.createPanner();
+        pannerL.panningModel = "HRTF";
+        pannerL.distanceModel = "inverse";
+        pannerL.positionX.setValueAtTime(-0.5, ctx.currentTime);
+        pannerL.positionY.setValueAtTime(0.0, ctx.currentTime);
+        pannerL.positionZ.setValueAtTime(-0.866, ctx.currentTime);
 
-        // Output Merger
-        const outMerger = ctx.createChannelMerger(2);
-        postWidenerL.connect(outMerger, 0, 0);
-        earlyGainL.connect(outMerger, 0, 0);
-        postWidenerR.connect(outMerger, 0, 1);
-        earlyGainR.connect(outMerger, 0, 1);
+        const pannerR = ctx.createPanner();
+        pannerR.panningModel = "HRTF";
+        pannerR.distanceModel = "inverse";
+        pannerR.positionX.setValueAtTime(0.5, ctx.currentTime);
+        pannerR.positionY.setValueAtTime(0.0, ctx.currentTime);
+        pannerR.positionZ.setValueAtTime(-0.866, ctx.currentTime);
 
-        // Dynamics Compressor / Peak Limiter
-        const limiter = ctx.createDynamicsCompressor();
-        limiter.threshold.value = -1.5;
-        limiter.knee.value = 3.0;
-        limiter.ratio.value = 12.0;
-        limiter.attack.value = 0.003;
-        limiter.release.value = 0.15;
+        crossMergedL.connect(pannerL);
+        crossMergedR.connect(pannerR);
 
+        // Cinema Mode Rear Surround Panners (±110 deg)
+        const rearDelay = ctx.createDelay(0.05); rearDelay.delayTime.value = 0.015;
+        const rearGain = ctx.createGain(); rearGain.gain.value = 0.0;
+        sideBus.connect(rearDelay);
+        rearDelay.connect(rearGain);
+
+        const pannerRearL = ctx.createPanner();
+        pannerRearL.panningModel = "HRTF";
+        pannerRearL.positionX.setValueAtTime(-0.94, ctx.currentTime);
+        pannerRearL.positionY.setValueAtTime(0.0, ctx.currentTime);
+        pannerRearL.positionZ.setValueAtTime(0.34, ctx.currentTime);
+
+        const pannerRearR = ctx.createPanner();
+        pannerRearR.panningModel = "HRTF";
+        pannerRearR.positionX.setValueAtTime(0.94, ctx.currentTime);
+        pannerRearR.positionY.setValueAtTime(0.0, ctx.currentTime);
+        pannerRearR.positionZ.setValueAtTime(0.34, ctx.currentTime);
+
+        rearGain.connect(pannerRearL);
+        rearGain.connect(pannerRearR);
+
+        // G. Speaker Direct Path (Bypasses HRTF when in Speaker mode)
+        const speakerBusL = ctx.createGain();
+        const speakerBusR = ctx.createGain();
+        postWidenerL.connect(speakerBusL);
+        postWidenerR.connect(speakerBusR);
+
+        // H. Wet Mix Bus
+        const wetMerger = ctx.createGain();
+        pannerL.connect(wetMerger);
+        pannerR.connect(wetMerger);
+        pannerRearL.connect(wetMerger);
+        pannerRearR.connect(wetMerger);
+        speakerBusL.connect(wetMerger);
+        speakerBusR.connect(wetMerger);
+
+        // I. Convolver Reverb Node (Small Room Acoustic Space)
+        const convolver = ctx.createConvolver();
+        try { convolver.buffer = getSmallRoomBuffer(ctx); } catch (e) {}
+        const reverbGain = ctx.createGain();
+        postWidenerL.connect(convolver);
+        postWidenerR.connect(convolver);
+        convolver.connect(reverbGain);
+        reverbGain.connect(wetMerger);
+
+        // J. Output Limiter & Dry/Wet Mixer
         const dryGain = ctx.createGain();
         const wetGain = ctx.createGain();
-        sourceNode.connect(dryGain);
-        dryGain.connect(limiter);
+        preampGain.connect(dryGain);
 
-        outMerger.connect(wetGain);
+        const limiter = ctx.createDynamicsCompressor();
+        // True Brickwall Peak Limiter settings (no pumping):
+        limiter.threshold.setValueAtTime(-1.0, ctx.currentTime);
+        limiter.knee.setValueAtTime(0.0, ctx.currentTime);
+        limiter.ratio.setValueAtTime(20.0, ctx.currentTime);
+        limiter.attack.setValueAtTime(0.001, ctx.currentTime);
+        limiter.release.setValueAtTime(0.05, ctx.currentTime);
+
+        dryGain.connect(limiter);
+        wetMerger.connect(wetGain);
         wetGain.connect(limiter);
 
         limiter.connect(ctx.destination);
 
         const controller = {
-            update(mode, enabled) {
+            update(newCfg) {
                 const now = ctx.currentTime;
-                if (!enabled || mode === "off") {
+                cfg = Object.assign(cfg, newCfg);
+
+                preampGain.gain.setValueAtTime(cfg.volumeBoost || 1.0, now);
+                vocalFilter.gain.setValueAtTime(cfg.vocalBoost ? 4.5 : 0.0, now);
+
+                if (cfg.monoDownmix) {
+                    sideWidthGain.gain.setValueAtTime(0.0, now);
+                }
+
+                if (!cfg.enabled || cfg.mode === "off") {
                     dryGain.gain.setValueAtTime(1.0, now);
                     wetGain.gain.setValueAtTime(0.0, now);
-                } else {
-                    const preset = PRESETS[mode] || PRESETS.standard;
-                    dryGain.gain.setValueAtTime(0.0, now);
-                    wetGain.gain.setValueAtTime(1.0, now);
+                    return;
+                }
+
+                dryGain.gain.setValueAtTime(0.0, now);
+                wetGain.gain.setValueAtTime(1.0, now);
+
+                const preset = PRESETS[cfg.mode] || PRESETS.standard;
+                const isHp = (cfg.device !== "speakers");
+
+                if (!cfg.monoDownmix) {
                     sideWidthGain.gain.setValueAtTime(preset.width, now);
+                }
+
+                if (isHp) {
                     crossGainLR.gain.setValueAtTime(preset.crossfeed, now);
                     crossGainRL.gain.setValueAtTime(preset.crossfeed, now);
-                    earlyGainL.gain.setValueAtTime(preset.earlyReflection, now);
-                    earlyGainR.gain.setValueAtTime(preset.earlyReflection, now);
+                    speakerBusL.gain.setValueAtTime(0.0, now);
+                    speakerBusR.gain.setValueAtTime(0.0, now);
+                    pannerL.positionX.setValueAtTime(-0.5, now);
+                    pannerR.positionX.setValueAtTime(0.5, now);
+
+                    if (cfg.mode === "cinema") {
+                        rearGain.gain.setValueAtTime(0.35, now);
+                    } else {
+                        rearGain.gain.setValueAtTime(0.0, now);
+                    }
+                } else {
+                    crossGainLR.gain.setValueAtTime(0.0, now);
+                    crossGainRL.gain.setValueAtTime(0.0, now);
+                    rearGain.gain.setValueAtTime(0.0, now);
+                    speakerBusL.gain.setValueAtTime(1.0, now);
+                    speakerBusR.gain.setValueAtTime(1.0, now);
                 }
+
+                reverbGain.gain.setValueAtTime(preset.reverbAmount, now);
             },
             release() {
                 try {
@@ -958,7 +1194,7 @@ void WebViewManager::InjectSurroundSoundScript() {
             }
         };
 
-        controller.update(currentMode, isEnabled);
+        controller.update(cfg);
         attachedElements.set(el, controller);
     }
 
@@ -967,26 +1203,32 @@ void WebViewManager::InjectSurroundSoundScript() {
         el.__ultraLightEventsAttached = true;
 
         el.addEventListener("play", () => {
-            if (isEnabled) trySetupSurround(el);
+            wakeAudioContext();
+            trySetupSurround(el);
         }, { passive: true });
 
         el.addEventListener("playing", () => {
-            if (isEnabled) trySetupSurround(el);
+            wakeAudioContext();
+            trySetupSurround(el);
         }, { passive: true });
+
+        el.addEventListener("pause", scheduleIdleSuspend, { passive: true });
+        el.addEventListener("ended", scheduleIdleSuspend, { passive: true });
+        el.addEventListener("emptied", scheduleIdleSuspend, { passive: true });
     }
 
     function scanMedia() {
         try {
             document.querySelectorAll("video, audio").forEach(el => {
                 registerElementEvents(el);
-                if (isEnabled && !el.paused) {
+                if (cfg.enabled && !el.paused) {
                     trySetupSurround(el);
                 }
             });
         } catch (e) {}
     }
 
-    // 3. Throttle / Debounce DOM Mutation Observer
+    // 7. Debounced DOM Mutation Observer
     let scanTimer = null;
     function scheduleScan() {
         if (scanTimer) return;
@@ -1014,7 +1256,6 @@ void WebViewManager::InjectSurroundSoundScript() {
         if (shouldScan) scheduleScan();
     });
 
-    // 4. Safe observation startup (handles documentElement == null at document-start)
     function startObserving() {
         const root = document.documentElement || document.body;
         if (root) {
@@ -1032,14 +1273,10 @@ void WebViewManager::InjectSurroundSoundScript() {
     }
     startObserving();
 
-    // Interaction wakeup: on user gesture, resume AudioContext and attach any pending playing media
+    // Interaction wakeup
     function onUserGesture() {
-        const ctx = getAudioContext();
-        if (ctx && ctx.state === "suspended") {
-            ctx.resume().then(() => {
-                scanMedia();
-            }).catch(() => {});
-        }
+        wakeAudioContext();
+        scanMedia();
     }
     ["click", "pointerdown", "keydown"].forEach(evt => {
         window.addEventListener(evt, onUserGesture, { passive: true });
@@ -1047,15 +1284,14 @@ void WebViewManager::InjectSurroundSoundScript() {
 
     // Global controller API
     window.__UltraLightSurround = {
-        setMode(mode, enabled) {
-            currentMode = mode;
-            isEnabled = enabled;
+        updateConfig(newCfg) {
+            cfg = Object.assign(cfg, newCfg);
             try {
                 document.querySelectorAll("video, audio").forEach(el => {
                     const c = attachedElements.get(el);
                     if (c) {
-                        c.update(mode, enabled);
-                    } else if (isEnabled && !el.paused && canProcessElement(el)) {
+                        c.update(cfg);
+                    } else if (cfg.enabled && !el.paused && canProcessElement(el)) {
                         trySetupSurround(el);
                     }
                 });
@@ -1068,8 +1304,8 @@ void WebViewManager::InjectSurroundSoundScript() {
         window.chrome.webview.addEventListener("message", ev => {
             try {
                 const data = typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data;
-                if (data && data.type === "setSurroundSound") {
-                    window.__UltraLightSurround.setMode(data.mode, data.enabled);
+                if (data && data.type === "updateAudioEnhancer") {
+                    window.__UltraLightSurround.updateConfig(data);
                 }
             } catch (e) {}
         });
@@ -1082,16 +1318,42 @@ void WebViewManager::InjectSurroundSoundScript() {
     m_webView->ExecuteScript(wideJs.c_str(), nullptr);
 }
 
-void WebViewManager::SetSurroundSound(bool enabled, const std::string& mode) {
+void WebViewManager::UpdateAudioEnhancer() {
     if (!m_webView) return;
 
-    std::wstring script = L"if (window.__UltraLightSurround) { window.__UltraLightSurround.setMode('" +
-        StringUtils::Utf8ToWide(mode) + L"', " + (enabled ? L"true" : L"false") + L"); }";
-    m_webView->ExecuteScript(script.c_str(), nullptr);
+    const auto& settings = Config::Instance().GetSettings();
+    std::string effectiveDevice = settings.audioDeviceMode;
+    if (effectiveDevice == "auto") {
+        AudioEndpointType detected = GetDetectedAudioEndpoint();
+        effectiveDevice = (detected == AudioEndpointType::Headphones) ? "headphones" : "speakers";
+    }
 
-    std::wstring jsonMsg = L"{\"type\":\"setSurroundSound\",\"enabled\":" +
-        std::wstring(enabled ? L"true" : L"false") + L",\"mode\":\"" + StringUtils::Utf8ToWide(mode) + L"\"}";
-    m_webView->PostWebMessageAsJson(jsonMsg.c_str());
+#if __has_include(<nlohmann/json.hpp>)
+    json msg = {
+        {"type", "updateAudioEnhancer"},
+        {"enabled", settings.enableSurroundSound},
+        {"mode", settings.surroundSoundMode.empty() ? "standard" : settings.surroundSoundMode},
+        {"device", effectiveDevice},
+        {"vocalBoost", settings.enableVocalBoost},
+        {"volumeBoost", settings.audioVolumeBoost},
+        {"monoDownmix", settings.enableMonoDownmix}
+    };
+    std::string jsonNarrow = msg.dump();
+#else
+    std::string jsonNarrow = "{\"type\":\"updateAudioEnhancer\",\"enabled\":" +
+        std::string(settings.enableSurroundSound ? "true" : "false") +
+        ",\"mode\":\"" + settings.surroundSoundMode + "\",\"device\":\"" + effectiveDevice +
+        "\",\"vocalBoost\":" + (settings.enableVocalBoost ? "true" : "false") +
+        ",\"volumeBoost\":" + std::to_string(settings.audioVolumeBoost) +
+        ",\"monoDownmix\":" + (settings.enableMonoDownmix ? "true" : "false") + "}";
+#endif
+
+    std::wstring wideJson = StringUtils::Utf8ToWide(jsonNarrow);
+    m_webView->PostWebMessageAsJson(wideJson.c_str());
+
+    std::wstring script = L"if (window.__UltraLightSurround && window.__UltraLightSurround.updateConfig) { "
+                          L"window.__UltraLightSurround.updateConfig(" + wideJson + L"); }";
+    m_webView->ExecuteScript(script.c_str(), nullptr);
 }
 
 } // namespace UltraLight
