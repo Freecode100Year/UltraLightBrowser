@@ -3,7 +3,6 @@
 #include "DnsManager.hpp"
 #include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
-#include "ExtensionManager.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
 #include <windowsx.h>
@@ -17,6 +16,10 @@
 
 #ifndef DWMWA_WINDOW_CORNER_PREFERENCE
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
 #endif
 
 namespace UltraLight {
@@ -43,15 +46,26 @@ static void CopyTextToClipboard(HWND hWndOwner, const std::wstring& text) {
     CloseClipboard();
 }
 
-MainWindow::MainWindow() : m_webViewManager(std::make_unique<WebViewManager>()) {}
+MainWindow::MainWindow() : m_webViewManager(std::make_unique<WebViewManager>()) {
+    m_hBrTopBarBg = CreateSolidBrush(RGB(30, 30, 32));
+    m_hBrAddressBg = CreateSolidBrush(RGB(44, 44, 48));
+    m_hPenAddressBorder = CreatePen(PS_SOLID, 1, RGB(65, 65, 72));
+    m_hPenAddressBorderFocus = CreatePen(PS_SOLID, 1, RGB(10, 132, 255));
+    m_hPenSeparator = CreatePen(PS_SOLID, 1, RGB(48, 48, 52));
+}
 
 MainWindow::~MainWindow() {
     if (m_webViewManager) {
         m_webViewManager->ShutdownAndPurgeData();
     }
-    if (m_hUiFont) {
-        DeleteObject(m_hUiFont);
-    }
+    if (m_hUiFont) DeleteObject(m_hUiFont);
+    if (m_hNavFont) DeleteObject(m_hNavFont);
+    if (m_hAddressFont) DeleteObject(m_hAddressFont);
+    if (m_hBrTopBarBg) DeleteObject(m_hBrTopBarBg);
+    if (m_hBrAddressBg) DeleteObject(m_hBrAddressBg);
+    if (m_hPenAddressBorder) DeleteObject(m_hPenAddressBorder);
+    if (m_hPenAddressBorderFocus) DeleteObject(m_hPenAddressBorderFocus);
+    if (m_hPenSeparator) DeleteObject(m_hPenSeparator);
 }
 
 bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
@@ -65,7 +79,7 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
     wc.hInstance = hInstance;
     wc.lpszClassName = CLASS_NAME;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hbrBackground = m_hBrTopBarBg;
     wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(101));
     wc.hIconSm = reinterpret_cast<HICON>(LoadImageW(hInstance, MAKEINTRESOURCEW(101), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
 
@@ -76,7 +90,7 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
     m_hWnd = CreateWindowExW(
         WS_EX_APPWINDOW,
         CLASS_NAME,
-        L"UltraLight Browser",
+        L"Safari",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, 1280, 800,
         nullptr,
@@ -112,88 +126,232 @@ void MainWindow::ApplyModernTheme() {
     // Windows 11 Rounded Corners Preference
     DWORD cornerPref = 2; // DWMWCP_ROUND
     DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &cornerPref, sizeof(cornerPref));
+
+    // Optional: Acrylic or Mica backdrop on Win11 22H2+
+    DWORD backdropType = 2; // 2 = Mica
+    DwmSetWindowAttribute(m_hWnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
 }
 
 void MainWindow::UpdateDpiScaling(UINT dpi) {
     m_dpi = dpi;
-    m_topbarHeight = MulDiv(44, dpi, 96);
+    m_topbarHeight = MulDiv(46, dpi, 96);
 
-    if (m_hUiFont) {
-        DeleteObject(m_hUiFont);
-    }
+    if (m_hUiFont) DeleteObject(m_hUiFont);
+    if (m_hNavFont) DeleteObject(m_hNavFont);
+    if (m_hAddressFont) DeleteObject(m_hAddressFont);
 
-    int fontHeight = -MulDiv(11, dpi, 72);
+    int fontHeight = -MulDiv(10, dpi, 72);
     m_hUiFont = CreateFontW(
-        fontHeight, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        fontHeight, 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-        L"Segoe UI Variable Display"
+        L"Segoe UI Variable Text"
     );
 
-    // Apply font to child controls
-    if (m_hBtnBack) SendMessageW(m_hBtnBack, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnForward) SendMessageW(m_hBtnForward, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    int navFontHeight = -MulDiv(14, dpi, 72);
+    m_hNavFont = CreateFontW(
+        navFontHeight, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+        L"Segoe UI"
+    );
+
+    int addressFontHeight = -MulDiv(10, dpi, 72);
+    m_hAddressFont = CreateFontW(
+        addressFontHeight, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+        L"Segoe UI Variable Text"
+    );
+
+    // Apply fonts to controls
+    if (m_hBtnBack) SendMessageW(m_hBtnBack, WM_SETFONT, reinterpret_cast<WPARAM>(m_hNavFont), TRUE);
+    if (m_hBtnForward) SendMessageW(m_hBtnForward, WM_SETFONT, reinterpret_cast<WPARAM>(m_hNavFont), TRUE);
     if (m_hBtnReload) SendMessageW(m_hBtnReload, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hAddressFont), TRUE);
+    if (m_hBtnShare) SendMessageW(m_hBtnShare, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnDns) SendMessageW(m_hBtnDns, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnZoom) SendMessageW(m_hBtnZoom, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnExtensions) SendMessageW(m_hBtnExtensions, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+}
+
+LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
+    auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+    static bool s_isHovered = false;
+    static bool s_isPressed = false;
+
+    // Use window props to store per-button state
+    bool isHovered = GetPropW(hWnd, L"SafariBtnHover") != nullptr;
+    bool isPressed = GetPropW(hWnd, L"SafariBtnPressed") != nullptr;
+
+    switch (uMsg) {
+    case WM_MOUSEMOVE: {
+        if (!isHovered) {
+            SetPropW(hWnd, L"SafariBtnHover", reinterpret_cast<HANDLE>(1));
+            TRACKMOUSEEVENT tme{ sizeof(TRACKMOUSEEVENT), TME_LEAVE, hWnd, 0 };
+            TrackMouseEvent(&tme);
+            InvalidateRect(hWnd, nullptr, FALSE);
+        }
+        break;
+    }
+    case WM_MOUSELEAVE: {
+        RemovePropW(hWnd, L"SafariBtnHover");
+        RemovePropW(hWnd, L"SafariBtnPressed");
+        InvalidateRect(hWnd, nullptr, FALSE);
+        break;
+    }
+    case WM_LBUTTONDOWN: {
+        SetPropW(hWnd, L"SafariBtnPressed", reinterpret_cast<HANDLE>(1));
+        InvalidateRect(hWnd, nullptr, FALSE);
+        break;
+    }
+    case WM_LBUTTONUP: {
+        RemovePropW(hWnd, L"SafariBtnPressed");
+        InvalidateRect(hWnd, nullptr, FALSE);
+        break;
+    }
+    case WM_ERASEBKGND:
+        return 1;
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc;
+        GetClientRect(hWnd, &rc);
+
+        HDC memDC = CreateCompatibleDC(hdc);
+        HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
+        HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
+
+        // Fill background with toolbar dark tone
+        HBRUSH hBrBar = self ? self->m_hBrTopBarBg : nullptr;
+        if (!hBrBar) hBrBar = GetSysColorBrush(COLOR_BTNFACE);
+        FillRect(memDC, &rc, hBrBar);
+
+        bool enabled = IsWindowEnabled(hWnd) != FALSE;
+        int radius = self ? MulDiv(6, self->m_dpi, 96) : 6;
+
+        // Render rounded pill background for hover/pressed states
+        if (enabled && isPressed) {
+            HBRUSH hBrPress = CreateSolidBrush(RGB(68, 68, 74));
+            HPEN hPenPress = CreatePen(PS_SOLID, 1, RGB(80, 80, 88));
+            HGDIOBJ oldBrush = SelectObject(memDC, hBrPress);
+            HGDIOBJ oldPen = SelectObject(memDC, hPenPress);
+            RoundRect(memDC, rc.left, rc.top, rc.right, rc.bottom, radius * 2, radius * 2);
+            SelectObject(memDC, oldBrush);
+            SelectObject(memDC, oldPen);
+            DeleteObject(hBrPress);
+            DeleteObject(hPenPress);
+        } else if (enabled && isHovered) {
+            HBRUSH hBrHover = CreateSolidBrush(RGB(50, 50, 56));
+            HPEN hPenHover = CreatePen(PS_SOLID, 1, RGB(65, 65, 72));
+            HGDIOBJ oldBrush = SelectObject(memDC, hBrHover);
+            HGDIOBJ oldPen = SelectObject(memDC, hPenHover);
+            RoundRect(memDC, rc.left, rc.top, rc.right, rc.bottom, radius * 2, radius * 2);
+            SelectObject(memDC, oldBrush);
+            SelectObject(memDC, oldPen);
+            DeleteObject(hBrHover);
+            DeleteObject(hPenHover);
+        }
+
+        // Draw button label / glyph
+        wchar_t text[128]{};
+        GetWindowTextW(hWnd, text, static_cast<int>(std::size(text)));
+
+        COLORREF textColor = enabled
+            ? (isHovered ? RGB(255, 255, 255) : RGB(225, 225, 230))
+            : RGB(105, 105, 110);
+
+        SetBkMode(memDC, TRANSPARENT);
+        SetTextColor(memDC, textColor);
+
+        HFONT hFont = reinterpret_cast<HFONT>(SendMessageW(hWnd, WM_GETFONT, 0, 0));
+        HGDIOBJ oldFont = hFont ? SelectObject(memDC, hFont) : nullptr;
+
+        DrawTextW(memDC, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        if (oldFont) SelectObject(memDC, oldFont);
+
+        BitBlt(hdc, 0, 0, rc.right, rc.bottom, memDC, 0, 0, SRCCOPY);
+
+        SelectObject(memDC, oldBmp);
+        DeleteObject(memBmp);
+        DeleteDC(memDC);
+
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+    case WM_NCDESTROY:
+        RemovePropW(hWnd, L"SafariBtnHover");
+        RemovePropW(hWnd, L"SafariBtnPressed");
+        break;
+    default:
+        break;
+    }
+
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 }
 
 void MainWindow::CreateToolbarControls() {
     m_hBtnBack = CreateWindowExW(
-        0, L"BUTTON", L"←",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        0, L"BUTTON", L"‹",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_BACK), m_hInstance, nullptr
     );
+    SetWindowSubclass(m_hBtnBack, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     m_hBtnForward = CreateWindowExW(
-        0, L"BUTTON", L"→",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        0, L"BUTTON", L"›",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_FORWARD), m_hInstance, nullptr
     );
+    SetWindowSubclass(m_hBtnForward, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     m_hBtnReload = CreateWindowExW(
-        0, L"BUTTON", L"⟳",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        0, L"BUTTON", L"↻",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_RELOAD), m_hInstance, nullptr
     );
+    SetWindowSubclass(m_hBtnReload, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
+    // Address Bar - Sleek borderless edit embedded in Safari pill
     m_hEditAddress = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
+        0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_LEFT,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_EDIT_ADDRESS), m_hInstance, nullptr
     );
-    SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
-    SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"输入网址或搜索内容，按 Enter 访问"));
+    SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(8, 8));
+    SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索或输入网站名称"));
+    SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
-    m_hBtnExtensions = CreateWindowExW(
-        0, L"BUTTON", L"🧩 扩展",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_EXTENSIONS), m_hInstance, nullptr
+    // Right-aligned Safari Toolbar Buttons
+    m_hBtnShare = CreateWindowExW(
+        0, L"BUTTON", L"↥",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_SHARE), m_hInstance, nullptr
     );
+    SetWindowSubclass(m_hBtnShare, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     m_hBtnDns = CreateWindowExW(
         0, L"BUTTON", L"🌐 DNS",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_DNS), m_hInstance, nullptr
     );
+    SetWindowSubclass(m_hBtnDns, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     m_hBtnZoom = CreateWindowExW(
         0, L"BUTTON", L"🔍 100%",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_ZOOM), m_hInstance, nullptr
     );
+    SetWindowSubclass(m_hBtnZoom, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     m_hBtnBlocker = CreateWindowExW(
-        0, L"BUTTON", L"🛡 Blocker",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
+        0, L"BUTTON", L"🛡️ 隐私保护",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_BLOCKER), m_hInstance, nullptr
     );
-
-    // Subclass address bar for Enter key navigation
-    SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+    SetWindowSubclass(m_hBtnBlocker, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     UpdateDpiScaling(GetDpiForWindow(m_hWnd));
     UpdateDnsDisplay();
@@ -210,51 +368,84 @@ void MainWindow::UpdateLayout(int width, int height) {
         return;
     }
 
-    int pad = MulDiv(6, m_dpi, 96);
-    int btnW = MulDiv(34, m_dpi, 96);
-    int blockBtnW = MulDiv(90, m_dpi, 96);
-    int zoomBtnW = MulDiv(72, m_dpi, 96);
-    int dnsBtnW = MulDiv(102, m_dpi, 96);
-    int extBtnW = MulDiv(78, m_dpi, 96);
+    int pad = MulDiv(8, m_dpi, 96);
+    int navBtnW = MulDiv(32, m_dpi, 96);
+    int shareBtnW = MulDiv(34, m_dpi, 96);
+    int zoomBtnW = MulDiv(70, m_dpi, 96);
+    int dnsBtnW = MulDiv(86, m_dpi, 96);
+    int blockBtnW = MulDiv(88, m_dpi, 96);
+
     int topH = m_topbarHeight;
-    int ctrlH = topH - pad * 2;
+    int ctrlH = MulDiv(30, m_dpi, 96);
+    int btnY = (topH - ctrlH) / 2;
 
     int x = pad;
 
-    // Back
-    SetWindowPos(m_hBtnBack, nullptr, x, pad, btnW, ctrlH, SWP_NOZORDER);
-    x += btnW + pad;
+    // Left Navigation: [ ‹ ] [ › ] [ ↻ ]
+    SetWindowPos(m_hBtnBack, nullptr, x, btnY, navBtnW, ctrlH, SWP_NOZORDER);
+    x += navBtnW + MulDiv(4, m_dpi, 96);
 
-    // Forward
-    SetWindowPos(m_hBtnForward, nullptr, x, pad, btnW, ctrlH, SWP_NOZORDER);
-    x += btnW + pad;
+    SetWindowPos(m_hBtnForward, nullptr, x, btnY, navBtnW, ctrlH, SWP_NOZORDER);
+    x += navBtnW + MulDiv(4, m_dpi, 96);
 
-    // Reload
-    SetWindowPos(m_hBtnReload, nullptr, x, pad, btnW, ctrlH, SWP_NOZORDER);
-    x += btnW + pad;
+    SetWindowPos(m_hBtnReload, nullptr, x, btnY, navBtnW, ctrlH, SWP_NOZORDER);
+    x += navBtnW + pad;
 
-    // Right-aligned buttons: [ 🧩 扩展 ] [ 🌐 DNS ] [ 🔍 100% ] [ 🛡 Blocker ]
+    int leftGroupEnd = x;
+
+    // Right Action Buttons: [ ↥ ] [ 🌐 DNS ] [ 🔍 100% ] [ 🛡️ 隐私保护 ]
     int rightX = width - pad - blockBtnW;
-    SetWindowPos(m_hBtnBlocker, nullptr, rightX, pad, blockBtnW, ctrlH, SWP_NOZORDER);
+    SetWindowPos(m_hBtnBlocker, nullptr, rightX, btnY, blockBtnW, ctrlH, SWP_NOZORDER);
 
-    rightX -= (zoomBtnW + pad);
-    SetWindowPos(m_hBtnZoom, nullptr, rightX, pad, zoomBtnW, ctrlH, SWP_NOZORDER);
+    rightX -= (zoomBtnW + MulDiv(4, m_dpi, 96));
+    SetWindowPos(m_hBtnZoom, nullptr, rightX, btnY, zoomBtnW, ctrlH, SWP_NOZORDER);
 
-    rightX -= (dnsBtnW + pad);
-    SetWindowPos(m_hBtnDns, nullptr, rightX, pad, dnsBtnW, ctrlH, SWP_NOZORDER);
+    rightX -= (dnsBtnW + MulDiv(4, m_dpi, 96));
+    SetWindowPos(m_hBtnDns, nullptr, rightX, btnY, dnsBtnW, ctrlH, SWP_NOZORDER);
 
-    rightX -= (extBtnW + pad);
-    SetWindowPos(m_hBtnExtensions, nullptr, rightX, pad, extBtnW, ctrlH, SWP_NOZORDER);
+    rightX -= (shareBtnW + MulDiv(6, m_dpi, 96));
+    SetWindowPos(m_hBtnShare, nullptr, rightX, btnY, shareBtnW, ctrlH, SWP_NOZORDER);
 
-    // Address Bar fill
-    int addrW = (rightX - pad) - x;
-    if (addrW > 50) {
-        SetWindowPos(m_hEditAddress, nullptr, x, pad + 1, addrW, ctrlH - 2, SWP_NOZORDER);
+    int rightGroupStart = rightX;
+
+    // Safari Centered Smart Search Capsule Layout
+    int availableW = (rightGroupStart - pad) - (leftGroupEnd + pad);
+    int maxCapsuleW = MulDiv(680, m_dpi, 96);
+    int capsuleW = availableW;
+    int capsuleX = leftGroupEnd + pad;
+
+    if (availableW > maxCapsuleW) {
+        int idealCenteredX = (width - maxCapsuleW) / 2;
+        if (idealCenteredX >= leftGroupEnd + pad && (idealCenteredX + maxCapsuleW) <= rightGroupStart - pad) {
+            capsuleX = idealCenteredX;
+            capsuleW = maxCapsuleW;
+        } else {
+            capsuleW = availableW;
+        }
     }
+
+    if (capsuleW > MulDiv(100, m_dpi, 96)) {
+        m_rcAddressCapsule = { capsuleX, btnY, capsuleX + capsuleW, btnY + ctrlH };
+
+        // Position edit control inside capsule, leaving room on the left for lock icon
+        int iconOffset = MulDiv(26, m_dpi, 96);
+        int editX = capsuleX + iconOffset;
+        int editW = capsuleW - iconOffset - MulDiv(8, m_dpi, 96);
+        int editH = MulDiv(20, m_dpi, 96);
+        int editY = btnY + (ctrlH - editH) / 2;
+
+        SetWindowPos(m_hEditAddress, nullptr, editX, editY, editW, editH, SWP_NOZORDER);
+    }
+
+    // Refresh toolbar region
+    RECT rcTop{ 0, 0, width, topH };
+    InvalidateRect(m_hWnd, &rcTop, FALSE);
 
     // Resize WebView2
     RECT webViewRect{ 0, topH, width, height };
-    m_webViewManager->Resize(webViewRect);
+    if (m_webViewManager) {
+        m_webViewManager->Resize(webViewRect);
+    }
 }
 
 void MainWindow::SetFullScreen(bool enable) {
@@ -262,7 +453,6 @@ void MainWindow::SetFullScreen(bool enable) {
     m_isFullScreen = enable;
 
     if (m_isFullScreen) {
-        // Save current window placement & style
         m_wpPrev.length = sizeof(WINDOWPLACEMENT);
         GetWindowPlacement(m_hWnd, &m_wpPrev);
         m_dwStylePrev = static_cast<DWORD>(GetWindowLongW(m_hWnd, GWL_STYLE));
@@ -272,17 +462,15 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_HIDE);
         if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
-        if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, SW_HIDE);
+        if (m_hBtnShare) ShowWindow(m_hBtnShare, SW_HIDE);
         if (m_hBtnDns) ShowWindow(m_hBtnDns, SW_HIDE);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_HIDE);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
 
-        // Get monitor bounds for current window
         HMONITOR hMon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi{ sizeof(MONITORINFO) };
         GetMonitorInfoW(hMon, &mi);
 
-        // Modify style to borderless popup and resize to full monitor
         SetWindowLongW(m_hWnd, GWL_STYLE, m_dwStylePrev & ~(WS_CAPTION | WS_THICKFRAME));
         int monW = mi.rcMonitor.right - mi.rcMonitor.left;
         int monH = mi.rcMonitor.bottom - mi.rcMonitor.top;
@@ -298,7 +486,6 @@ void MainWindow::SetFullScreen(bool enable) {
             m_webViewManager->Resize(fsRect);
         }
     } else {
-        // Restore window style and placement
         SetWindowLongW(m_hWnd, GWL_STYLE, m_dwStylePrev);
         SetWindowPlacement(m_hWnd, &m_wpPrev);
         SetWindowPos(
@@ -306,13 +493,12 @@ void MainWindow::SetFullScreen(bool enable) {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED
         );
 
-        // Show toolbar controls (if not in immersive mode)
         int showCmd = m_isImmersiveMode ? SW_HIDE : SW_SHOW;
         if (m_hBtnBack) ShowWindow(m_hBtnBack, showCmd);
         if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
         if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
-        if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, showCmd);
+        if (m_hBtnShare) ShowWindow(m_hBtnShare, showCmd);
         if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
@@ -336,7 +522,7 @@ void MainWindow::SetImmersiveMode(bool enable) {
     if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
     if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
     if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
-    if (m_hBtnExtensions) ShowWindow(m_hBtnExtensions, showCmd);
+    if (m_hBtnShare) ShowWindow(m_hBtnShare, showCmd);
     if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
     if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
     if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
@@ -357,10 +543,18 @@ LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM
     switch (uMsg) {
     case WM_SETFOCUS:
         s_needSelectAllOnMouseUp = true;
+        if (self) {
+            self->m_isAddressFocused = true;
+            InvalidateRect(self->m_hWnd, &self->m_rcAddressCapsule, FALSE);
+        }
         break;
 
     case WM_KILLFOCUS:
         s_needSelectAllOnMouseUp = false;
+        if (self) {
+            self->m_isAddressFocused = false;
+            InvalidateRect(self->m_hWnd, &self->m_rcAddressCapsule, FALSE);
+        }
         break;
 
     case WM_LBUTTONUP: {
@@ -426,7 +620,11 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
         // Bind callbacks to WebView
         m_webViewManager->SetTitleChangedCallback([this](const std::wstring& title) {
-            SetWindowTextW(m_hWnd, (title + L" - UltraLight").c_str());
+            if (title.empty()) {
+                SetWindowTextW(m_hWnd, L"Safari");
+            } else {
+                SetWindowTextW(m_hWnd, (title + L" — Safari").c_str());
+            }
         });
 
         m_webViewManager->SetSourceChangedCallback([this](const std::wstring& uri) {
@@ -469,12 +667,85 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(m_hWnd, &ps);
+
+        RECT client;
+        GetClientRect(m_hWnd, &client);
+        int w = client.right;
+        int topH = m_topbarHeight;
+
+        if (!m_isFullScreen && !m_isImmersiveMode && w > 0 && topH > 0) {
+            HDC memDC = CreateCompatibleDC(hdc);
+            HBITMAP memBmp = CreateCompatibleBitmap(hdc, w, topH);
+            HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
+
+            // Fill toolbar background
+            RECT rcTop{ 0, 0, w, topH };
+            FillRect(memDC, &rcTop, m_hBrTopBarBg);
+
+            // Draw subtle bottom separator line
+            HGDIOBJ oldPen = SelectObject(memDC, m_hPenSeparator);
+            MoveToEx(memDC, 0, topH - 1, nullptr);
+            LineTo(memDC, w, topH - 1);
+
+            // Draw Safari Centered Address Bar Capsule
+            if (m_rcAddressCapsule.right > m_rcAddressCapsule.left) {
+                HPEN activePen = m_isAddressFocused ? m_hPenAddressBorderFocus : m_hPenAddressBorder;
+                SelectObject(memDC, activePen);
+                HGDIOBJ oldBrush = SelectObject(memDC, m_hBrAddressBg);
+
+                int radius = MulDiv(8, m_dpi, 96);
+                RoundRect(memDC, m_rcAddressCapsule.left, m_rcAddressCapsule.top, m_rcAddressCapsule.right, m_rcAddressCapsule.bottom, radius * 2, radius * 2);
+                SelectObject(memDC, oldBrush);
+
+                // Draw Safari Privacy / SSL Lock Icon
+                RECT rcLock{
+                    m_rcAddressCapsule.left + MulDiv(7, m_dpi, 96),
+                    m_rcAddressCapsule.top,
+                    m_rcAddressCapsule.left + MulDiv(24, m_dpi, 96),
+                    m_rcAddressCapsule.bottom
+                };
+                SetBkMode(memDC, TRANSPARENT);
+                SetTextColor(memDC, m_isAddressFocused ? RGB(10, 132, 255) : RGB(140, 140, 145));
+                HGDIOBJ oldFont = SelectObject(memDC, m_hUiFont);
+                DrawTextW(memDC, L"🔒", -1, &rcLock, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                SelectObject(memDC, oldFont);
+            }
+
+            SelectObject(memDC, oldPen);
+
+            BitBlt(hdc, 0, 0, w, topH, memDC, 0, 0, SRCCOPY);
+            SelectObject(memDC, oldBmp);
+            DeleteObject(memBmp);
+            DeleteDC(memDC);
+        }
+
+        EndPaint(m_hWnd, &ps);
+        return 0;
+    }
+
+    case WM_ERASEBKGND:
+        return 1;
+
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC: {
+        HWND hTarget = reinterpret_cast<HWND>(lParam);
+        if (hTarget == m_hEditAddress) {
+            HDC hdcEdit = reinterpret_cast<HDC>(wParam);
+            SetTextColor(hdcEdit, RGB(245, 245, 247));
+            SetBkColor(hdcEdit, RGB(44, 44, 48));
+            return reinterpret_cast<LRESULT>(m_hBrAddressBg);
+        }
+        break;
+    }
+
     case WM_TIMER: {
         if (wParam == IDT_INACTIVITY_CHECK) {
             ULONGLONG now = GetTickCount64();
             HWND hFore = GetForegroundWindow();
             bool isUnfocused = (hFore != m_hWnd) || IsIconic(m_hWnd);
-            // 5 minutes (300,000 ms) of inactivity when unfocused or minimized
             if (isUnfocused && (now - m_lastInteractionTick >= 300000)) {
                 if (m_webViewManager && m_webViewManager->GetWebView()) {
                     bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
@@ -555,6 +826,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             ToggleImmersiveMode();
             return 0;
         }
+        if (wParam == VK_F11) {
+            ToggleFullScreen();
+            return 0;
+        }
         if (wParam == VK_ESCAPE) {
             if (m_isFullScreen) {
                 SetFullScreen(false);
@@ -603,12 +878,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             ToggleFullScreen();
             break;
         case IDM_EXIT_FULLSCREEN:
-            if (m_isFullScreen) {
-                SetFullScreen(false);
-            }
-            if (m_isImmersiveMode) {
-                SetImmersiveMode(false);
-            }
+            if (m_isFullScreen) SetFullScreen(false);
+            if (m_isImmersiveMode) SetImmersiveMode(false);
             break;
         case IDM_TOGGLE_IMMERSIVE:
             ToggleImmersiveMode();
@@ -625,21 +896,28 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDC_BTN_ZOOM:
             ShowZoomMenu();
             break;
-        case IDC_BTN_EXTENSIONS:
-            ShowExtensionsMenu();
+        case IDC_BTN_SHARE:
+            ShowShareMenu();
             break;
-        case IDM_EXTENSIONS_MANAGE:
-            ExtensionManager::Instance().ShowManageDialog(m_hWnd);
+        case IDM_SHARE_COPY_URL: {
+            if (m_webViewManager && m_webViewManager->GetWebView()) {
+                wil::unique_cotaskmem_string uri;
+                if (SUCCEEDED(m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
+                    CopyTextToClipboard(m_hWnd, uri.get());
+                    MessageBoxW(m_hWnd, (L"已拷贝当前网页链接到剪贴板:\n" + std::wstring(uri.get())).c_str(), L"Safari 分享", MB_OK | MB_ICONINFORMATION);
+                }
+            }
             break;
-        case IDM_EXTENSIONS_LOAD_UNPACKED:
-            ExtensionManager::Instance().LoadUnpackedExtension(m_hWnd, [this](bool ok, const std::wstring& msg) {
-                MessageBoxW(m_hWnd, msg.c_str(), ok ? L"加载扩展程序" : L"加载失败", ok ? (MB_OK | MB_ICONINFORMATION) : (MB_OK | MB_ICONERROR));
-            });
+        }
+        case IDM_SHARE_OPEN_DEFAULT: {
+            if (m_webViewManager && m_webViewManager->GetWebView()) {
+                wil::unique_cotaskmem_string uri;
+                if (SUCCEEDED(m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
+                    ShellExecuteW(m_hWnd, L"open", uri.get(), nullptr, nullptr, SW_SHOWNORMAL);
+                }
+            }
             break;
-        case IDM_EXTENSIONS_RELOAD_ALL:
-            ExtensionManager::Instance().ReloadAllExtensions();
-            MessageBoxW(m_hWnd, L"已重新刷新并同步全部扩展程序！", L"扩展程序", MB_OK | MB_ICONINFORMATION);
-            break;
+        }
         case IDC_BTN_DNS:
             ShowDnsMenu();
             break;
@@ -650,9 +928,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             DnsManager::Instance().ApplySettings();
             UpdateDnsDisplay();
             std::wstring infoMsg = settings.enablePublicDns
-                ? L"已开启公共 DNS 服务器解析！\n建议刷新网页以使新设置彻底生效。"
-                : L"已关闭公共 DNS，恢复为系统默认解析。";
-            MessageBoxW(m_hWnd, infoMsg.c_str(), L"公共 DNS 设置", MB_OK | MB_ICONINFORMATION);
+                ? L"已开启公共安全 DNS (DoH 加密解析)！\n建议刷新网页以使新设置生效。"
+                : L"已关闭公共 DNS，恢复系统默认解析。";
+            MessageBoxW(m_hWnd, infoMsg.c_str(), L"安全 DNS 设置", MB_OK | MB_ICONINFORMATION);
             break;
         }
         case IDM_DNS_OPEN_SETTINGS:
@@ -662,7 +940,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDC_EDIT_ADDRESS: {
             WORD notify = HIWORD(wParam);
             if (notify == EN_KILLFOCUS) {
-                // When address bar loses focus, restore current page URL
                 if (m_webViewManager && m_webViewManager->GetWebView()) {
                     wil::unique_cotaskmem_string uri;
                     if (SUCCEEDED(m_webViewManager->GetWebView()->get_Source(&uri)) && uri.get()) {
@@ -682,7 +959,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             bool nextState = !NativeRequestFilter::Instance().IsEnabled();
             NativeRequestFilter::Instance().SetEnabled(nextState);
             std::wstring infoMsg = nextState
-                ? L"原生网络请求拦截已开启！\n广告与跟踪器将直接在网络层阻断，提速 40%+，省流量 50%+。"
+                ? L"原生网络请求拦截已开启！\n广告与恶意跟踪器将直接在网络底层阻断，网页加载提速 40%+。"
                 : L"原生网络请求拦截已关闭。";
             MessageBoxW(m_hWnd, infoMsg.c_str(), L"原生请求拦截", MB_OK | MB_ICONINFORMATION);
             break;
@@ -693,7 +970,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 Config::Instance().ClearBlockRulesForHost(host);
                 ElementBlocker::Instance().UpdateRulesScript(m_webViewManager->GetWebView());
                 m_webViewManager->Reload();
-                std::wstring infoMsg = L"已清空网站 [" + ElementBlocker::Instance().GetCurrentHost() + L"] 的全部元素屏蔽规则并重新载入。";
+                std::wstring infoMsg = L"已清空网站 [" + ElementBlocker::Instance().GetCurrentHost() + L"] 的全部元素屏蔽规则并刷新。";
                 MessageBoxW(m_hWnd, infoMsg.c_str(), L"清空规则", MB_OK | MB_ICONINFORMATION);
             } else {
                 MessageBoxW(m_hWnd, L"当前页面未识别到有效域名。", L"清空规则", MB_OK | MB_ICONINFORMATION);
@@ -716,51 +993,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     Config::Instance().Save();
                     DnsManager::Instance().ApplySettings();
                     UpdateDnsDisplay();
-                    std::wstring infoMsg = L"已切换至公共 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已生效，建议刷新网页。";
-                    MessageBoxW(m_hWnd, infoMsg.c_str(), L"公共 DNS 已更新", MB_OK | MB_ICONINFORMATION);
-                }
-            } else if (id >= IDM_EXTENSIONS_OPEN_BASE && id < IDM_EXTENSIONS_OPEN_BASE + 50) {
-                size_t extIdx = id - IDM_EXTENSIONS_OPEN_BASE;
-                auto exts = ExtensionManager::Instance().GetExtensions();
-                if (extIdx < exts.size()) {
-                    ExtensionManager::Instance().OpenExtensionOptions(exts[extIdx].id, m_webViewManager ? m_webViewManager->GetWebView() : nullptr);
-                }
-            } else if (id >= IDM_EXTENSIONS_TOGGLE_BASE && id < IDM_EXTENSIONS_TOGGLE_BASE + 50) {
-                size_t extIdx = id - IDM_EXTENSIONS_TOGGLE_BASE;
-                auto exts = ExtensionManager::Instance().GetExtensions();
-                if (extIdx < exts.size()) {
-                    ExtensionManager::Instance().ToggleExtension(exts[extIdx].id);
-                }
-            } else if (id >= IDM_EXTENSIONS_RELOAD_BASE && id < IDM_EXTENSIONS_RELOAD_BASE + 50) {
-                size_t extIdx = id - IDM_EXTENSIONS_RELOAD_BASE;
-                auto exts = ExtensionManager::Instance().GetExtensions();
-                if (extIdx < exts.size()) {
-                    ExtensionManager::Instance().ReloadExtension(exts[extIdx].id, [this, name = exts[extIdx].name](bool ok) {
-                        MessageBoxW(m_hWnd, (L"扩展程序【" + name + (ok ? L"】已成功重新载入！" : L"】重新载入失败。")).c_str(),
-                            L"扩展程序", ok ? (MB_OK | MB_ICONINFORMATION) : (MB_OK | MB_ICONERROR));
-                    });
-                }
-            } else if (id >= IDM_EXTENSIONS_FOLDER_BASE && id < IDM_EXTENSIONS_FOLDER_BASE + 50) {
-                size_t extIdx = id - IDM_EXTENSIONS_FOLDER_BASE;
-                auto exts = ExtensionManager::Instance().GetExtensions();
-                if (extIdx < exts.size()) {
-                    ExtensionManager::Instance().OpenExtensionFolder(exts[extIdx].id);
-                }
-            } else if (id >= IDM_EXTENSIONS_COPY_ID_BASE && id < IDM_EXTENSIONS_COPY_ID_BASE + 50) {
-                size_t extIdx = id - IDM_EXTENSIONS_COPY_ID_BASE;
-                auto exts = ExtensionManager::Instance().GetExtensions();
-                if (extIdx < exts.size()) {
-                    CopyTextToClipboard(m_hWnd, exts[extIdx].id);
-                    MessageBoxW(m_hWnd, (L"扩展 ID 已复制到剪贴板:\n" + exts[extIdx].id).c_str(), L"复制成功", MB_OK | MB_ICONINFORMATION);
-                }
-            } else if (id >= IDM_EXTENSIONS_REMOVE_BASE && id < IDM_EXTENSIONS_REMOVE_BASE + 50) {
-                size_t extIdx = id - IDM_EXTENSIONS_REMOVE_BASE;
-                auto exts = ExtensionManager::Instance().GetExtensions();
-                if (extIdx < exts.size()) {
-                    std::wstring prompt = L"确定要从浏览器中移除扩展程序【" + exts[extIdx].name + L"】吗？\n移除后该扩展将立即停止运行。";
-                    if (MessageBoxW(m_hWnd, prompt.c_str(), L"确认移除扩展程序", MB_YESNO | MB_ICONQUESTION) == IDYES) {
-                        ExtensionManager::Instance().RemoveExtension(exts[extIdx].id);
-                    }
+                    std::wstring infoMsg = L"已切换至安全 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已生效，建议刷新网页。";
+                    MessageBoxW(m_hWnd, infoMsg.c_str(), L"安全 DNS 已更新", MB_OK | MB_ICONINFORMATION);
                 }
             }
             break;
@@ -851,9 +1085,9 @@ void MainWindow::ShowZoomMenu() {
     HMENU hMenu = CreatePopupMenu();
     if (!hMenu) return;
 
-    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_IN, L"放大\tCtrl + +");
-    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_OUT, L"缩小\tCtrl + -");
-    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_RESET, L"重置为 100%\tCtrl + 0");
+    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_IN, L"放大页面\tCtrl + +");
+    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_OUT, L"缩小页面\tCtrl + -");
+    AppendMenuW(hMenu, MF_STRING, IDM_ZOOM_RESET, L"实际大小 (100%)\tCtrl + 0");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     double currentZoom = m_webViewManager ? m_webViewManager->GetZoomFactor() : 1.0;
@@ -930,7 +1164,7 @@ void MainWindow::ShowDnsMenu() {
     const auto& providers = DnsManager::Instance().GetProviders();
 
     UINT toggleFlags = MF_STRING | (settings.enablePublicDns ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(hMenu, toggleFlags, IDM_DNS_TOGGLE_ENABLE, L"✔  启用公共 DNS 服务器 (DoH 隐私加密)");
+    AppendMenuW(hMenu, toggleFlags, IDM_DNS_TOGGLE_ENABLE, L"✔  启用公共安全 DNS (DoH 隐私加密)");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     for (size_t i = 0; i < providers.size(); ++i) {
@@ -973,7 +1207,7 @@ void MainWindow::ShowBlockerMenu() {
 
     AppendMenuW(hMenu, MF_STRING, IDM_BLOCKER_PICKER, L"🎯 选取网页元素屏蔽 (Ctrl + Shift + H)");
 
-    std::wstring nativeStr = nativeEnabled ? L"⚡ 原生网络请求拦截: [已开启]" : L"⚡ 原生网络请求拦截: [已关闭]";
+    std::wstring nativeStr = nativeEnabled ? L"⚡ 原生请求拦截: [已开启]" : L"⚡ 原生请求拦截: [已关闭]";
     AppendMenuW(hMenu, MF_STRING | (nativeEnabled ? MF_CHECKED : MF_UNCHECKED), IDM_BLOCKER_TOGGLE_NATIVE, nativeStr.c_str());
 
     std::wstring countStr = L"📊 已阻断请求: " + std::to_wstring(blockedCount) + L" 个 (提速40%+)";
@@ -1001,58 +1235,18 @@ void MainWindow::ShowBlockerMenu() {
     DestroyMenu(hMenu);
 }
 
-void MainWindow::ShowExtensionsMenu() {
+void MainWindow::ShowShareMenu() {
     HMENU hMenu = CreatePopupMenu();
     if (!hMenu) return;
 
-    auto exts = ExtensionManager::Instance().GetExtensions();
-    if (exts.empty()) {
-        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"🧩  Chrome 扩展程序 (0)");
-        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"    （当前暂无已加载的扩展程序）");
-    } else {
-        std::wstring headerStr = L"🧩  已安装扩展程序 (" + std::to_wstring(exts.size()) + L"):";
-        AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, headerStr.c_str());
-
-        for (size_t i = 0; i < exts.size() && i < 50; ++i) {
-            const auto& ext = exts[i];
-            HMENU hSub = CreatePopupMenu();
-            if (!hSub) continue;
-
-            // Submenu options
-            UINT openFlags = MF_STRING;
-            if (!ext.isEnabled) {
-                openFlags |= (MF_DISABLED | MF_GRAYED);
-            }
-            AppendMenuW(hSub, openFlags, IDM_EXTENSIONS_OPEN_BASE + static_cast<WORD>(i), L"🌐  打开扩展选项 / 界面");
-            AppendMenuW(hSub, MF_SEPARATOR, 0, nullptr);
-
-            std::wstring toggleStr = ext.isEnabled ? L"⏸  停用此扩展" : L"▶  启用此扩展";
-            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_TOGGLE_BASE + static_cast<WORD>(i), toggleStr.c_str());
-            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_RELOAD_BASE + static_cast<WORD>(i), L"🔄  重新载入此扩展");
-            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_FOLDER_BASE + static_cast<WORD>(i), L"📁  打开本地所在目录");
-            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_COPY_ID_BASE + static_cast<WORD>(i), L"📋  复制扩展 ID");
-            AppendMenuW(hSub, MF_SEPARATOR, 0, nullptr);
-            AppendMenuW(hSub, MF_STRING, IDM_EXTENSIONS_REMOVE_BASE + static_cast<WORD>(i), L"🗑️  从浏览器中移除此扩展");
-
-            // Extension label on main menu
-            std::wstring itemLabel = (ext.isEnabled ? L"🟢  " : L"⚪  ") + ext.name;
-            if (!ext.version.empty()) {
-                itemLabel += L"  (" + ext.version + L")";
-            }
-            if (!ext.isEnabled) {
-                itemLabel += L" [已停用]";
-            }
-            AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSub), itemLabel.c_str());
-        }
-    }
-
+    AppendMenuW(hMenu, MF_STRING, IDM_SHARE_COPY_URL, L"📋  拷贝当前网页链接 (Copy URL)");
+    AppendMenuW(hMenu, MF_STRING, IDM_SHARE_OPEN_DEFAULT, L"🌐  在系统默认浏览器中打开");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_MANAGE, L"⚙️  扩展程序管理中心 (详细视图)...");
-    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_LOAD_UNPACKED, L"📂  加载未打包的扩展程序目录...");
-    AppendMenuW(hMenu, MF_STRING, IDM_EXTENSIONS_RELOAD_ALL, L"🔄  重新载入并同步全部扩展程序");
+    AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_FULLSCREEN, m_isFullScreen ? L"🖥️  退出全屏视图 (F11)" : L"🖥️  全屏视图 (F11)");
+    AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_IMMERSIVE, m_isImmersiveMode ? L"🌌  退出沉浸全景视图 (F9)" : L"🌌  沉浸全景视图 (F9)");
 
     RECT btnRect{};
-    GetWindowRect(m_hBtnExtensions, &btnRect);
+    GetWindowRect(m_hBtnShare, &btnRect);
 
     TrackPopupMenu(
         hMenu,

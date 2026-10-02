@@ -16,7 +16,7 @@ enum ControlID : WORD {
     IDC_BTN_DNS         = 1005,
     IDC_BTN_ZOOM        = 1006,
     IDC_BTN_BLOCKER     = 1007,
-    IDC_BTN_EXTENSIONS  = 1008
+    IDC_BTN_SHARE       = 1008
 };
 
 enum AppCommandID : WORD {
@@ -32,17 +32,10 @@ enum AppCommandID : WORD {
     IDM_BLOCKER_PICKER      = 2012,
     IDM_BLOCKER_TOGGLE_NATIVE = 2013,
     IDM_BLOCKER_CLEAR_RULES = 2014,
+    IDM_SHARE_COPY_URL      = 2015,
+    IDM_SHARE_OPEN_DEFAULT  = 2016,
     IDM_ZOOM_SET_BASE       = 2020,
-    IDM_EXTENSIONS_MANAGE        = 2030,
-    IDM_EXTENSIONS_LOAD_UNPACKED = 2031,
-    IDM_EXTENSIONS_RELOAD_ALL    = 2032,
-    IDM_DNS_SELECT_BASE          = 2100,
-    IDM_EXTENSIONS_OPEN_BASE     = 2200,
-    IDM_EXTENSIONS_TOGGLE_BASE   = 2250,
-    IDM_EXTENSIONS_RELOAD_BASE   = 2300,
-    IDM_EXTENSIONS_FOLDER_BASE   = 2350,
-    IDM_EXTENSIONS_COPY_ID_BASE  = 2400,
-    IDM_EXTENSIONS_REMOVE_BASE   = 2450
+    IDM_DNS_SELECT_BASE     = 2100
 };
 
 class MainWindow {
@@ -62,6 +55,7 @@ public:
 private:
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
+    static LRESULT CALLBACK SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
 
     LRESULT HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -74,7 +68,7 @@ private:
     void ShowDnsMenu();
     void UpdateDnsDisplay();
     void ShowBlockerMenu();
-    void ShowExtensionsMenu();
+    void ShowShareMenu();
 
     HWND m_hWnd = nullptr;
     HINSTANCE m_hInstance = nullptr;
@@ -85,13 +79,24 @@ private:
     HWND m_hBtnForward = nullptr;
     HWND m_hBtnReload = nullptr;
     HWND m_hEditAddress = nullptr;
-    HWND m_hBtnExtensions = nullptr;
+    HWND m_hBtnShare = nullptr;
     HWND m_hBtnDns = nullptr;
     HWND m_hBtnZoom = nullptr;
     HWND m_hBtnBlocker = nullptr;
 
+    // Safari Styling Resources
     HFONT m_hUiFont = nullptr;
-    int m_topbarHeight = 44;
+    HFONT m_hNavFont = nullptr;
+    HFONT m_hAddressFont = nullptr;
+    HBRUSH m_hBrTopBarBg = nullptr;
+    HBRUSH m_hBrAddressBg = nullptr;
+    HPEN m_hPenAddressBorder = nullptr;
+    HPEN m_hPenAddressBorderFocus = nullptr;
+    HPEN m_hPenSeparator = nullptr;
+
+    RECT m_rcAddressCapsule{};
+    bool m_isAddressFocused = false;
+    int m_topbarHeight = 48;
 
     bool m_isFullScreen = false;
     bool m_isImmersiveMode = false;

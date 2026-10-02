@@ -584,7 +584,7 @@ void DnsManager::ShowDnsDialog(HWND hWndParent) {
         WNDCLASSEXW wc{ sizeof(WNDCLASSEXW) };
         wc.lpfnWndProc = DlgWndProc;
         wc.hInstance = hInstance;
-        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
         wc.lpszClassName = kDlgClassName;
         RegisterClassExW(&wc);

@@ -3,7 +3,6 @@
 #include "Config.hpp"
 #include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
-#include "ExtensionManager.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
 #include <iostream>
@@ -25,16 +24,7 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
 
-    // Enable Chrome Extension APIs (Manifest V2 and V3 support)
-    options->put_AreBrowserExtensionsEnabled(TRUE);
-    ComPtr<ICoreWebView2EnvironmentOptions6> options6;
-    if (SUCCEEDED(options.As(&options6)) && options6) {
-        options6->put_AreBrowserExtensionsEnabled(TRUE);
-    }
-
     // Inject pure hardware GPU pipeline, aggressive discard, 120Hz VSync and low-latency network flags
-    // Note: Do NOT add --disable-background-networking or --intensive-wake-up-throttling as they
-    // break Chrome Extension background workers, MV3 service workers, and extension network events.
     std::wstring performanceArgs =
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
@@ -177,7 +167,6 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                             // Initialize modules
                             ElementBlocker::Instance().Initialize(m_webView.get());
                             NativeRequestFilter::Instance().Initialize(m_webView.get(), m_environment.get());
-                            ExtensionManager::Instance().Initialize(m_webView.get(), m_environment.get());
 
                             // Apply QoS optimizations
                             PowerManager::Instance().DisableEcoQoS();
@@ -468,54 +457,29 @@ void SpawnDeferredDirectoryPurge(const std::filesystem::path& dirPath) {
 } // namespace
 
 void WebViewManager::PurgeAllCacheAndTempFiles() {
-    bool preserveExtensions = Config::Instance().GetSettings().preserveExtensionData;
     std::filesystem::path userDataDir = Config::Instance().GetUserDataDirectory();
     std::error_code ec;
 
-    if (!preserveExtensions) {
-        if (std::filesystem::exists(userDataDir, ec)) {
-            for (int retry = 0; retry < 3; ++retry) {
-                std::filesystem::remove_all(userDataDir, ec);
-                if (!std::filesystem::exists(userDataDir, ec)) {
-                    break;
-                }
-                Sleep(40);
+    if (std::filesystem::exists(userDataDir, ec)) {
+        for (int retry = 0; retry < 3; ++retry) {
+            std::filesystem::remove_all(userDataDir, ec);
+            if (!std::filesystem::exists(userDataDir, ec)) {
+                break;
             }
-
-            if (std::filesystem::exists(userDataDir, ec)) {
-                SpawnDeferredDirectoryPurge(userDataDir);
-            }
+            Sleep(40);
         }
 
-        std::filesystem::path appDataDir = Config::Instance().GetAppDataPath();
-        std::filesystem::path ebWebViewDir = appDataDir / "EBWebView";
+        if (std::filesystem::exists(userDataDir, ec)) {
+            SpawnDeferredDirectoryPurge(userDataDir);
+        }
+    }
+
+    std::filesystem::path appDataDir = Config::Instance().GetAppDataPath();
+    std::filesystem::path ebWebViewDir = appDataDir / "EBWebView";
+    if (std::filesystem::exists(ebWebViewDir, ec)) {
+        std::filesystem::remove_all(ebWebViewDir, ec);
         if (std::filesystem::exists(ebWebViewDir, ec)) {
-            std::filesystem::remove_all(ebWebViewDir, ec);
-            if (std::filesystem::exists(ebWebViewDir, ec)) {
-                SpawnDeferredDirectoryPurge(ebWebViewDir);
-            }
-        }
-    } else {
-        // Selective cache purge: wipe volatile caches and temporary data while preserving extensions and user preferences
-        if (std::filesystem::exists(userDataDir, ec)) {
-            static const std::vector<std::string> subDirs = {
-                "EBWebView/Default/Cache",
-                "EBWebView/Default/Code Cache",
-                "EBWebView/Default/GPUCache",
-                "EBWebView/Default/DawnWebGPUCache",
-                "EBWebView/Default/ShaderCache",
-                "EBWebView/Crashpad",
-                "EBWebView/Default/Service Worker/CacheStorage",
-                "EBWebView/Default/Service Worker/ScriptCache",
-                "EBWebView/Default/History",
-                "EBWebView/Default/Visited Links"
-            };
-            for (const auto& rel : subDirs) {
-                std::filesystem::path p = userDataDir / rel;
-                if (std::filesystem::exists(p, ec)) {
-                    std::filesystem::remove_all(p, ec);
-                }
-            }
+            SpawnDeferredDirectoryPurge(ebWebViewDir);
         }
     }
 }
@@ -540,16 +504,7 @@ void WebViewManager::ShutdownAndPurgeData() {
                         }
                     );
 
-                    if (Config::Instance().GetSettings().preserveExtensionData) {
-                        COREWEBVIEW2_BROWSING_DATA_KINDS dataKinds =
-                            COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE |
-                            COREWEBVIEW2_BROWSING_DATA_KINDS_DOWNLOAD_HISTORY |
-                            COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY |
-                            COREWEBVIEW2_BROWSING_DATA_KINDS_CACHE_STORAGE;
-                        profile2->ClearBrowsingData(dataKinds, clearCb.Get());
-                    } else {
-                        profile2->ClearBrowsingDataAll(clearCb.Get());
-                    }
+                    profile2->ClearBrowsingDataAll(clearCb.Get());
 
                     DWORD start = GetTickCount();
                     while (WaitForSingleObject(hEvent, 10) != WAIT_OBJECT_0 && (GetTickCount() - start) < 500) {
