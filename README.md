@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.1/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.4.1%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.2/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.4.2%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -23,12 +23,12 @@
 
 ---
 
-## 📥 最新版便携下载 / Direct Download (v1.4.1 macOS Safari UI Edition)
+## 📥 最新版便携下载 / Direct Download (v1.4.2 激进优化 & 隐私安全加强版)
 
 可在 GitHub Releases 页面直接下载最新构建的预编译二进制文件：
 
-* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.4.1)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.1/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
-* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.4.1-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.1/UltraLightBrowser-v1.4.1-windows-x64.zip)**
+* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.4.2)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.2/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
+* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.4.2-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.2/UltraLightBrowser-v1.4.2-windows-x64.zip)**
 * 🌟 **[访问 GitHub Latest Release 最新发布页](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**
 * 🔗 **[查看所有历史版本与构建产物](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
@@ -196,9 +196,36 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 
 ---
 
+## 🛡️ v1.4.2 激进优化与隐私安全加固 (Security & Performance Overhaul)
+
+在 **v1.4.2** 版本中，项目根据全方位的源码安全与性能审计，完成了彻底的深度重构：
+
+### 0. 安全与隐私安全修复 (Security & Privacy Hardening)
+* **默认 DNS 调整为 Quad9 隐私节点**：默认 DNS 推荐全面切换为瑞士非营利基金会运营的 **Quad9 (9.9.9.9)** 与 **Cloudflare (1.1.1.1)**，严格保护用户隐私，对国内节点明确标注审计日志风险。
+* **彻底杜绝与清理注册表篡改**：完全移除向 Windows 注册表（`HKCU\SOFTWARE\Policies\Microsoft\Edge` 及 `WebView2`）写入 DoH 策略的行为，DNS 设置仅安全隔离在本地 `UserData/Default/Preferences` 中，并在启动时主动清理历史版本可能残留的注册表项，彻底保证系统原生 Edge 与全局其他 WebView2 程序不受任何干扰。
+* **剔除外部进程清理风险**：彻底移除清理数据时的 `cmd.exe /c rmdir` 进程派生，改用纯原生 C++ `std::filesystem::remove_all` 循环清理，杜绝命令注入与安全风险。
+* **构建产物全量 SHA256 校验**：GitHub Actions CI/CD 流全自动计算并发布 `SHA256SUMS.txt` 校验和，供用户即时验证下载文件完整性。
+
+### 1. 广告拦截重写与大幅提速 (High-Performance Ad-Blocking)
+* **拦截范围收敛，消除 UI 线程 IPC 瓶颈**：不再使用 `COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL` 拦截全部请求，全面排除图片（PNG/JPEG/WebP/SVG）、字体、样式表（CSS）及主 HTML 文档的无意义 IPC 转发，仅对脚本（Script）、子框架（Subframe）、XHR、Fetch 及 Ping 进行精准过滤，富媒体与图片密集型网页渲染极速流畅。
+* **Chromium 内核原生强力跟踪防护**：启用引擎内置的 `PreferredTrackingPreventionLevel = STRICT`，由 Chromium 核心直接在网络底层阻断跟踪 Cookie 与跨站追踪。
+* **O(1) Hash 域名匹配与主机名漏洞修复**：改用高效 `std::unordered_set` 倒序父域名查找；重写 `ExtractHost`，严格处理 `user:pass@host` 凭据前缀绕过与 IPv6 `[::1]` 语法；不再进行全 URL 复制或全量字符串小写转换。
+* **剔除误伤站点的过宽规则**：移除 `sentry.io`、`bugsnag.com`（保障各类 Web App 错误诊断与正常运行），移除 `/beacon`、`/collect?`、`/telemetry`、`/ad.js` 等过宽关键词。
+* **阻断响应头净化**：204 No Content 阻断响应移除多余的通配 `Access-Control-Allow-Origin: *` 与 `Cache-Control: max-age=86400`。
+
+### 2. 启动参数精简与稳定性增强 (Chromium Flags Clean-Up)
+* **移除潜在危害参数**：移除 `--disable-gpu-watchdog`（防止 GPU 超时导致窗口永久卡死冻结）与 `--disable-software-rasterizer`（防止黑名单显卡直接白屏）。
+* **清理冗余参数**：移除现代 Chromium 默认启用的 `--enable-quic`、`--enable-async-dns` 以及无实际效果的 `--fake-vsync-rate=120`、`--max-gum-fps=120`。
+
+### 3. 后台功耗与事件驱动调度 (Power & Memory Polish)
+* **自适应内存目标调整**：窗口最小化或后台失焦时，自动将内存限制策略调整为 `COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW`，恢复前台后立即恢复为 `NORMAL`。
+* **取缔 15 秒忙轮询定时器**：取消原本周期性唤醒 CPU 的 15 秒 `IDT_INACTIVITY_CHECK` 盲轮询，改为窗口失焦/失活时启动单次延迟挂起，前台激活时即刻取消定时器，降低后台 CPU 唤醒次数与整机能耗。
+
+---
+
 ## 🛡️ 架构精简与纯粹性 (Zero-Bloat Architecture)
 
-在 v1.4.1 macOS Safari UI Edition 中，浏览器全面移除了冗余的 Chrome 扩展加载模块，回归纯粹极速的极简 Native 壳体验：
+在 v1.4.1+ 版本中，浏览器全面移除了冗余的 Chrome 扩展加载模块，回归纯粹极速的极简 Native 壳体验：
 * **零内存开销 (Zero Runtime Overhead)**：移除了 Chromium 扩展运行时（Background Worker、Content Script 注入流水线、Extension IPC），每标签页减少 50MB+ 内存占用，启动再提速 25%。
 * **零沙箱逃逸与零第三方挂载隐患**：彻底消除外部未验证 JS 扩展在浏览器内驻留窃取数据或破坏 DOM 的安全风险。
 * **极速无痕数据粉碎**：退出时执行全面、彻底的浏览数据粉碎（`ClearBrowsingDataAll`），不留任何冗余解压目录或持久化扩展配置。

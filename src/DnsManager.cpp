@@ -94,7 +94,7 @@ void UpdateDialogControls(DlgContext* ctx) {
         SetWindowTextW(ctx->hEditIpv62, L"自定义");
         std::wstring customW = StringUtils::Utf8ToWide(Config::Instance().GetSettings().customDnsTemplate);
         if (customW.empty()) {
-            customW = L"https://dns.alidns.com/dns-query";
+            customW = L"https://dns.quad9.net/dns-query";
         }
         SetWindowTextW(ctx->hEditDoh, customW.c_str());
         SetWindowTextW(ctx->hStaticDesc, L"特性说明: 可输入任意标准的 DoH (DNS-over-HTTPS) 节点解析地址。");
@@ -309,7 +309,7 @@ LRESULT CALLBACK DlgWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     const auto* p = DnsManager::Instance().GetActiveProvider();
                     if (p) alertMsg += L"服务商: " + p->name + L"\n";
                 }
-                alertMsg += L"\n提示: 设置已写入本地配置文件与 Edge/WebView2 内核策略。\n点击确定后建议刷新网页以生效。";
+                alertMsg += L"\n提示: 设置已安全写入本地用户配置 (UserData/Default/Preferences)，完全隔离且不触碰/不篡改系统 Edge 策略。\n点击确定后建议刷新网页以生效。";
             } else {
                 alertMsg += L"当前状态: 【已关闭 (使用系统默认 DNS)】\n\n设置已恢复为系统网络解析。";
             }
@@ -355,59 +355,23 @@ DnsManager::DnsManager() {
 void DnsManager::InitializeProviders() {
     m_providers.clear();
 
-    // 1. 阿里公共 DNS (AliDNS)
+    // 1. Quad9 (9.9.9.9 安全拦截与强隐私保护) - 默认首选
     m_providers.push_back({
-        "alidns",
-        L"阿里公共 DNS (Alibaba Cloud)",
-        L"阿里巴巴全国 Anycast 高防集群，国内解析毫秒响应，支持 IPv4/IPv6 双栈解析与 DoH 隐私加密。",
-        L"223.5.5.5",
-        L"223.6.6.6",
-        L"2400:3200::1",
-        L"2400:3200:baba::1",
-        L"https://dns.alidns.com/dns-query"
+        "quad9",
+        L"Quad9 (9.9.9.9 恶意威胁拦截 & 零日志隐私)",
+        L"【强烈推荐】瑞士非营利基金会运营，整合全球数十家网络威胁情报库，实时拦截钓鱼网站与恶意软件，严格承诺不记录任何用户 IP 或查询日志。",
+        L"9.9.9.9",
+        L"149.112.112.112",
+        L"2620:fe::fe",
+        L"2620:fe::9",
+        L"https://dns.quad9.net/dns-query"
     });
 
-    // 2. 腾讯 DNSPod (Tencent Public DNS)
-    m_providers.push_back({
-        "dnspod",
-        L"腾讯 DNSPod (Public DNS)",
-        L"腾讯云全球 BGP Anycast 网络，智能识别线路，有效抵御 DNS 劫持与缓存污染。",
-        L"119.29.29.29",
-        L"182.254.116.116",
-        L"2402:4e00::",
-        L"2402:4e00:1::",
-        L"https://doh.pub/dns-query"
-    });
-
-    // 3. 百度公共 DNS (Baidu DNS)
-    m_providers.push_back({
-        "baidu",
-        L"百度公共 DNS (Baidu DNS)",
-        L"百度遍布全国海量服务器与 CDN 节点智能调度，解析极速，稳定性高。",
-        L"180.76.76.76",
-        L"180.76.76.77",
-        L"2400:da00::6666",
-        L"2400:da00::6667",
-        L"https://doh.bce.baidu.com/dns-query"
-    });
-
-    // 4. 114 DNS
-    m_providers.push_back({
-        "114",
-        L"114 DNS (南京信风)",
-        L"国内历史悠久的专业公共 DNS，电信、联通、移动跨网优化，高速纯净无劫持。",
-        L"114.114.114.114",
-        L"114.114.115.115",
-        L"(暂无)",
-        L"(暂无)",
-        L"https://114.114.114.114/dns-query"
-    });
-
-    // 5. Cloudflare DNS (1.1.1.1)
+    // 2. Cloudflare DNS (1.1.1.1 极速隐私)
     m_providers.push_back({
         "cloudflare",
         L"Cloudflare DNS (1.1.1.1 极速隐私)",
-        L"全球权威测速第一梯队，APNIC 合作运维，承诺永不向第三方出售用户数据与 IP 日志。",
+        L"【推荐】全球权威测速第一梯队，APNIC 合作运维，承诺永不向第三方出售用户数据与 IP 日志。",
         L"1.1.1.1",
         L"1.0.0.1",
         L"2606:4700:4700::1111",
@@ -415,7 +379,7 @@ void DnsManager::InitializeProviders() {
         L"https://cloudflare-dns.com/dns-query"
     });
 
-    // 6. Google Public DNS (8.8.8.8)
+    // 3. Google Public DNS (8.8.8.8)
     m_providers.push_back({
         "google",
         L"Google Public DNS (8.8.8.8)",
@@ -427,19 +391,7 @@ void DnsManager::InitializeProviders() {
         L"https://dns.google/dns-query"
     });
 
-    // 7. Quad9 (9.9.9.9 安全拦截)
-    m_providers.push_back({
-        "quad9",
-        L"Quad9 (9.9.9.9 恶意威胁拦截)",
-        L"瑞士非营利基金会运营，整合全球数十家网络威胁情报库，实时拦截钓鱼网站与恶意软件。",
-        L"9.9.9.9",
-        L"149.112.112.112",
-        L"2620:fe::fe",
-        L"2620:fe::9",
-        L"https://dns.quad9.net/dns-query"
-    });
-
-    // 8. Cisco OpenDNS
+    // 4. Cisco OpenDNS
     m_providers.push_back({
         "opendns",
         L"Cisco OpenDNS (思科安全)",
@@ -451,11 +403,59 @@ void DnsManager::InitializeProviders() {
         L"https://doh.opendns.com/dns-query"
     });
 
-    // 9. 中国互联网络信息中心 SDNS (CNNIC)
+    // 5. 阿里公共 DNS (AliDNS) [注: 国内节点/记录访问日志]
+    m_providers.push_back({
+        "alidns",
+        L"阿里公共 DNS (AliDNS) [国内节点/无隐私防日志]",
+        L"【注意隐私风险】阿里巴巴集群，国内解析毫秒响应，但依法依规记录用户解析请求与 IP 审计日志。",
+        L"223.5.5.5",
+        L"223.6.6.6",
+        L"2400:3200::1",
+        L"2400:3200:baba::1",
+        L"https://dns.alidns.com/dns-query"
+    });
+
+    // 6. 腾讯 DNSPod (Public DNS) [注: 国内节点/记录访问日志]
+    m_providers.push_back({
+        "dnspod",
+        L"腾讯 DNSPod (Public DNS) [国内节点/无隐私防日志]",
+        L"【注意隐私风险】腾讯云 BGP Anycast 网络，智能识别线路，但记录网络审计与请求日志。",
+        L"119.29.29.29",
+        L"182.254.116.116",
+        L"2402:4e00::",
+        L"2402:4e00:1::",
+        L"https://doh.pub/dns-query"
+    });
+
+    // 7. 百度公共 DNS (Baidu DNS) [注: 国内节点/记录访问日志]
+    m_providers.push_back({
+        "baidu",
+        L"百度公共 DNS (Baidu DNS) [国内节点/无隐私防日志]",
+        L"【注意隐私风险】百度 CDN 调度解析极速，但记录网络访问审计日志。",
+        L"180.76.76.76",
+        L"180.76.76.77",
+        L"2400:da00::6666",
+        L"2400:da00::6667",
+        L"https://doh.bce.baidu.com/dns-query"
+    });
+
+    // 8. 114 DNS [注: 国内节点/记录访问日志]
+    m_providers.push_back({
+        "114",
+        L"114 DNS (南京信风) [国内节点/无隐私防日志]",
+        L"【注意隐私风险】国内老牌公共 DNS，无完整隐私防日志机制。",
+        L"114.114.114.114",
+        L"114.114.115.115",
+        L"(暂无)",
+        L"(暂无)",
+        L"https://114.114.114.114/dns-query"
+    });
+
+    // 9. 中国互联网络信息中心 SDNS (CNNIC) [注: 国内节点/记录访问日志]
     m_providers.push_back({
         "cnnic",
-        L"CNNIC SDNS (国家互联网络信息中心)",
-        L"国家顶级域名解析机构出品，面向国内网民提供权威、安全、高速的公共域名解析服务。",
+        L"CNNIC SDNS (国家互联网络信息中心) [国内节点/无隐私防日志]",
+        L"【注意隐私风险】国家顶级域名机构运营，全量留存网络日志。",
         L"1.2.4.8",
         L"210.2.4.8",
         L"(暂无)",
@@ -492,40 +492,27 @@ bool DnsManager::ApplySettings() {
                 templateW = p->dohTemplate;
                 templateNarrow = StringUtils::WideToUtf8(templateW);
             } else {
-                templateW = L"https://dns.alidns.com/dns-query";
-                templateNarrow = "https://dns.alidns.com/dns-query";
+                templateW = L"https://dns.quad9.net/dns-query";
+                templateNarrow = "https://dns.quad9.net/dns-query";
             }
         }
     }
 
-    // 1. Apply to Windows Registry (HKCU\SOFTWARE\Policies\Microsoft\Edge\WebView2)
+    // 1. Proactively remove any legacy/historical policy tampering in Windows Registry
+    // (HKCU\SOFTWARE\Policies\Microsoft\Edge) so that the system's actual Edge browser
+    // and other WebView2 applications are completely untouched and unaffected.
     HKEY hKey = nullptr;
     const wchar_t* subKeyWebView2 = L"SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2";
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, subKeyWebView2, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
-        if (settings.enablePublicDns && !templateW.empty()) {
-            const wchar_t* modeSecure = L"secure";
-            RegSetValueExW(hKey, L"DnsOverHttpsMode", 0, REG_SZ, reinterpret_cast<const BYTE*>(modeSecure), static_cast<DWORD>((wcslen(modeSecure) + 1) * sizeof(wchar_t)));
-            RegSetValueExW(hKey, L"DnsOverHttpsTemplates", 0, REG_SZ, reinterpret_cast<const BYTE*>(templateW.c_str()), static_cast<DWORD>((templateW.length() + 1) * sizeof(wchar_t)));
-        } else {
-            RegDeleteValueW(hKey, L"DnsOverHttpsTemplates");
-            const wchar_t* modeOff = L"off";
-            RegSetValueExW(hKey, L"DnsOverHttpsMode", 0, REG_SZ, reinterpret_cast<const BYTE*>(modeOff), static_cast<DWORD>((wcslen(modeOff) + 1) * sizeof(wchar_t)));
-        }
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, subKeyWebView2, 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+        RegDeleteValueW(hKey, L"DnsOverHttpsTemplates");
+        RegDeleteValueW(hKey, L"DnsOverHttpsMode");
         RegCloseKey(hKey);
     }
 
-    // Also apply to HKCU\SOFTWARE\Policies\Microsoft\Edge (for maximum compatibility)
     const wchar_t* subKeyEdge = L"SOFTWARE\\Policies\\Microsoft\\Edge";
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, subKeyEdge, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
-        if (settings.enablePublicDns && !templateW.empty()) {
-            const wchar_t* modeSecure = L"secure";
-            RegSetValueExW(hKey, L"DnsOverHttpsMode", 0, REG_SZ, reinterpret_cast<const BYTE*>(modeSecure), static_cast<DWORD>((wcslen(modeSecure) + 1) * sizeof(wchar_t)));
-            RegSetValueExW(hKey, L"DnsOverHttpsTemplates", 0, REG_SZ, reinterpret_cast<const BYTE*>(templateW.c_str()), static_cast<DWORD>((templateW.length() + 1) * sizeof(wchar_t)));
-        } else {
-            RegDeleteValueW(hKey, L"DnsOverHttpsTemplates");
-            const wchar_t* modeOff = L"off";
-            RegSetValueExW(hKey, L"DnsOverHttpsMode", 0, REG_SZ, reinterpret_cast<const BYTE*>(modeOff), static_cast<DWORD>((wcslen(modeOff) + 1) * sizeof(wchar_t)));
-        }
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, subKeyEdge, 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+        RegDeleteValueW(hKey, L"DnsOverHttpsTemplates");
+        RegDeleteValueW(hKey, L"DnsOverHttpsMode");
         RegCloseKey(hKey);
     }
 

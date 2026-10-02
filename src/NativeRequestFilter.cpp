@@ -14,8 +14,9 @@ NativeRequestFilter& NativeRequestFilter::Instance() {
 NativeRequestFilter::NativeRequestFilter() {
     m_enabled = Config::Instance().GetSettings().enableAdBlock;
 
-    // Fast domain suffix match list (ad networks, telemetry, trackers, cryptominers)
-    m_blockedDomains = {
+    // Fast domain match set (ad networks, trackers, telemetry)
+    // Sentry.io and Bugsnag.com removed per security/stability audit
+    m_blockedDomainSet = {
         // Google Ads & Analytics
         L"doubleclick.net",
         L"google-analytics.com",
@@ -74,8 +75,6 @@ NativeRequestFilter::NativeRequestFilter() {
         L"ads.tiktok.com",
         L"analytics.tiktok.com",
         L"connect.facebook.net",
-        L"sentry.io",
-        L"bugsnag.com",
         L"amplitude.com",
         L"log.byteoversea.com",
         L"sensorsdata.cn",
@@ -85,23 +84,19 @@ NativeRequestFilter::NativeRequestFilter() {
         L"appsflyer.com"
     };
 
-    // Fast keyword substring matches in URL
+    // Specific ad/tracker path keywords (overbroad keywords removed)
     m_blockedKeywords = {
         L"/pagead/js/",
         L"/pagead/show_ads.js",
         L"/advert.js",
-        L"/ad.js",
         L"/ads.js",
         L"/google-analytics.com/analytics.js",
         L"/gtag/js?id=",
         L"/gtm.js?id=",
         L"/hm.js?",
         L"/beacon.js",
-        L"/beacon",
-        L"/collect?",
         L"/pixel.gif",
-        L"/pixel.png",
-        L"/telemetry"
+        L"/pixel.png"
     };
 }
 
@@ -116,43 +111,77 @@ std::wstring NativeRequestFilter::ExtractHost(const std::wstring& uri) {
     size_t protoEnd = uri.find(L"://");
     if (protoEnd == std::wstring::npos) return L"";
 
-    size_t hostStart = protoEnd + 3;
-    size_t hostEnd = uri.find_first_of(L"/ :?#", hostStart);
-    if (hostEnd == std::wstring::npos) {
-        hostEnd = uri.length();
+    size_t authStart = protoEnd + 3;
+    // Authority ends at the first '/', '?', or '#'
+    size_t authEnd = uri.find_first_of(L"/?#", authStart);
+    if (authEnd == std::wstring::npos) {
+        authEnd = uri.length();
+    }
+    if (authStart >= authEnd) return L"";
+
+    // Handle userinfo (e.g. https://user:pass@example.com/)
+    size_t hostStart = authStart;
+    size_t atPos = uri.rfind(L'@', authEnd);
+    if (atPos != std::wstring::npos && atPos >= authStart) {
+        hostStart = atPos + 1;
+    }
+    if (hostStart >= authEnd) return L"";
+
+    std::wstring host;
+    // Handle IPv6 literal [2001:db8::1]
+    if (uri[hostStart] == L'[') {
+        size_t closeBracket = uri.find(L']', hostStart);
+        if (closeBracket != std::wstring::npos && closeBracket < authEnd) {
+            host = uri.substr(hostStart, closeBracket - hostStart + 1);
+        } else {
+            host = uri.substr(hostStart, authEnd - hostStart);
+        }
+    } else {
+        // Strip port (e.g. example.com:8080)
+        size_t colonPos = uri.find(L':', hostStart);
+        size_t hostEnd = (colonPos != std::wstring::npos && colonPos < authEnd) ? colonPos : authEnd;
+        host = uri.substr(hostStart, hostEnd - hostStart);
     }
 
-    std::wstring host = uri.substr(hostStart, hostEnd - hostStart);
-    std::transform(host.begin(), host.end(), host.begin(), [](wchar_t c) {
-        return static_cast<wchar_t>(std::towlower(c));
-    });
+    // Lowercase host only
+    for (auto& ch : host) {
+        ch = static_cast<wchar_t>(std::towlower(ch));
+    }
     return host;
 }
 
 bool NativeRequestFilter::ShouldBlock(const std::wstring& uri) {
     if (!m_enabled || uri.empty()) return false;
 
-    std::wstring lowerUri = uri;
-    std::transform(lowerUri.begin(), lowerUri.end(), lowerUri.begin(), [](wchar_t c) {
-        return static_cast<wchar_t>(std::towlower(c));
-    });
-
-    // Check host suffix match
-    std::wstring host = ExtractHost(lowerUri);
+    // 1. Fast O(1) domain & parent subdomain matching
+    std::wstring host = ExtractHost(uri);
     if (!host.empty()) {
-        for (const auto& domain : m_blockedDomains) {
-            if (host == domain) return true;
-            if (host.length() > domain.length() &&
-                host.rfind(L'.' + domain) == (host.length() - domain.length() - 1)) {
+        if (m_blockedDomainSet.find(host) != m_blockedDomainSet.end()) {
+            return true;
+        }
+
+        size_t dotPos = host.find(L'.');
+        while (dotPos != std::wstring::npos) {
+            std::wstring parentDomain = host.substr(dotPos + 1);
+            if (m_blockedDomainSet.find(parentDomain) != m_blockedDomainSet.end()) {
                 return true;
             }
+            dotPos = host.find(L'.', dotPos + 1);
         }
     }
 
-    // Check path keywords
-    for (const auto& kw : m_blockedKeywords) {
-        if (lowerUri.find(kw) != std::wstring::npos) {
-            return true;
+    // 2. Path keyword matching (targeted patterns only, no full-URI lowercase copy)
+    size_t protoEnd = uri.find(L"://");
+    size_t pathStart = (protoEnd != std::wstring::npos) ? uri.find(L'/', protoEnd + 3) : uri.find(L'/');
+    if (pathStart != std::wstring::npos) {
+        std::wstring path = uri.substr(pathStart);
+        for (auto& ch : path) {
+            ch = static_cast<wchar_t>(std::towlower(ch));
+        }
+        for (const auto& kw : m_blockedKeywords) {
+            if (path.find(kw) != std::wstring::npos) {
+                return true;
+            }
         }
     }
 
@@ -163,8 +192,13 @@ void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Enviro
     if (!webView || !environment) return;
     m_environment = environment;
 
-    // Intercept all resource contexts (script, image, stylesheet, xhr, fetch, subframe)
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+    // Filter only high-risk ad/tracking resource vectors to avoid UI IPC bottlenecks on images, styles & fonts
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT);
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SUB_FRAME);
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST);
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH);
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING);
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_OTHER);
 
     webView->add_WebResourceRequested(
         Microsoft::WRL::Callback<ICoreWebView2WebResourceRequestedEventHandler>(
@@ -194,7 +228,7 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* /*sender*
             emptyStream.get(),
             204,
             L"No Content",
-            L"Content-Type: text/plain\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: max-age=86400\r\n",
+            L"Content-Type: text/plain\r\n",
             &response
         );
         if (SUCCEEDED(hr) && response) {

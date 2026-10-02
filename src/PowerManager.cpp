@@ -130,6 +130,12 @@ void PowerManager::HandleWindowMinimize(ICoreWebView2Controller* controller, ICo
                 SetProcessTreeEcoQoS(browserPid, true);
             }
             EnableEcoQoS(GetCurrentProcess());
+
+            // Target low memory usage when backgrounded
+            wil::com_ptr<ICoreWebView2_19> webView19;
+            if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView19))) && webView19) {
+                webView19->put_MemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
+            }
         }
     }
 }
@@ -153,7 +159,13 @@ void PowerManager::HandleWindowRestore(ICoreWebView2Controller* controller, ICor
         m_isSuspended = false;
     }
 
-    // 3. Remove EcoQoS and return to normal/high performance scheduling on P-Cores
+    // 3. Restore memory target level to NORMAL for responsiveness
+    wil::com_ptr<ICoreWebView2_19> webView19;
+    if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView19))) && webView19) {
+        webView19->put_MemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL);
+    }
+
+    // 4. Remove EcoQoS and return to normal/high performance scheduling on P-Cores
     DisableEcoQoS(GetCurrentProcess());
     if (browserPid != 0) {
         SetProcessTreeEcoQoS(browserPid, false);

@@ -6,6 +6,7 @@
 #include <WebView2.h>
 #include <string>
 #include <vector>
+#include <unordered_set>
 #include <atomic>
 
 namespace UltraLight {
@@ -31,6 +32,9 @@ public:
     // Event handler for WebResourceRequested
     HRESULT HandleWebResourceRequested(ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args);
 
+    // Robust hostname extractor (handles user:pass@, IPv6 [...], and port stripping)
+    static std::wstring ExtractHost(const std::wstring& uri);
+
 private:
     NativeRequestFilter();
     ~NativeRequestFilter() = default;
@@ -38,14 +42,12 @@ private:
     NativeRequestFilter(const NativeRequestFilter&) = delete;
     NativeRequestFilter& operator=(const NativeRequestFilter&) = delete;
 
-    std::wstring ExtractHost(const std::wstring& uri);
-
     bool m_enabled = true;
     std::atomic<uint64_t> m_blockedCount{0};
     ICoreWebView2Environment* m_environment = nullptr;
     EventRegistrationToken m_resourceRequestedToken{};
 
-    std::vector<std::wstring> m_blockedDomains;
+    std::unordered_set<std::wstring> m_blockedDomainSet;
     std::vector<std::wstring> m_blockedKeywords;
 };
 

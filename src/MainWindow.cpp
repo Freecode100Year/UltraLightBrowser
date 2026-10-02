@@ -774,7 +774,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         });
 
         m_lastInteractionTick = GetTickCount64();
-        SetTimer(m_hWnd, IDT_INACTIVITY_CHECK, 15000, nullptr);
 
         m_webViewManager->Initialize(m_hWnd, [this]() {
             RECT client;
@@ -1018,10 +1017,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_TIMER: {
         if (wParam == IDT_INACTIVITY_CHECK) {
-            ULONGLONG now = GetTickCount64();
-            HWND hFore = GetForegroundWindow();
-            bool isUnfocused = (hFore != m_hWnd) || IsIconic(m_hWnd);
-            if (isUnfocused && (now - m_lastInteractionTick >= 300000)) {
+            KillTimer(m_hWnd, IDT_INACTIVITY_CHECK);
+            if (!m_isWindowActive || IsIconic(m_hWnd)) {
                 if (m_webViewManager && m_webViewManager->GetWebView()) {
                     bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
                     PowerManager::Instance().HandleInactivitySuspend(
@@ -1041,6 +1038,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
 
         if (m_isWindowActive) {
+            // Cancel background idle timer immediately on window focus
+            KillTimer(m_hWnd, IDT_INACTIVITY_CHECK);
             m_lastInteractionTick = GetTickCount64();
             if (m_webViewManager && m_webViewManager->GetWebView() &&
                 (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
@@ -1049,6 +1048,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     m_webViewManager->GetWebView()
                 );
             }
+        } else {
+            // Start a single 5-minute timer to suspend if user remains unfocused
+            SetTimer(m_hWnd, IDT_INACTIVITY_CHECK, 300000, nullptr);
         }
         break;
     }

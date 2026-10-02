@@ -24,20 +24,14 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
 
-    // Inject pure hardware GPU pipeline, aggressive discard, 120Hz VSync and low-latency network flags
+    // Inject pure hardware GPU pipeline, aggressive discard, and low-latency network flags
     std::wstring performanceArgs =
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
         L"--enable-features=NvidiaVsr,IntelVsr,Prerender2,DnsOverHttps,HighEfficiencyModeAvailable,PageDiscarding,Freezer,BatterySaverModeAvailable "
-        L"--fake-vsync-rate=120 "
-        L"--max-gum-fps=120 "
-        L"--disable-software-rasterizer "
-        L"--disable-gpu-watchdog "
         L"--enable-hardware-overlays=\"single-fullscreen,single-on-top,underlay\" "
         L"--enable-native-gpu-memory-buffers "
-        L"--enable-quic "
-        L"--enable-async-dns "
         L"--media-cache-size=134217728 "
         L"--disk-cache-size=209715200 "
         L"--disable-features=AudioServiceOutOfProcess,Translate,OptimizationHints,MediaRouter "
@@ -68,6 +62,15 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
 
                             // Aggressive memory compression: LOW target level forces V8 Major GC and trims image decode cache
                             ApplyMemoryUsageTargetLow();
+
+                            // Enable native strict tracking prevention (engine-level tracker blocking)
+                            wil::com_ptr<ICoreWebView2_13> webView13;
+                            if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView13))) && webView13) {
+                                wil::com_ptr<ICoreWebView2Profile> profile;
+                                if (SUCCEEDED(webView13->get_Profile(&profile)) && profile) {
+                                    profile->put_PreferredTrackingPreventionLevel(COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT);
+                                }
+                            }
 
                             // Use raw physical pixels for WebView2 bounds so it matches Win32 GetClientRect exactly
                             wil::com_ptr<ICoreWebView2Controller3> controller3;
@@ -448,54 +451,29 @@ void WebViewManager::SetZoomFactor(double factor) {
     }
 }
 
-namespace {
-
-void SpawnDeferredDirectoryPurge(const std::filesystem::path& dirPath) {
-    std::wstring pathStr = dirPath.wstring();
-    if (pathStr.empty()) return;
-
-    std::wstring cmd = L"cmd.exe /c timeout /t 1 /nobreak >nul & if exist \"" + pathStr + L"\" rmdir /s /q \"" + pathStr + L"\"";
-    
-    STARTUPINFOW si{ sizeof(STARTUPINFOW) };
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    PROCESS_INFORMATION pi{};
-
-    std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
-    cmdBuf.push_back(L'\0');
-
-    if (CreateProcessW(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-    }
-}
-
-} // namespace
-
 void WebViewManager::PurgeAllCacheAndTempFiles() {
     std::filesystem::path userDataDir = Config::Instance().GetUserDataDirectory();
     std::error_code ec;
 
     if (std::filesystem::exists(userDataDir, ec)) {
-        for (int retry = 0; retry < 3; ++retry) {
+        for (int retry = 0; retry < 5; ++retry) {
             std::filesystem::remove_all(userDataDir, ec);
             if (!std::filesystem::exists(userDataDir, ec)) {
                 break;
             }
-            Sleep(40);
-        }
-
-        if (std::filesystem::exists(userDataDir, ec)) {
-            SpawnDeferredDirectoryPurge(userDataDir);
+            Sleep(50);
         }
     }
 
     std::filesystem::path appDataDir = Config::Instance().GetAppDataPath();
     std::filesystem::path ebWebViewDir = appDataDir / "EBWebView";
     if (std::filesystem::exists(ebWebViewDir, ec)) {
-        std::filesystem::remove_all(ebWebViewDir, ec);
-        if (std::filesystem::exists(ebWebViewDir, ec)) {
-            SpawnDeferredDirectoryPurge(ebWebViewDir);
+        for (int retry = 0; retry < 5; ++retry) {
+            std::filesystem::remove_all(ebWebViewDir, ec);
+            if (!std::filesystem::exists(ebWebViewDir, ec)) {
+                break;
+            }
+            Sleep(50);
         }
     }
 }

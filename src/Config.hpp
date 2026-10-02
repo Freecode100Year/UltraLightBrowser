@@ -14,7 +14,7 @@ struct AppSettings {
     bool enableAdBlock = true;
     bool ecoMode = false;
     bool enablePublicDns = false;
-    std::string selectedDnsProvider = "alidns";
+    std::string selectedDnsProvider = "quad9";
     std::string customDnsTemplate = "";
 };
 

@@ -25,7 +25,7 @@ public:
     const DnsProvider* GetProvider(const std::string& id) const;
     const DnsProvider* GetActiveProvider() const;
 
-    // Apply DNS settings to both UserData/Default/Preferences JSON and HKCU Registry Policies
+    // Apply DNS settings to local UserData/Default/Preferences JSON (isolated, no registry tampering)
     bool ApplySettings();
 
     // Show native Win32 interactive dialog for Public DNS configuration
