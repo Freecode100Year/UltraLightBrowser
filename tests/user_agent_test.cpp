@@ -10,5 +10,11 @@ int main() {
  assert(UltraLight::BuildUserAgent(original,"invalid")==original);
  assert(UltraLight::BuildUserAgent(L"broken","macos-edge").empty());
  assert(UltraLight::BuildUserAgent(L"Mozilla/5.0 (Windows NT 10.0","macos-edge").empty());
+ assert(UltraLight::UserAgentToken(original,L"Edg")=="130.0.2849.68");
+ assert(UltraLight::UserAgentToken(original,L"Chrome")=="130.0.0.0");
+ assert(UltraLight::UserAgentToken(original,L"Firefox").empty());
+ // Reference values observed from Chromium 153: HeadlessChrome, Not_A Brand;v=8, Chromium.
+ const auto g=UltraLight::GreasedBrandList(153,"HeadlessChrome","153","153");
+ assert(g[0].first=="HeadlessChrome" && g[1].first=="Not_A Brand" && g[1].second=="8" && g[2].first=="Chromium");
  std::cout << "User agent profile tests passed\n";
 }

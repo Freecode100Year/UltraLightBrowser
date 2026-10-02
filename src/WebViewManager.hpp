@@ -85,6 +85,14 @@ public:
 
 private:
     HRESULT TryInitEnvironment(int attempt);
+    // macOS Edge identity (UA, Client Hints, navigator.platform, GPU strings, workers)
+    void CaptureUaMetadata(std::function<void(const std::string&)> done);
+    void EnableMacSpoof(const std::string& capturedJson);
+    void DisableMacSpoof();
+    void FinishProbe(const std::string& result);
+    void OnTargetAttached(const std::wstring& paramsJson);
+    void CallCdp(const wchar_t* method, const std::string& params, const wchar_t* sessionId = nullptr);
+    static void CALLBACK ProbeTimeoutProc(HWND, UINT, UINT_PTR, DWORD);
     static void SanitizeLocalState(const std::filesystem::path& userDataDir);
     void RegisterEventHandlers();
 
@@ -98,6 +106,15 @@ private:
     bool m_audioReloadPending = false;
     std::wstring m_audioScriptId;
     std::wstring m_defaultUserAgent;
+    bool m_macSpoofActive = false;
+    bool m_spoofStarting = false;
+    std::wstring m_pendingNavigation;
+    std::string m_macOverrideParams;
+    std::wstring m_stealthScriptId;
+    bool m_targetEventsHooked = false;
+    wil::com_ptr<ICoreWebView2Controller> m_probeController;
+    std::function<void(const std::string&)> m_probeDone;
+    UINT_PTR m_probeTimer = 0;
     bool m_isPlayingAudio = false;
     EventRegistrationToken m_audioPlayingToken{};
 

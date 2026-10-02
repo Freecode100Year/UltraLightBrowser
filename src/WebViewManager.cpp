@@ -2,6 +2,7 @@
 #include "MainWindow.hpp"
 #include "Config.hpp"
 #include "UserAgent.hpp"
+#include "MacStealth.hpp"
 #include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <mmdeviceapi.h>
 
@@ -510,14 +512,13 @@ void WebViewManager::NotifyParentWindowPositionChanged() {
 
 HRESULT WebViewManager::ApplyUserAgentProfile(const std::string& profile, bool reloadPage) {
     if (!m_webView) return E_PENDING;
-    wil::com_ptr<ICoreWebView2Settings> settings;
-    HRESULT hr = m_webView->get_Settings(&settings);
-    if (FAILED(hr)) return hr;
-    wil::com_ptr<ICoreWebView2Settings2> settings2;
-    hr = settings->QueryInterface(IID_PPV_ARGS(&settings2));
-    if (FAILED(hr)) return hr;
-    const bool firstCapture = m_defaultUserAgent.empty();
-    if (firstCapture) {
+    if (m_defaultUserAgent.empty()) {
+        wil::com_ptr<ICoreWebView2Settings> settings;
+        HRESULT hr = m_webView->get_Settings(&settings);
+        if (FAILED(hr)) return hr;
+        wil::com_ptr<ICoreWebView2Settings2> settings2;
+        hr = settings->QueryInterface(IID_PPV_ARGS(&settings2));
+        if (FAILED(hr)) return hr;
         LPWSTR original = nullptr;
         hr = settings2->get_UserAgent(&original);
         if (SUCCEEDED(hr) && original) m_defaultUserAgent = original;
@@ -525,14 +526,248 @@ HRESULT WebViewManager::ApplyUserAgentProfile(const std::string& profile, bool r
         if (FAILED(hr)) return hr;
         if (m_defaultUserAgent.empty()) return E_FAIL;
     }
-    // Leave untouched default startup metadata and Client Hints intact.
-    if (firstCapture && profile != "macos-edge") return S_OK;
-    const auto ua = BuildUserAgent(m_defaultUserAgent, profile);
-    if (ua.empty()) return E_INVALIDARG;
-    hr = settings2->put_UserAgent(ua.c_str());
-    if (SUCCEEDED(hr) && reloadPage) Reload();
-    return hr;
+#if __has_include(<nlohmann/json.hpp>)
+    if (profile == "macos-edge") {
+        if (m_macSpoofActive || m_spoofStarting) {
+            if (reloadPage && m_macSpoofActive) Reload();
+            return S_OK;
+        }
+        if (BuildUserAgent(m_defaultUserAgent, profile).empty()) return E_INVALIDARG;
+        // Hold the first navigation until the override is in place so no
+        // request ever leaves with the Windows identity.
+        m_spoofStarting = true;
+        CaptureUaMetadata([this, reloadPage](const std::string& captured) {
+            EnableMacSpoof(captured);
+            m_spoofStarting = false;
+            if (!m_pendingNavigation.empty()) {
+                const std::wstring url = std::move(m_pendingNavigation);
+                m_pendingNavigation.clear();
+                if (m_webView) m_webView->Navigate(url.c_str());
+            } else if (reloadPage) {
+                Reload();
+            }
+        });
+        return S_OK;
+    }
+    if (m_macSpoofActive) {
+        DisableMacSpoof();
+        if (reloadPage) Reload();
+    }
+    return S_OK;
+#else
+    return profile == "macos-edge" ? E_NOTIMPL : S_OK;
+#endif
 }
+
+#if __has_include(<nlohmann/json.hpp>)
+void WebViewManager::CallCdp(const wchar_t* method, const std::string& params, const wchar_t* sessionId) {
+    if (!m_webView) return;
+    const std::wstring wparams = StringUtils::Utf8ToWide(params);
+    auto ignore = Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
+        [](HRESULT, LPCWSTR) -> HRESULT { return S_OK; });
+    if (sessionId) {
+        wil::com_ptr<ICoreWebView2_11> webView11;
+        if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView11))) && webView11) {
+            webView11->CallDevToolsProtocolMethodForSession(sessionId, method, wparams.c_str(), ignore.Get());
+        }
+        return;
+    }
+    m_webView->CallDevToolsProtocolMethod(method, wparams.c_str(), ignore.Get());
+}
+
+void CALLBACK WebViewManager::ProbeTimeoutProc(HWND hWnd, UINT, UINT_PTR id, DWORD) {
+    KillTimer(hWnd, id);
+    if (auto* self = reinterpret_cast<WebViewManager*>(id)) {
+        self->m_probeTimer = 0;
+        self->FinishProbe({});
+    }
+}
+
+void WebViewManager::FinishProbe(const std::string& result) {
+    if (!m_probeDone) return;
+    auto done = std::move(m_probeDone);
+    m_probeDone = nullptr;
+    if (m_probeTimer) { KillTimer(m_hWndParent, m_probeTimer); m_probeTimer = 0; }
+    if (m_probeController) { m_probeController->Close(); m_probeController = nullptr; }
+    done(result);
+}
+
+// Reads the runtime's real brand list / full versions from a hidden WebView on a
+// local secure origin, so the macOS metadata matches this exact Edge build.
+void WebViewManager::CaptureUaMetadata(std::function<void(const std::string&)> done) {
+    m_probeDone = std::move(done);
+    m_probeTimer = SetTimer(m_hWndParent, reinterpret_cast<UINT_PTR>(this), 4000, &WebViewManager::ProbeTimeoutProc);
+
+    std::error_code ec;
+    const auto folder = Config::Instance().GetAppDataPath() / "probe";
+    std::filesystem::create_directories(folder, ec);
+    { std::ofstream(folder / "index.html") << "<!doctype html><title>probe</title>"; }
+
+    const HRESULT hr = m_environment->CreateCoreWebView2Controller(m_hWndParent,
+        Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+            [this, folder](HRESULT res, ICoreWebView2Controller* controller) -> HRESULT {
+                if (!m_probeDone) { if (controller) controller->Close(); return S_OK; }
+                if (FAILED(res) || !controller) { FinishProbe({}); return S_OK; }
+                m_probeController = controller;
+                controller->put_IsVisible(FALSE);
+                wil::com_ptr<ICoreWebView2> probe;
+                wil::com_ptr<ICoreWebView2_3> probe3;
+                if (FAILED(controller->get_CoreWebView2(&probe)) || !probe ||
+                    FAILED(probe->QueryInterface(IID_PPV_ARGS(&probe3))) || !probe3) {
+                    FinishProbe({});
+                    return S_OK;
+                }
+                probe3->SetVirtualHostNameToFolderMapping(L"ulb-probe.example", folder.wstring().c_str(),
+                    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY);
+                probe->add_NavigationCompleted(
+                    Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                        [this](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
+                            const json params = {
+                                {"expression", "(async()=>{const d=navigator.userAgentData;const h=await d.getHighEntropyValues("
+                                               "['fullVersionList','uaFullVersion','formFactors']);return JSON.stringify("
+                                               "{brands:d.brands,fullVersionList:h.fullVersionList,uaFullVersion:h.uaFullVersion,"
+                                               "formFactors:h.formFactors||null});})()"},
+                                {"awaitPromise", true}, {"returnByValue", true}};
+                            sender->CallDevToolsProtocolMethod(L"Runtime.evaluate",
+                                StringUtils::Utf8ToWide(params.dump()).c_str(),
+                                Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
+                                    [this](HRESULT hr, LPCWSTR resultJson) -> HRESULT {
+                                        std::string value;
+                                        if (SUCCEEDED(hr) && resultJson) {
+                                            try {
+                                                const auto r = json::parse(StringUtils::WideToUtf8(resultJson));
+                                                if (r["result"]["value"].is_string()) value = r["result"]["value"].get<std::string>();
+                                            } catch (...) {}
+                                        }
+                                        FinishProbe(value);
+                                        return S_OK;
+                                    }).Get());
+                            return S_OK;
+                        }).Get(), nullptr);
+                probe->Navigate(L"https://ulb-probe.example/index.html");
+                return S_OK;
+            }).Get());
+    if (FAILED(hr)) FinishProbe({});
+}
+
+void WebViewManager::EnableMacSpoof(const std::string& capturedJson) {
+    if (!m_webView) return;
+    json meta = {
+        {"platform", "macOS"}, {"platformVersion", "15.7.1"}, {"architecture", "arm"},
+        {"model", ""}, {"mobile", false}, {"bitness", "64"}, {"wow64", false},
+        {"formFactors", json::array({"Desktop"})}};
+    bool captured = false;
+    try {
+        const auto c = json::parse(capturedJson);
+        if (c["brands"].is_array() && !c["brands"].empty() && c["fullVersionList"].is_array()) {
+            meta["brands"] = c["brands"];
+            meta["fullVersionList"] = c["fullVersionList"];
+            meta["fullVersion"] = c.value("uaFullVersion", std::string());
+            if (c["formFactors"].is_array()) meta["formFactors"] = c["formFactors"];
+            captured = true;
+        }
+    } catch (...) {}
+    if (!captured) {
+        // Fallback: rebuild Chromium's GREASE list from the UA string.
+        const std::string chrome = UserAgentToken(m_defaultUserAgent, L"Chrome");
+        std::string edge = UserAgentToken(m_defaultUserAgent, L"Edg");
+        if (edge.empty()) edge = chrome;
+        const int major = std::atoi(chrome.c_str());
+        const std::string majorStr = std::to_string(major);
+        json brands = json::array(), full = json::array();
+        for (const auto& [b, v] : GreasedBrandList(major, "Microsoft Edge", majorStr, majorStr)) {
+            brands.push_back({{"brand", b}, {"version", v}});
+            const bool grease = b != "Microsoft Edge" && b != "Chromium";
+            full.push_back({{"brand", b}, {"version", grease ? v + ".0.0.0" : edge}});
+        }
+        meta["brands"] = brands;
+        meta["fullVersionList"] = full;
+        meta["fullVersion"] = edge;
+    }
+    const json ov = {
+        {"userAgent", StringUtils::WideToUtf8(BuildUserAgent(m_defaultUserAgent, "macos-edge"))},
+        {"platform", "MacIntel"},
+        {"userAgentMetadata", meta}};
+    m_macOverrideParams = ov.dump();
+
+    CallCdp(L"Emulation.setUserAgentOverride", m_macOverrideParams);
+    // macOS uses overlay scrollbars: no layout width, unlike Windows' ~17px.
+    CallCdp(L"Emulation.setScrollbarsHidden", R"({"hidden":true})");
+
+    m_webView->AddScriptToExecuteOnDocumentCreated(kMacStealthScript,
+        Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+            [this](HRESULT hr, LPCWSTR id) -> HRESULT {
+                if (SUCCEEDED(hr) && id) {
+                    if (m_macSpoofActive) m_stealthScriptId = id;
+                    else if (m_webView) m_webView->RemoveScriptToExecuteOnDocumentCreated(id);
+                }
+                return S_OK;
+            }).Get());
+
+    // Out-of-process iframes and workers get their own DevTools targets; pause
+    // each at start, apply the same identity, then let it run.
+    wil::com_ptr<ICoreWebView2_11> webView11;
+    const bool canUseSessions = SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView11))) && webView11;
+    if (canUseSessions && !m_targetEventsHooked) {
+        wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver> receiver;
+        if (SUCCEEDED(m_webView->GetDevToolsProtocolEventReceiver(L"Target.attachedToTarget", &receiver)) && receiver) {
+            receiver->add_DevToolsProtocolEventReceived(
+                Callback<ICoreWebView2DevToolsProtocolEventReceivedEventHandler>(
+                    [this](ICoreWebView2*, ICoreWebView2DevToolsProtocolEventReceivedEventArgs* args) -> HRESULT {
+                        wil::unique_cotaskmem_string params;
+                        if (SUCCEEDED(args->get_ParameterObjectAsJson(&params)) && params.get()) {
+                            OnTargetAttached(params.get());
+                        }
+                        return S_OK;
+                    }).Get(), nullptr);
+            m_targetEventsHooked = true;
+        }
+    }
+    if (m_targetEventsHooked) {
+        CallCdp(L"Target.setAutoAttach", R"({"autoAttach":true,"waitForDebuggerOnStart":true,"flatten":true})");
+    }
+    m_macSpoofActive = true;
+}
+
+void WebViewManager::OnTargetAttached(const std::wstring& paramsJson) {
+    std::wstring sessionId;
+    std::string type;
+    try {
+        const auto p = json::parse(StringUtils::WideToUtf8(paramsJson));
+        sessionId = StringUtils::Utf8ToWide(p.value("sessionId", std::string()));
+        type = p["targetInfo"].value("type", std::string());
+    } catch (...) {}
+    if (sessionId.empty()) return;
+    const wchar_t* sid = sessionId.c_str();
+    if (m_macSpoofActive) {
+        if (type == "iframe") {
+            CallCdp(L"Emulation.setUserAgentOverride", m_macOverrideParams, sid);
+            CallCdp(L"Emulation.setScrollbarsHidden", R"({"hidden":true})", sid);
+            CallCdp(L"Target.setAutoAttach", R"({"autoAttach":true,"waitForDebuggerOnStart":true,"flatten":true})", sid);
+        } else if (type == "worker") {
+            CallCdp(L"Network.setUserAgentOverride", m_macOverrideParams, sid);
+            const json eval = {{"expression", StringUtils::WideToUtf8(kMacStealthScript)}};
+            CallCdp(L"Runtime.evaluate", eval.dump(), sid);
+        }
+    }
+    // Commands on a session run in order; always resume so nothing stays paused.
+    CallCdp(L"Runtime.runIfWaitingForDebugger", "{}", sid);
+}
+
+void WebViewManager::DisableMacSpoof() {
+    m_macSpoofActive = false;
+    if (!m_webView) return;
+    if (m_targetEventsHooked) {
+        CallCdp(L"Target.setAutoAttach", R"({"autoAttach":false,"waitForDebuggerOnStart":false,"flatten":true})");
+    }
+    CallCdp(L"Emulation.setUserAgentOverride", R"({"userAgent":""})");
+    CallCdp(L"Emulation.setScrollbarsHidden", R"({"hidden":false})");
+    if (!m_stealthScriptId.empty()) {
+        m_webView->RemoveScriptToExecuteOnDocumentCreated(m_stealthScriptId.c_str());
+        m_stealthScriptId.clear();
+    }
+}
+#endif
 
 void WebViewManager::Navigate(const std::wstring& url) {
     if (!m_webView) return;
@@ -553,6 +788,10 @@ void WebViewManager::Navigate(const std::wstring& url) {
         target = L"https://" + target;
     } else {
         target = L"https://www.google.com/search?q=" + StringUtils::UrlEncode(target);
+    }
+    if (m_spoofStarting) {
+        m_pendingNavigation = target;
+        return;
     }
     m_webView->Navigate(target.c_str());
 }
