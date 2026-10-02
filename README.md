@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.1/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.5.1%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.2/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.5.2%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -23,12 +23,12 @@
 
 ---
 
-## 📥 最新版便携下载 / Direct Download (v1.5.1 环绕声防静音 & DNS 智能回退版)
+## 📥 最新版便携下载 / Direct Download (v1.5.2 启动诊断与进程冲突排查强化版)
 
 可在 GitHub Releases 页面直接下载最新构建的预编译二进制文件：
 
-* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.5.1)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.1/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
-* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.5.1-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.1/UltraLightBrowser-v1.5.1-windows-x64.zip)**
+* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.5.2)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.2/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
+* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.5.2-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.2/UltraLightBrowser-v1.5.2-windows-x64.zip)**
 * 🌟 **[访问 GitHub Latest Release 最新发布页](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**
 * 🔗 **[查看所有历史版本与构建产物](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
@@ -202,6 +202,20 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
   * 支持一键拷贝当前网页 URL 到系统剪贴板。
   * 支持将当前网页一键移交（Handoff）到系统默认浏览器打开。
   * 整合一键全屏视图（F11）。
+
+---
+
+## 🚨 v1.5.2 启动诊断与进程冲突智能提示 (Startup Diagnostics & Conflict Alerts)
+
+在 **v1.5.2** 版本中，进一步增强了 WebView2 内核生命周期的容错与故障排查能力：
+
+### 1. 🔍 全生命周期 HRESULT 错误捕获与弹窗排查指引
+* **环境与控制器创建校验**：不再静默吞掉 `CreateCoreWebView2EnvironmentWithOptions` 与 `CreateCoreWebView2Controller` 的错误返回码。若初始化失败，立即弹出包含十六进制错误码（如 `0x8007139F`）的排查指引对话框。
+* **版本升级参数冲突智能识别 (`0x8007139F / ERROR_INVALID_STATE`)**：当后台存在旧版本残留的 `msedgewebview2.exe` 进程导致内核拒绝接入时，精准给出结束后台残留进程的排查指引，杜绝白屏/黑屏无响应的茫然状态。
+
+### 2. ⚡ 核心进程异常感知与崩溃自愈 (`add_ProcessFailed`)
+* **浏览器主进程退出监听**：深度接入 `ICoreWebView2_2::add_ProcessFailed`，监听 `COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED` 并第一时间弹窗告警。
+* **渲染进程卡死崩溃自愈**：检测到渲染子进程卡死（Unresponsive）或异常退出时，自动执行无感重新加载（`Reload`），恢复正常交互。
 
 ---
 

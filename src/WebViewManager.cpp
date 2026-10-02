@@ -14,6 +14,42 @@ using namespace Microsoft::WRL;
 
 namespace UltraLight {
 
+namespace {
+
+void ShowWebView2InitError(HWND hWnd, const wchar_t* stage, HRESULT hr) {
+    wchar_t hexCode[32]{};
+    swprintf_s(hexCode, L"0x%08X", static_cast<unsigned int>(hr));
+
+    std::wstring msg = L"【UltraLightBrowser】WebView2 ";
+    msg += stage;
+    msg += L"失败！\n\n错误代码: ";
+    msg += hexCode;
+    msg += L"\n\n【常见原因与解决方案】\n";
+
+    if (hr == HRESULT_FROM_WIN32(ERROR_INVALID_STATE) || hr == static_cast<HRESULT>(0x8007139F)) {
+        msg += L"⚠️ 检测到状态冲突 (0x8007139F)：\n"
+               L"后台存在旧版本残留的 msedgewebview2.exe 进程！\n"
+               L"因为版本升级后前后启动参数或用户数据目录状态不一致，WebView2 内核拒绝接入。\n\n"
+               L"👉 解决方案：\n"
+               L"1. 请按 Ctrl + Shift + Esc 打开任务管理器；\n"
+               L"2. 在“详细信息”或“进程”列表中，结束所有 UltraLightBrowser.exe 和 msedgewebview2.exe 进程；\n"
+               L"3. 或直接重启电脑后重新打开浏览器；\n"
+               L"4. 亦可将 UserData 目录下的 EBWebView\\Local State 改名或删除后重试。";
+    } else if (hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) || hr == static_cast<HRESULT>(0x80070002)) {
+        msg += L"⚠️ 找不到 WebView2 运行时：\n"
+               L"系统中未检测到 Microsoft Edge WebView2 Evergreen 运行时。\n"
+               L"请前往微软官网下载并安装 WebView2 Runtime 后重试。";
+    } else {
+        msg += L"1. 后台可能残留旧版的 msedgewebview2.exe 进程，请在任务管理器中结束所有残留进程后重试；\n"
+               L"2. 请确认系统中已安装 Microsoft Edge WebView2 Evergreen 运行时；\n"
+               L"3. 检查 UserData 目录的读写权限，或删除 UserData 缓存后重新启动。";
+    }
+
+    MessageBoxW(hWnd, msg.c_str(), L"WebView2 内核启动失败", MB_OK | MB_ICONERROR);
+}
+
+} // namespace
+
 WebViewManager::WebViewManager() {}
 
 HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
@@ -54,14 +90,20 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         options.Get(),
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                if (FAILED(result) || !env) return result;
+                if (FAILED(result) || !env) {
+                    ShowWebView2InitError(m_hWndParent, L"环境初始化", FAILED(result) ? result : E_FAIL);
+                    return result;
+                }
                 m_environment = env;
 
                 return m_environment->CreateCoreWebView2Controller(
                     m_hWndParent,
                     Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                         [this](HRESULT res, ICoreWebView2Controller* controller) -> HRESULT {
-                            if (FAILED(res) || !controller) return res;
+                            if (FAILED(res) || !controller) {
+                                ShowWebView2InitError(m_hWndParent, L"控制器创建", FAILED(res) ? res : E_FAIL);
+                                return res;
+                            }
                             m_controller = controller;
                             m_controller->get_CoreWebView2(&m_webView);
 
@@ -183,11 +225,39 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         ).Get()
     );
 
+    if (FAILED(hr)) {
+        ShowWebView2InitError(m_hWndParent, L"环境创建调用", hr);
+    }
+
     return hr;
 }
 
 void WebViewManager::RegisterEventHandlers() {
     if (!m_webView) return;
+
+    // Process Failed (browser process crash or exit)
+    wil::com_ptr<ICoreWebView2_2> webView2_2;
+    if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView2_2))) && webView2_2) {
+        webView2_2->add_ProcessFailed(
+            Callback<ICoreWebView2ProcessFailedEventHandler>(
+                [this](ICoreWebView2* sender, ICoreWebView2ProcessFailedEventArgs* args) -> HRESULT {
+                    COREWEBVIEW2_PROCESS_FAILED_KIND kind;
+                    if (SUCCEEDED(args->get_ProcessFailedKind(&kind))) {
+                        if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED) {
+                            MessageBoxW(m_hWndParent,
+                                L"WebView2 核心主进程异常退出！\n可能由于后台进程冲突或显卡驱动崩溃引起。\n请在任务管理器中结束所有残留的 msedgewebview2.exe 进程后重新打开。",
+                                L"核心进程异常退出", MB_OK | MB_ICONERROR);
+                        } else if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED ||
+                                   kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE) {
+                            sender->Reload();
+                        }
+                    }
+                    return S_OK;
+                }
+            ).Get(),
+            nullptr
+        );
+    }
 
     // Document Title Changed
     m_webView->add_DocumentTitleChanged(

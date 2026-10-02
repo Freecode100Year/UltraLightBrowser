@@ -750,13 +750,16 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
         m_lastInteractionTick = GetTickCount64();
 
-        m_webViewManager->Initialize(m_hWnd, [this]() {
+        HRESULT hrInit = m_webViewManager->Initialize(m_hWnd, [this]() {
             RECT client;
             GetClientRect(m_hWnd, &client);
             UpdateLayout(client.right, client.bottom);
             UpdateZoomDisplay(m_webViewManager->GetZoomFactor());
             m_webViewManager->Navigate(Config::Instance().GetSettings().startUrl);
         });
+        if (FAILED(hrInit)) {
+            // Error alert already displayed with troubleshooting instructions
+        }
 
         return 0;
     }
