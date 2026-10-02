@@ -129,19 +129,6 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                                                             args->put_Handled(TRUE);
                                                             return S_OK;
                                                         }
-                                                        // Immersive Mode: Ctrl + Shift + U
-                                                        if (isShift && (key == 'U' || key == 'u')) {
-                                                            PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_TOGGLE_IMMERSIVE, 0), 0);
-                                                            args->put_Handled(TRUE);
-                                                            return S_OK;
-                                                        }
-                                                    }
-
-                                                    // Immersive Mode: F9
-                                                    if (key == VK_F9) {
-                                                        PostMessageW(m_hWndParent, WM_COMMAND, MAKEWPARAM(IDM_TOGGLE_IMMERSIVE, 0), 0);
-                                                        args->put_Handled(TRUE);
-                                                        return S_OK;
                                                     }
 
                                                     if (key == VK_F11) {

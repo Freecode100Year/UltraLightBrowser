@@ -169,7 +169,6 @@ void MainWindow::UpdateDpiScaling(UINT dpi) {
     );
 
     // Apply fonts to child controls
-    if (m_hBtnSidebar) SendMessageW(m_hBtnSidebar, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnBack) SendMessageW(m_hBtnBack, WM_SETFONT, reinterpret_cast<WPARAM>(m_hNavFont), TRUE);
     if (m_hBtnForward) SendMessageW(m_hBtnForward, WM_SETFONT, reinterpret_cast<WPARAM>(m_hNavFont), TRUE);
     if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hAddressFont), TRUE);
@@ -296,15 +295,7 @@ LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPAR
 }
 
 void MainWindow::CreateToolbarControls() {
-    // 1. Sidebar Toggle Button
-    m_hBtnSidebar = CreateWindowExW(
-        0, L"BUTTON", L"▥",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_SIDEBAR), m_hInstance, nullptr
-    );
-    SetWindowSubclass(m_hBtnSidebar, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    // 2. Navigation Chevrons
+    // 1. Navigation Chevrons
     m_hBtnBack = CreateWindowExW(
         0, L"BUTTON", L"‹",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -379,7 +370,7 @@ void MainWindow::CreateToolbarControls() {
 void MainWindow::UpdateLayout(int width, int height) {
     if (width <= 0 || height <= 0) return;
 
-    if (m_isFullScreen || m_isImmersiveMode) {
+    if (m_isFullScreen) {
         RECT fsRect{ 0, 0, width, height };
         if (m_webViewManager) {
             m_webViewManager->Resize(fsRect);
@@ -406,15 +397,11 @@ void MainWindow::UpdateLayout(int width, int height) {
     m_rcTrafficMax   = { maxX - trafficR, trafficCenterY - trafficR, maxX + trafficR, trafficCenterY + trafficR };
     m_rcTrafficGroup = { m_rcTrafficClose.left - 4, m_rcTrafficClose.top - 4, m_rcTrafficMax.right + 4, m_rcTrafficMax.bottom + 4 };
 
-    // 2. Left Action Group (Sidebar, Back, Forward)
+    // 2. Left Action Group (Back, Forward)
     int navBtnW = MulDiv(28, m_dpi, 96);
-    int sidebarBtnW = MulDiv(30, m_dpi, 96);
     int pad = MulDiv(6, m_dpi, 96);
 
     int leftX = m_rcTrafficMax.right + MulDiv(18, m_dpi, 96);
-
-    SetWindowPos(m_hBtnSidebar, nullptr, leftX, btnY, sidebarBtnW, ctrlH, SWP_NOZORDER);
-    leftX += sidebarBtnW + pad;
 
     SetWindowPos(m_hBtnBack, nullptr, leftX, btnY, navBtnW, ctrlH, SWP_NOZORDER);
     leftX += navBtnW + MulDiv(2, m_dpi, 96);
@@ -509,7 +496,6 @@ void MainWindow::SetFullScreen(bool enable) {
         m_dwStylePrev = static_cast<DWORD>(GetWindowLongW(m_hWnd, GWL_STYLE));
 
         // Hide toolbar controls
-        if (m_hBtnSidebar) ShowWindow(m_hBtnSidebar, SW_HIDE);
         if (m_hBtnBack) ShowWindow(m_hBtnBack, SW_HIDE);
         if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_HIDE);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
@@ -546,8 +532,7 @@ void MainWindow::SetFullScreen(bool enable) {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED
         );
 
-        int showCmd = m_isImmersiveMode ? SW_HIDE : SW_SHOW;
-        if (m_hBtnSidebar) ShowWindow(m_hBtnSidebar, showCmd);
+        int showCmd = SW_SHOW;
         if (m_hBtnBack) ShowWindow(m_hBtnBack, showCmd);
         if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
@@ -566,31 +551,6 @@ void MainWindow::SetFullScreen(bool enable) {
 
 void MainWindow::ToggleFullScreen() {
     SetFullScreen(!m_isFullScreen);
-}
-
-void MainWindow::SetImmersiveMode(bool enable) {
-    if (m_isImmersiveMode == enable) return;
-    m_isImmersiveMode = enable;
-
-    int showCmd = (enable || m_isFullScreen) ? SW_HIDE : SW_SHOW;
-    if (m_hBtnSidebar) ShowWindow(m_hBtnSidebar, showCmd);
-    if (m_hBtnBack) ShowWindow(m_hBtnBack, showCmd);
-    if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
-    if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
-    if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
-    if (m_hBtnShare) ShowWindow(m_hBtnShare, showCmd);
-    if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
-    if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
-    if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
-    if (m_hBtnNewTab) ShowWindow(m_hBtnNewTab, showCmd);
-
-    RECT client;
-    GetClientRect(m_hWnd, &client);
-    UpdateLayout(client.right, client.bottom);
-}
-
-void MainWindow::ToggleImmersiveMode() {
-    SetImmersiveMode(!m_isImmersiveMode);
 }
 
 LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
@@ -713,7 +673,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         POINT clientPt = pt;
         ScreenToClient(m_hWnd, &clientPt);
 
-        if (clientPt.y >= 0 && clientPt.y < m_topbarHeight && !m_isFullScreen && !m_isImmersiveMode) {
+        if (clientPt.y >= 0 && clientPt.y < m_topbarHeight && !m_isFullScreen) {
             // Check macOS Traffic Lights
             if (PtInRect(&m_rcTrafficGroup, clientPt)) {
                 return HTCLIENT;
@@ -795,7 +755,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         int w = client.right;
         int topH = m_topbarHeight;
 
-        if (!m_isFullScreen && !m_isImmersiveMode && w > 0 && topH > 0) {
+        if (!m_isFullScreen && w > 0 && topH > 0) {
             HDC memDC = CreateCompatibleDC(hdc);
             HBITMAP memBmp = CreateCompatibleBitmap(hdc, w, topH);
             HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
@@ -1102,10 +1062,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_KEYDOWN: {
         m_lastInteractionTick = GetTickCount64();
-        if (wParam == VK_F9) {
-            ToggleImmersiveMode();
-            return 0;
-        }
         if (wParam == VK_F11) {
             ToggleFullScreen();
             return 0;
@@ -1113,10 +1069,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         if (wParam == VK_ESCAPE) {
             if (m_isFullScreen) {
                 SetFullScreen(false);
-                return 0;
-            }
-            if (m_isImmersiveMode) {
-                SetImmersiveMode(false);
                 return 0;
             }
         }
@@ -1141,9 +1093,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_COMMAND: {
         WORD id = LOWORD(wParam);
         switch (id) {
-        case IDC_BTN_SIDEBAR:
-            ToggleImmersiveMode();
-            break;
         case IDC_BTN_BACK:
             m_webViewManager->GoBack();
             break;
@@ -1171,10 +1120,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         case IDM_EXIT_FULLSCREEN:
             if (m_isFullScreen) SetFullScreen(false);
-            if (m_isImmersiveMode) SetImmersiveMode(false);
-            break;
-        case IDM_TOGGLE_IMMERSIVE:
-            ToggleImmersiveMode();
             break;
         case IDM_ZOOM_IN:
             if (m_webViewManager) m_webViewManager->ZoomIn();
@@ -1506,7 +1451,6 @@ void MainWindow::ShowBlockerMenu() {
     AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, countStr.c_str());
 
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_IMMERSIVE, m_isImmersiveMode ? L"🌌 退出无 UI 沉浸模式 (F9)" : L"🌌 切换无 UI 沉浸模式 (F9)");
 
     std::wstring currentHost = ElementBlocker::Instance().GetCurrentHost();
     std::wstring clearStr = currentHost.empty()
@@ -1535,7 +1479,6 @@ void MainWindow::ShowShareMenu() {
     AppendMenuW(hMenu, MF_STRING, IDM_SHARE_OPEN_DEFAULT, L"🌐  在系统默认浏览器中打开");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_FULLSCREEN, m_isFullScreen ? L"🖥️  退出全屏视图 (F11)" : L"🖥️  全屏视图 (F11)");
-    AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_IMMERSIVE, m_isImmersiveMode ? L"🌌  退出沉浸全景视图 (F9)" : L"🌌  沉浸全景视图 (F9)");
 
     RECT btnRect{};
     GetWindowRect(m_hBtnShare, &btnRect);

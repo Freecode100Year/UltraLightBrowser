@@ -17,7 +17,6 @@ enum ControlID : WORD {
     IDC_BTN_ZOOM        = 1006,
     IDC_BTN_BLOCKER     = 1007,
     IDC_BTN_SHARE       = 1008,
-    IDC_BTN_SIDEBAR     = 1009,
     IDC_BTN_NEWTAB      = 1010
 };
 
@@ -28,7 +27,6 @@ enum AppCommandID : WORD {
     IDM_ZOOM_IN             = 2004,
     IDM_ZOOM_OUT            = 2005,
     IDM_ZOOM_RESET          = 2006,
-    IDM_TOGGLE_IMMERSIVE    = 2007,
     IDM_DNS_TOGGLE_ENABLE   = 2010,
     IDM_DNS_OPEN_SETTINGS   = 2011,
     IDM_BLOCKER_PICKER      = 2012,
@@ -50,9 +48,6 @@ public:
     void SetFullScreen(bool enable);
     void ToggleFullScreen();
     bool IsFullScreen() const { return m_isFullScreen; }
-    void SetImmersiveMode(bool enable);
-    void ToggleImmersiveMode();
-    bool IsImmersiveMode() const { return m_isImmersiveMode; }
 
 private:
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -77,7 +72,6 @@ private:
     UINT m_dpi = 96;
 
     // Controls
-    HWND m_hBtnSidebar = nullptr;
     HWND m_hBtnBack = nullptr;
     HWND m_hBtnForward = nullptr;
     HWND m_hEditAddress = nullptr;
@@ -114,7 +108,6 @@ private:
     int m_topbarHeight = 52;
 
     bool m_isFullScreen = false;
-    bool m_isImmersiveMode = false;
     WINDOWPLACEMENT m_wpPrev{ sizeof(WINDOWPLACEMENT) };
     DWORD m_dwStylePrev = 0;
 

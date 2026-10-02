@@ -32,8 +32,12 @@ public:
     // Event handler for WebResourceRequested
     HRESULT HandleWebResourceRequested(ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args);
 
-    // Robust hostname extractor (handles user:pass@, IPv6 [...], and port stripping)
+    // Robust hostname extractor (handles user:pass@, IPv6 [...], port, and trailing dot stripping)
     static std::wstring ExtractHost(const std::wstring& uri);
+
+    // Domain comparison utilities for third-party scoping
+    static std::wstring GetBaseDomain(const std::wstring& host);
+    static bool IsThirdParty(const std::wstring& reqHost, const std::wstring& topHost);
 
 private:
     NativeRequestFilter();

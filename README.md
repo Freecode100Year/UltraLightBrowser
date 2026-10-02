@@ -276,8 +276,7 @@ cmake --build build --config Release
 ## ⌨️ Shortcuts
 
 * <kbd>F11</kbd> : Toggle Fullscreen Mode
-* <kbd>F9</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>U</kbd> : Toggle Zero-UI Immersive Mode (一键无 UI 沉浸模式)
-* <kbd>Esc</kbd> : Exit Fullscreen & Immersive Mode / Reset Address Bar
+* <kbd>Esc</kbd> : Exit Fullscreen / Reset Address Bar
 * <kbd>Ctrl</kbd> + <kbd>+</kbd> / <kbd>=</kbd> : Zoom In (放大页面)
 * <kbd>Ctrl</kbd> + <kbd>-</kbd> : Zoom Out (缩小页面)
 * <kbd>Ctrl</kbd> + <kbd>0</kbd> : Reset Zoom to 100% (重置缩放)

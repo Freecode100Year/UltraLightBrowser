@@ -143,11 +143,60 @@ std::wstring NativeRequestFilter::ExtractHost(const std::wstring& uri) {
         host = uri.substr(hostStart, hostEnd - hostStart);
     }
 
+    // Strip trailing dots (e.g. doubleclick.net. or FQDN trailing dot)
+    while (!host.empty() && host.back() == L'.') {
+        host.pop_back();
+    }
+
     // Lowercase host only
     for (auto& ch : host) {
         ch = static_cast<wchar_t>(std::towlower(ch));
     }
     return host;
+}
+
+std::wstring NativeRequestFilter::GetBaseDomain(const std::wstring& host) {
+    if (host.empty()) return L"";
+
+    std::vector<std::wstring> parts;
+    size_t start = 0;
+    while (start < host.length()) {
+        size_t dot = host.find(L'.', start);
+        if (dot == std::wstring::npos) {
+            parts.push_back(host.substr(start));
+            break;
+        }
+        parts.push_back(host.substr(start, dot - start));
+        start = dot + 1;
+    }
+
+    if (parts.size() <= 2) {
+        return host;
+    }
+
+    // Check common two-level ccTLDs (e.g. .com.cn, .co.uk, .org.cn, etc.)
+    const auto& tld = parts[parts.size() - 1];
+    const auto& sld = parts[parts.size() - 2];
+    bool isSecondLevelCctld = false;
+    if (tld.length() == 2 && (sld == L"com" || sld == L"net" || sld == L"org" || sld == L"gov" || sld == L"edu" || sld == L"co")) {
+        isSecondLevelCctld = true;
+    }
+
+    size_t takeParts = isSecondLevelCctld ? 3 : 2;
+    if (parts.size() < takeParts) return host;
+
+    std::wstring baseDomain;
+    for (size_t i = parts.size() - takeParts; i < parts.size(); ++i) {
+        if (!baseDomain.empty()) baseDomain += L".";
+        baseDomain += parts[i];
+    }
+    return baseDomain;
+}
+
+bool NativeRequestFilter::IsThirdParty(const std::wstring& reqHost, const std::wstring& topHost) {
+    if (reqHost.empty() || topHost.empty()) return true;
+    if (reqHost == topHost) return false;
+    return GetBaseDomain(reqHost) != GetBaseDomain(topHost);
 }
 
 bool NativeRequestFilter::ShouldBlock(const std::wstring& uri) {
@@ -192,8 +241,10 @@ void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Enviro
     if (!webView || !environment) return;
     m_environment = environment;
 
-    // Filter only high-risk ad/tracking resource vectors to avoid UI IPC bottlenecks on images, styles & fonts
+    // Register request filters (scripts, subframes, images, XHR, fetch, ping, other)
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT);
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SUB_FRAME);
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE);
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST);
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH);
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING);
@@ -209,14 +260,34 @@ void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Enviro
     );
 }
 
-HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* /*sender*/, ICoreWebView2WebResourceRequestedEventArgs* args) {
+HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args) {
     if (!m_enabled || !args || !m_environment) return S_OK;
+
+    COREWEBVIEW2_WEB_RESOURCE_CONTEXT context;
+    if (FAILED(args->get_ResourceContext(&context))) {
+        context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_OTHER;
+    }
 
     wil::com_ptr<ICoreWebView2WebResourceRequest> request;
     if (FAILED(args->get_Request(&request)) || !request) return S_OK;
 
     wil::unique_cotaskmem_string uri;
     if (FAILED(request->get_Uri(&uri)) || !uri.get()) return S_OK;
+
+    // For subframes and images (e.g. ad iframes and tracking pixels), only inspect third-party requests
+    if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE || context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SUB_FRAME) {
+        if (sender) {
+            wil::unique_cotaskmem_string topUri;
+            if (SUCCEEDED(sender->get_Source(&topUri)) && topUri.get()) {
+                std::wstring topHost = ExtractHost(topUri.get());
+                std::wstring reqHost = ExtractHost(uri.get());
+                if (!topHost.empty() && !reqHost.empty() && !IsThirdParty(reqHost, topHost)) {
+                    // First-party subframe or image: allow directly without blocking
+                    return S_OK;
+                }
+            }
+        }
+    }
 
     if (ShouldBlock(uri.get())) {
         wil::com_ptr<IStream> emptyStream;
