@@ -1,48 +1,131 @@
-# UltraLightBrowser — 整合修复源码版
+<p align="center">
+  <img src="resources/icon.png" width="128" height="128" alt="UltraLightBrowser">
+</p>
 
-Windows 原生 Win32 / C++20 / Microsoft Edge WebView2 浏览器外壳。
-当前版本 1.6.5，基于 v1.6.0，整合全屏、后台节能、音频保真和可选增强修复。
+<h1 align="center">UltraLightBrowser</h1>
 
-完整说明：[FULL_VERSION_GUIDE.md](FULL_VERSION_GUIDE.md)。
-本包不含编译后的 EXE，Windows 实机验证尚未完成。
+<p align="center">
+  极简、轻量的 Windows 原生浏览器 · Win32 + C++20 + Microsoft Edge WebView2
+</p>
+
+<p align="center">
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078d4?logo=windows" alt="Platform">
+  <img src="https://img.shields.io/badge/C%2B%2B-20-blue?logo=cplusplus" alt="C++20">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT"></a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshot.jpg" width="820" alt="UltraLightBrowser 截图">
+</p>
+
+## 简介
+
+UltraLightBrowser 是一个不到 1MB 的单文件浏览器。界面用原生 Win32 绘制（macOS Safari 风格的标题栏），网页由系统自带的 Microsoft Edge WebView2 内核（Chromium / Blink）渲染，因此：
+
+- 不捆绑浏览器内核，程序本体约 700KB；
+- 内核随 Windows 自动更新，及时获得 Chromium 安全补丁；
+- 网页兼容性与 Edge 浏览器一致。
+
+## 下载
+
+前往 **[Releases 最新版](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)** 下载：
+
+| 文件 | 说明 |
+| :--- | :--- |
+| `UltraLightBrowser.exe` | 单文件，双击运行 |
+| `UltraLightBrowser-vX.Y.Z-windows-x64.zip` | 便携压缩包 |
+| `SHA256SUMS.txt` | 校验值 |
+
+所有发布文件均由 GitHub Actions 从本仓库源码自动编译，并附带构建来源证明（artifact attestation）。下载后建议校验：
+
+```powershell
+Get-FileHash .\UltraLightBrowser.exe -Algorithm SHA256   # 与 SHA256SUMS.txt 对比
+gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrowser
+```
+
+运行需要 Windows 10/11 x64 和 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 11 已自带）。
 
 ## 功能
 
-- 全屏覆盖完整显示器，关闭全屏圆角和边框，恢复原窗口位置。
-- 音频感知后台节能，正确处理挂起失败与恢复竞态，一次快照遍历子进程。
-- 默认原声模式，不接管媒体，提供 Windows 音效设置入口，便于用户配置系统空间音效。
-- 可选对白、轻柔、标准和影院 DSP；音箱保留左右声道；按需建立 HRTF/混响节点。
-- 音量与 EQ 平滑调整，软件动态压缩保护；全部效果关闭时旁路处理。
-- 借鉴 XQL-MUSIC：EQ 预衰减、补偿式交叉馈送、齿音抑制和夜间模式。
-- 分享菜单支持默认 Windows Edge / macOS Edge UA 切换，刷新生效并保存选择。
-- 播放诊断显示增强状态、视频尺寸和丢帧统计。
-- 原有地址搜索、缩放、元素隐藏、请求拦截及 DNS 设置。
+**浏览与界面**
+- Safari 风格标题栏：居中地址栏，输入网址或关键词直接搜索
+- 深色主题、Mica 背景、Win11 圆角；高 DPI（Per-Monitor V2）清晰显示
+- 真全屏（F11）：覆盖整个显示器，无边框无圆角，退出后恢复原窗口
+- 网页缩放、复制当前链接、用系统默认浏览器打开
 
-本项目未集成授权 Dolby 解码器或专有 DSP，不保证 Atmos 播放、对象输出或比特流直通。
-系统空间音效需用户在 Windows/Dolby Access 中单独配置；建议同时使用浏览器原声模式。
-没有经过测量的速度、功耗和内存收益不会作为保证。
+**隐私与拦截**
+- 内置广告 / 跟踪域名拦截（含常见国内外广告与统计服务），第三方子框架和跟踪像素同样过滤
+- 开启 WebView2 严格防跟踪（Strict Tracking Prevention）
+- 元素隐藏：Ctrl+Shift+H 点选页面元素永久隐藏
+- 公共 DNS / DoH：Quad9（默认）、Cloudflare、Google、OpenDNS 或自定义 DoH；采用“加密优先、失败回退”模式，只写入本程序自己的数据目录，不修改系统或 Edge 设置
 
-## 构建
+**音频**
+- 默认原声输出：不接管网页音频，可配合 Windows 空间音效 / Dolby Access 使用
+- 可选浏览器音频增强：对白、轻柔、标准、影院四种模式；人声增强、齿音抑制、夜间模式、单声道合并、音量放大（最高 300%）
+- 播放诊断：显示增强状态、视频分辨率与丢帧统计
 
-要求 Windows、Visual Studio 2022 C++ 桌面工具、NuGet、CMake 3.25+ 和 WebView2 Runtime。
+**节能**
+- 最小化时隐藏并挂起网页、降低内存目标、启用 Windows EcoQoS
+- 后台播放音频时不挂起，避免断音；音频停止 60 秒后才进入节能
 
-```powershell
-.\build-windows.ps1
-```
-
-输出 `dist\Release\UltraLightBrowser.exe`。详见完整版说明。
+**其他**
+- 浏览器 UA 标识切换：Windows Edge（默认）/ macOS Edge
+- WebView2 启动失败时显示错误码与排查建议
 
 ## 快捷键
 
-F11 全屏；Esc 退出全屏；Ctrl+L 地址栏；Ctrl+R/F5 刷新；
-Ctrl+加号/减号缩放；Ctrl+0 重置缩放；Alt+左右方向键前进后退；
-Ctrl+Shift+H 元素隐藏。
+| 按键 | 功能 |
+| :--- | :--- |
+| Ctrl+L | 聚焦地址栏 |
+| Ctrl+R / F5 | 刷新 |
+| Alt+← / Alt+→ | 后退 / 前进 |
+| Ctrl+加号 / 减号 / 0 | 放大 / 缩小 / 重置缩放 |
+| F11 / Esc | 进入 / 退出全屏 |
+| Ctrl+Shift+H | 元素隐藏 |
 
-## 测试
+## 已知限制
 
-参见 [tests/README.md](tests/README.md)。
+- 单窗口单页面，暂不支持多标签。
+- 浏览器音频增强基于 Web Audio：跨域且未开放 CORS 的媒体、DRM 加密视频（如 Netflix）不会被处理；切换原声 / 增强模式会刷新页面。
+- 不包含 Dolby 解码器或任何 Dolby 授权技术，不保证 Atmos 输出或比特流直通。
+- macOS UA 只替换 UA 字符串，Client Hints、`navigator.platform` 等仍显示 Windows；这种不一致可能让网站更容易识别你，非必要请保持默认。
+
+## 从源码构建
+
+需要 Windows、Visual Studio 2022（C++ 桌面开发）、NuGet、CMake 3.25+。
+
+```powershell
+.\build-windows.ps1          # 输出 dist\Release\UltraLightBrowser.exe
+```
+
+或手动：
+
+```powershell
+nuget restore packages.config -PackagesDirectory packages
+cmake -B build -S . -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
+```
+
+更多说明见 [FULL_VERSION_GUIDE.md](FULL_VERSION_GUIDE.md)，测试见 [tests/README.md](tests/README.md)。
+
+## 项目结构
+
+```text
+src/
+├── main.cpp                 入口、DPI 初始化、消息循环
+├── MainWindow.*             标题栏、地址栏、菜单、全屏
+├── WebViewManager.*         WebView2 创建、音频增强脚本、UA
+├── NativeRequestFilter.*    广告 / 跟踪请求拦截
+├── ElementBlocker.*         元素隐藏
+├── DnsManager.*             公共 DNS / DoH
+├── PowerManager.*           后台节能与 EcoQoS
+├── WindowGeometry.hpp       全屏 / 最大化尺寸计算
+├── UserAgent.hpp            UA 标识生成
+└── Config.*                 设置读写
+tests/                       节能、窗口几何、音频、UA 回归测试
+```
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。Dolby 和 Dolby Atmos 名称属于相应权利人，
-源码包不包含这些技术的分发授权或认证。
+[MIT](LICENSE)。Dolby、Dolby Atmos 为其权利人的商标。
