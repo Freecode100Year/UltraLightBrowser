@@ -526,7 +526,7 @@ void MainWindow::SetFullScreen(bool enable) {
         GetMonitorInfoW(hMon, &mi);
 
         // Fullscreen must not inherit maximized work-area sizing or DWM corners.
-        const DWORD fullscreenStyle = (m_dwStylePrev & ~WS_OVERLAPPEDWINDOW) | WS_POPUP;
+        const DWORD fullscreenStyle = (m_dwStylePrev & ~(WS_OVERLAPPEDWINDOW | WS_MAXIMIZE)) | WS_POPUP;
         SetWindowLongW(m_hWnd, GWL_STYLE, fullscreenStyle);
         const MARGINS margins{};
         DwmExtendFrameIntoClientArea(m_hWnd, &margins);
