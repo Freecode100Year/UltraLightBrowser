@@ -68,7 +68,10 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                             if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView13))) && webView13) {
                                 wil::com_ptr<ICoreWebView2Profile> profile;
                                 if (SUCCEEDED(webView13->get_Profile(&profile)) && profile) {
-                                    profile->put_PreferredTrackingPreventionLevel(COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT);
+                                    wil::com_ptr<ICoreWebView2Profile3> profile3;
+                                    if (SUCCEEDED(profile->QueryInterface(IID_PPV_ARGS(&profile3))) && profile3) {
+                                        profile3->put_PreferredTrackingPreventionLevel(COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT);
+                                    }
                                 }
                             }
 
