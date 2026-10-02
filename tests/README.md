@@ -71,3 +71,7 @@ compressor lookahead is checked too. This is not an end-to-end sound-quality tes
 ## UA profiles
 
 `g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/user_agent_test.cpp -o /tmp/ua-tests && /tmp/ua-tests` checks actual platform replacement, version preservation, default restoration and malformed UA rejection. Native settings application needs Windows verification.
+
+## Video diagnostics
+
+`node tests/video_diagnostics_test.cjs` executes the shipped script with deterministic media boundaries and checks frame deltas, drop percentage, buffer range, reset and unsupported stats. It does not play video.

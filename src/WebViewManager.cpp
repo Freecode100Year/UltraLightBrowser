@@ -1,6 +1,7 @@
 #include "WebViewManager.hpp"
 #include "MainWindow.hpp"
 #include "Config.hpp"
+#include "VideoDiagnostics.hpp"
 #include "UserAgent.hpp"
 #include "MacStealth.hpp"
 #include "SelfTestPage.hpp"
@@ -1708,22 +1709,7 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
 void WebViewManager::ShowMediaDiagnostics() {
     if (!m_webView) return;
     const HWND owner = m_hWndParent;
-    const wchar_t* script = LR"diagnostic((() => {
-        const api = window.__UltraLightSurround;
-        if (!api || !api.getStatus) return "当前页面的音频诊断尚未就绪，请刷新后再试。";
-        const s = api.getStatus();
-        const lines = ["输出模式：" + (s.output === "native" ? "原声 / 系统处理" : "浏览器增强"),
-                       "音频处理：" + (s.audioContext === "not-created" ? "未创建处理上下文" : s.audioContext),
-                       "媒体数量：" + s.media.length];
-        s.media.forEach((m, i) => {
-            lines.push("媒体 " + (i + 1) + "：" + (m.paused ? "已暂停" : "正在播放") +
-                       "，浏览器增强：" + (m.processed ? "是" : "否"));
-            if (m.width) lines.push("分辨率：" + m.width + " × " + m.height);
-            if (m.totalFrames !== null) lines.push("视频帧：" + m.totalFrames + "，丢帧：" + m.droppedFrames);
-        });
-        lines.push("此信息不能确认 Dolby Atmos 已启用或媒体包含 Atmos 音轨。");
-        return lines.join("\n");
-    })())diagnostic";
+    const wchar_t* script = kVideoDiagnosticsScript;
     m_webView->ExecuteScript(script,
         Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
             [owner](HRESULT result, LPCWSTR payload) -> HRESULT {

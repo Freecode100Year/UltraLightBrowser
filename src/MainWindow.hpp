@@ -59,6 +59,7 @@ enum AppCommandID : WORD {
     IDM_UA_DEFAULT         = 2060,
     IDM_UA_MACOS_EDGE       = 2061,
     IDM_UA_SELFTEST         = 2062,
+    IDM_ABOUT              = 2063,
     IDM_DNS_SELECT_BASE     = 2100
 };
 
@@ -92,6 +93,7 @@ private:
     void UpdateSoundDisplay();
     void ShowBlockerMenu();
     void ShowShareMenu();
+    void ShowAboutDialog();
 
     HWND m_hWnd = nullptr;
     HINSTANCE m_hInstance = nullptr;

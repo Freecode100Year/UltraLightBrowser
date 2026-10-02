@@ -154,7 +154,7 @@ tests/                       节能、窗口几何、音频、UA 回归测试
 
 ## 最近更新
 
-- **v1.6.8**：修复上次选择 macOS Edge 后再次启动闪退的问题；macOS 模式不再暴露 WebView2 品牌项。
+- **v1.6.9**：修复上次选择 macOS Edge 后再次启动闪退的问题；macOS 模式不再暴露 WebView2 品牌项。
 - **v1.6.7**：macOS 伪装覆盖 Service Worker 并隐藏 SharedWorker；新增标识自检页；系统版本号可配置。
 - **v1.6.6**：macOS Edge 伪装改为内核层统一改写（请求头、Client Hints、WebGL、iframe、Worker）。
 
@@ -163,3 +163,9 @@ tests/                       节能、窗口几何、音频、UA 回归测试
 ## 许可证
 
 [MIT](LICENSE)。Dolby、Dolby Atmos 为其权利人的商标。
+
+## 1.6.9：关于与视频诊断
+
+分享菜单 → 关于 UltraLightBrowser，查看并打开项目 GitHub 链接。
+播放诊断增加区间丢帧率、平均显示帧/秒与缓冲余量；连续播放约 30 秒后再次打开查看。
+[2160p 播放审计](docs/2160p-playback-audit.md) 包含代码发现、风险和 Windows 实测步骤。当前尚无真实 2160p 实测结论。

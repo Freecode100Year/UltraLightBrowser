@@ -1262,6 +1262,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDM_UA_SELFTEST:
             if (m_webViewManager) m_webViewManager->OpenIdentitySelfTest();
             break;
+        case IDM_ABOUT:
+            ShowAboutDialog();
+            break;
         case IDC_BTN_SOUND:
             ShowSoundMenu();
             break;
@@ -1728,6 +1731,27 @@ void MainWindow::ShowBlockerMenu() {
     DestroyMenu(hMenu);
 }
 
+void MainWindow::ShowAboutDialog() {
+    TASKDIALOGCONFIG dialog{};
+    dialog.cbSize = sizeof(dialog);
+    dialog.hwndParent = m_hWnd;
+    dialog.dwFlags = TDF_ENABLE_HYPERLINKS | TDF_ALLOW_DIALOG_CANCELLATION;
+    dialog.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+    dialog.pszWindowTitle = L"关于 UltraLightBrowser";
+    dialog.pszMainInstruction = L"UltraLightBrowser 1.6.9";
+    dialog.pszContent = L"Windows 原生浏览器 · Microsoft Edge WebView2\n\n项目源码与问题反馈：\n<a href=\"https://github.com/Freecode100Year/UltraLightBrowser\">https://github.com/Freecode100Year/UltraLightBrowser</a>";
+    dialog.pfCallback = [](HWND owner, UINT notification, WPARAM, LPARAM link, LONG_PTR) -> HRESULT {
+        if (notification == TDN_HYPERLINK_CLICKED && link &&
+            std::wstring(reinterpret_cast<LPCWSTR>(link)) == L"https://github.com/Freecode100Year/UltraLightBrowser") {
+            ShellExecuteW(owner, L"open", reinterpret_cast<LPCWSTR>(link), nullptr, nullptr, SW_SHOWNORMAL);
+        }
+        return S_OK;
+    };
+    if (FAILED(TaskDialogIndirect(&dialog, nullptr, nullptr, nullptr))) {
+        MessageBoxW(m_hWnd, L"UltraLightBrowser 1.6.9\n项目：https://github.com/Freecode100Year/UltraLightBrowser", L"关于", MB_OK);
+    }
+}
+
 void MainWindow::ShowShareMenu() {
     HMENU hMenu = CreatePopupMenu();
     if (!hMenu) return;
@@ -1747,6 +1771,9 @@ void MainWindow::ShowShareMenu() {
         AppendMenuW(uaMenu, MF_STRING, IDM_UA_SELFTEST, L"标识自检页");
         AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(uaMenu), L"浏览器 UA 标识（切换会刷新）");
     }
+
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING, IDM_ABOUT, L"关于 UltraLightBrowser");
 
     RECT btnRect{};
     GetWindowRect(m_hBtnShare, &btnRect);

@@ -39,6 +39,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Test actual injected audio script
         run: |
+          node tests/video_diagnostics_test.cjs
           node tests/audio_enhancer_test.cjs
           node tests/verify_audio_response.mjs
           python3 tests/audio_registration_test.py
