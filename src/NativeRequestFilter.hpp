@@ -8,6 +8,7 @@
 #include <vector>
 #include <unordered_set>
 #include <atomic>
+#include <mutex>
 
 namespace UltraLight {
 
@@ -28,6 +29,12 @@ public:
     // Intercepted request counter
     uint64_t GetBlockedCount() const { return m_blockedCount.load(); }
     void ResetBlockedCount() { m_blockedCount.store(0); }
+
+    // Main-frame navigation tracking to prevent false-positive blocking of top-level navigations
+    void SetMainFrameNavigation(const std::wstring& uri);
+    void ClearMainFrameNavigation();
+    bool IsMainFrameNavigation(const std::wstring& uri) const;
+    std::wstring GetCurrentMainHost() const;
 
     // Event handler for WebResourceRequested
     HRESULT HandleWebResourceRequested(ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args);
@@ -54,6 +61,10 @@ private:
     std::atomic<uint64_t> m_blockedCount{0};
     ICoreWebView2Environment* m_environment = nullptr;
     EventRegistrationToken m_resourceRequestedToken{};
+
+    mutable std::mutex m_navMutex;
+    std::wstring m_pendingMainNavigationUri;
+    std::wstring m_currentMainHost;
 
     std::unordered_set<std::wstring> m_blockedDomainSet;
     std::vector<std::wstring> m_blockedKeywords;

@@ -1180,8 +1180,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             DnsManager::Instance().ApplySettings();
             UpdateDnsDisplay();
             std::wstring infoMsg = settings.enablePublicDns
-                ? L"已开启公共安全 DNS (DoH 加密解析)！\n建议刷新网页以使新设置生效。"
-                : L"已关闭公共 DNS，恢复系统默认解析。";
+                ? L"已开启公共安全 DNS (DoH 加密解析)！\n设置将在重启浏览器后完全生效。"
+                : L"已关闭公共 DNS，恢复系统默认解析。\n设置将在重启浏览器后完全生效。";
             MessageBoxW(m_hWnd, infoMsg.c_str(), L"安全 DNS 设置", MB_OK | MB_ICONINFORMATION);
             break;
         }
@@ -1291,7 +1291,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     Config::Instance().Save();
                     DnsManager::Instance().ApplySettings();
                     UpdateDnsDisplay();
-                    std::wstring infoMsg = L"已切换至安全 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已生效，建议刷新网页。";
+                    std::wstring infoMsg = L"已切换至安全 DNS: 【" + providers[pIdx].name + L"】\n\n新策略已保存，重启浏览器后将完全生效。";
                     MessageBoxW(m_hWnd, infoMsg.c_str(), L"安全 DNS 已更新", MB_OK | MB_ICONINFORMATION);
                 }
             }

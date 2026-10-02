@@ -222,7 +222,8 @@ void WebViewManager::RegisterEventHandlers() {
         Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
                 wil::unique_cotaskmem_string uri;
-                if (SUCCEEDED(args->get_Uri(&uri))) {
+                if (SUCCEEDED(args->get_Uri(&uri)) && uri.get()) {
+                    NativeRequestFilter::Instance().SetMainFrameNavigation(uri.get());
                     ElementBlocker::Instance().OnNavigationStarting(sender, uri.get());
                 }
                 if (m_navStateCb) {
@@ -238,6 +239,7 @@ void WebViewManager::RegisterEventHandlers() {
     m_webView->add_NavigationCompleted(
         Callback<ICoreWebView2NavigationCompletedEventHandler>(
             [this](ICoreWebView2* /*sender*/, ICoreWebView2NavigationCompletedEventArgs* /*args*/) -> HRESULT {
+                NativeRequestFilter::Instance().ClearMainFrameNavigation();
                 if (m_navStateCb) {
                     m_navStateCb(false);
                 }
@@ -543,10 +545,9 @@ void WebViewManager::InjectSurroundSoundScript() {
 
     std::string jsCode = R"raw(
 (function() {
-    if (window.__UltraLightSurroundLoaded) return;
-    window.__UltraLightSurroundLoaded = true;
+    if (window.__UltraLightSurroundInstalled) return;
+    window.__UltraLightSurroundInstalled = true;
 
-    let audioCtx = null;
     let currentMode = ")raw" + initMode + R"raw(";
     let isEnabled = )raw" + initEnabled + R"raw(;
 
@@ -558,6 +559,28 @@ void WebViewManager::InjectSurroundSoundScript() {
     };
 
     const attachedElements = new WeakMap();
+    const pageClaimedElements = new WeakSet();
+    const pendingPlayElements = new WeakSet();
+    let audioCtx = null;
+
+    // 5. Let page-owned Web Audio take priority
+    try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC && AC.prototype && AC.prototype.createMediaElementSource) {
+            const origCreate = AC.prototype.createMediaElementSource;
+            AC.prototype.createMediaElementSource = function(mediaEl) {
+                if (mediaEl) {
+                    pageClaimedElements.add(mediaEl);
+                    const existing = attachedElements.get(mediaEl);
+                    if (existing && existing.release) {
+                        try { existing.release(); } catch (e) {}
+                        attachedElements.delete(mediaEl);
+                    }
+                }
+                return origCreate.apply(this, arguments);
+            };
+        }
+    } catch (e) {}
 
     function getAudioContext() {
         if (!audioCtx) {
@@ -569,60 +592,90 @@ void WebViewManager::InjectSurroundSoundScript() {
                 return null;
             }
         }
-        if (audioCtx.state === "suspended") {
-            audioCtx.resume().catch(() => {});
-        }
         return audioCtx;
     }
 
-    function canProcessElement(el) {
-        if (!el || attachedElements.has(el)) return false;
-        // Skip encrypted DRM videos (Netflix, Spotify, etc.)
-        if (el.mediaKeys) return false;
-        
-        const src = el.currentSrc || el.src;
-        // YouTube, Bilibili, and streaming platforms use MSE blob: URLs
-        if (src && (src.startsWith("blob:") || src.startsWith("data:"))) return true;
-        
-        // Same-origin media
-        if (src) {
-            try {
-                const u = new URL(src, window.location.href);
-                if (u.origin === window.location.origin) return true;
-            } catch (e) {}
+    function isSafeUrl(urlStr, el) {
+        if (!urlStr || typeof urlStr !== "string") return false;
+        if (urlStr.startsWith("blob:") || urlStr.startsWith("data:")) return true;
+        try {
+            const u = new URL(urlStr, window.location.href);
+            if (u.origin === window.location.origin) return true;
+        } catch (e) {
+            return false;
         }
-        // Elements with CORS enabled
-        if (el.crossOrigin && (el.crossOrigin === "anonymous" || el.crossOrigin === "use-credentials")) {
-            return true;
-        }
-        // If element has no src yet but has children <source>
-        if (!src && el.children && el.children.length > 0) {
+        if (el && el.crossOrigin && (el.crossOrigin === "anonymous" || el.crossOrigin === "use-credentials")) {
             return true;
         }
         return false;
     }
 
+    function canProcessElement(el) {
+        if (!el || attachedElements.has(el) || pageClaimedElements.has(el)) return false;
+        // Skip encrypted DRM videos (Netflix, Spotify, Apple TV+, etc.)
+        if (el.mediaKeys) return false;
+
+        const src = el.currentSrc || el.src;
+        if (src) {
+            return isSafeUrl(src, el);
+        }
+
+        // If no direct src, check children <source> tags
+        const sources = el.querySelectorAll ? el.querySelectorAll("source") : [];
+        if (sources.length > 0) {
+            let hasAnySafe = false;
+            for (let i = 0; i < sources.length; ++i) {
+                const sUrl = sources[i].src;
+                if (sUrl) {
+                    if (isSafeUrl(sUrl, el)) {
+                        hasAnySafe = true;
+                    } else {
+                        return false;
+                    }
+                }
+            }
+            return hasAnySafe;
+        }
+
+        return false;
+    }
+
+    function trySetupSurround(el) {
+        if (!isEnabled || !canProcessElement(el)) return;
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        // 1. AudioContext must be running to avoid muting!
+        if (ctx.state !== "running") {
+            pendingPlayElements.add(el);
+            ctx.resume().then(() => {
+                if (ctx.state === "running" && pendingPlayElements.has(el) && !el.paused) {
+                    pendingPlayElements.delete(el);
+                    setupSurroundForElement(el);
+                }
+            }).catch(() => {});
+            return;
+        }
+
+        setupSurroundForElement(el);
+    }
+
     function setupSurroundForElement(el) {
         if (!canProcessElement(el)) return;
         const ctx = getAudioContext();
-        if (!ctx) return;
+        if (!ctx || ctx.state !== "running") return;
 
         let sourceNode = null;
         try {
             sourceNode = ctx.createMediaElementSource(el);
         } catch (e) {
-            // Element might already be hooked by page or CORS restricted
             return;
         }
 
         // --- DSP GRAPH CREATION ---
-        // 1. Input Splitter (Left, Right)
         const splitter = ctx.createChannelSplitter(2);
         sourceNode.connect(splitter);
 
-        // 2. Mid/Side Matrix
-        // Mid = (L + R) / 2
-        // Side = (L - R) / 2
         const midL = ctx.createGain(); midL.gain.value = 0.5;
         const midR = ctx.createGain(); midR.gain.value = 0.5;
         const midBus = ctx.createGain();
@@ -635,12 +688,9 @@ void WebViewManager::InjectSurroundSoundScript() {
         splitter.connect(sideL, 0); sideL.connect(sideBus);
         splitter.connect(sideR, 1); sideR.connect(sideBus);
 
-        // Width Gain Node
         const sideWidthGain = ctx.createGain();
         sideBus.connect(sideWidthGain);
 
-        // Output Left: Mid + SideScaled
-        // Output Right: Mid - SideScaled
         const sideToLeft = ctx.createGain(); sideToLeft.gain.value = 1.0;
         const sideToRight = ctx.createGain(); sideToRight.gain.value = -1.0;
         sideWidthGain.connect(sideToLeft);
@@ -653,20 +703,20 @@ void WebViewManager::InjectSurroundSoundScript() {
         midBus.connect(postWidenerR);
         sideToRight.connect(postWidenerR);
 
-        // 3. Crossfeed Network (~0.3ms ITD delay + 2.5kHz head shadow lowpass)
+        // Crossfeed Network (~0.3ms ITD delay + 2.5kHz head shadow lowpass)
         const delayLR = ctx.createDelay(0.01); delayLR.delayTime.value = 0.0003;
         const filterLR = ctx.createBiquadFilter(); filterLR.type = "lowpass"; filterLR.frequency.value = 2500;
         const crossGainLR = ctx.createGain();
         postWidenerL.connect(delayLR); delayLR.connect(filterLR); filterLR.connect(crossGainLR);
-        crossGainLR.connect(postWidenerR); // Left crossfeeds into Right
+        crossGainLR.connect(postWidenerR);
 
         const delayRL = ctx.createDelay(0.01); delayRL.delayTime.value = 0.0003;
         const filterRL = ctx.createBiquadFilter(); filterRL.type = "lowpass"; filterRL.frequency.value = 2500;
         const crossGainRL = ctx.createGain();
         postWidenerR.connect(delayRL); delayRL.connect(filterRL); filterRL.connect(crossGainRL);
-        crossGainRL.connect(postWidenerL); // Right crossfeeds into Left
+        crossGainRL.connect(postWidenerL);
 
-        // 4. Subtle Early Room Reflections (16ms & 21ms)
+        // Subtle Early Room Reflections (16ms & 21ms)
         const earlyDelayL = ctx.createDelay(0.05); earlyDelayL.delayTime.value = 0.016;
         const earlyFilterL = ctx.createBiquadFilter(); earlyFilterL.type = "lowpass"; earlyFilterL.frequency.value = 3500;
         const earlyGainL = ctx.createGain();
@@ -677,14 +727,14 @@ void WebViewManager::InjectSurroundSoundScript() {
         const earlyGainR = ctx.createGain();
         postWidenerR.connect(earlyDelayR); earlyDelayR.connect(earlyFilterR); earlyFilterR.connect(earlyGainR);
 
-        // 5. Output Merger (L, R)
+        // Output Merger
         const outMerger = ctx.createChannelMerger(2);
         postWidenerL.connect(outMerger, 0, 0);
         earlyGainL.connect(outMerger, 0, 0);
         postWidenerR.connect(outMerger, 0, 1);
         earlyGainR.connect(outMerger, 0, 1);
 
-        // 6. Dynamics Compressor / Peak Limiter
+        // Dynamics Compressor / Peak Limiter
         const limiter = ctx.createDynamicsCompressor();
         limiter.threshold.value = -1.5;
         limiter.knee.value = 3.0;
@@ -692,7 +742,6 @@ void WebViewManager::InjectSurroundSoundScript() {
         limiter.attack.value = 0.003;
         limiter.release.value = 0.15;
 
-        // Bypass dry gain vs wet gain
         const dryGain = ctx.createGain();
         const wetGain = ctx.createGain();
         sourceNode.connect(dryGain);
@@ -719,32 +768,102 @@ void WebViewManager::InjectSurroundSoundScript() {
                     earlyGainL.gain.setValueAtTime(preset.earlyReflection, now);
                     earlyGainR.gain.setValueAtTime(preset.earlyReflection, now);
                 }
+            },
+            release() {
+                try {
+                    dryGain.disconnect();
+                    wetGain.disconnect();
+                    limiter.disconnect();
+                    sourceNode.disconnect();
+                } catch (e) {}
             }
         };
 
         controller.update(currentMode, isEnabled);
         attachedElements.set(el, controller);
+    }
 
-        // Resume AudioContext on play
+    function registerElementEvents(el) {
+        if (el.__ultraLightEventsAttached) return;
+        el.__ultraLightEventsAttached = true;
+
         el.addEventListener("play", () => {
-            if (ctx.state === "suspended") ctx.resume().catch(() => {});
-        });
+            if (isEnabled) trySetupSurround(el);
+        }, { passive: true });
+
+        el.addEventListener("playing", () => {
+            if (isEnabled) trySetupSurround(el);
+        }, { passive: true });
     }
 
     function scanMedia() {
-        document.querySelectorAll("video, audio").forEach(setupSurroundForElement);
+        try {
+            document.querySelectorAll("video, audio").forEach(el => {
+                registerElementEvents(el);
+                if (isEnabled && !el.paused) {
+                    trySetupSurround(el);
+                }
+            });
+        } catch (e) {}
     }
 
-    // Auto-detect and hook
-    scanMedia();
-    const observer = new MutationObserver(() => scanMedia());
-    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+    // 3. Throttle / Debounce DOM Mutation Observer
+    let scanTimer = null;
+    function scheduleScan() {
+        if (scanTimer) return;
+        scanTimer = setTimeout(() => {
+            scanTimer = null;
+            scanMedia();
+        }, 200);
+    }
 
-    // Interaction wakeup
+    const observer = new MutationObserver(mutations => {
+        let shouldScan = false;
+        for (let i = 0; i < mutations.length; ++i) {
+            const added = mutations[i].addedNodes;
+            for (let j = 0; j < added.length; ++j) {
+                const node = added[j];
+                if (node.nodeType === 1) {
+                    if (node.tagName === "VIDEO" || node.tagName === "AUDIO" || (node.querySelector && node.querySelector("video, audio"))) {
+                        shouldScan = true;
+                        break;
+                    }
+                }
+            }
+            if (shouldScan) break;
+        }
+        if (shouldScan) scheduleScan();
+    });
+
+    // 4. Safe observation startup (handles documentElement == null at document-start)
+    function startObserving() {
+        const root = document.documentElement || document.body;
+        if (root) {
+            try { observer.observe(root, { childList: true, subtree: true }); } catch (e) {}
+            scanMedia();
+        } else {
+            document.addEventListener("DOMContentLoaded", () => {
+                const r = document.documentElement || document.body;
+                if (r) {
+                    try { observer.observe(r, { childList: true, subtree: true }); } catch (e) {}
+                }
+                scanMedia();
+            }, { once: true });
+        }
+    }
+    startObserving();
+
+    // Interaction wakeup: on user gesture, resume AudioContext and attach any pending playing media
+    function onUserGesture() {
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === "suspended") {
+            ctx.resume().then(() => {
+                scanMedia();
+            }).catch(() => {});
+        }
+    }
     ["click", "pointerdown", "keydown"].forEach(evt => {
-        window.addEventListener(evt, () => {
-            if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-        }, { passive: true, once: true });
+        window.addEventListener(evt, onUserGesture, { passive: true });
     });
 
     // Global controller API
@@ -752,11 +871,16 @@ void WebViewManager::InjectSurroundSoundScript() {
         setMode(mode, enabled) {
             currentMode = mode;
             isEnabled = enabled;
-            document.querySelectorAll("video, audio").forEach(el => {
-                const c = attachedElements.get(el);
-                if (c) c.update(mode, enabled);
-                else setupSurroundForElement(el);
-            });
+            try {
+                document.querySelectorAll("video, audio").forEach(el => {
+                    const c = attachedElements.get(el);
+                    if (c) {
+                        c.update(mode, enabled);
+                    } else if (isEnabled && !el.paused && canProcessElement(el)) {
+                        trySetupSurround(el);
+                    }
+                });
+            } catch (e) {}
         }
     };
 

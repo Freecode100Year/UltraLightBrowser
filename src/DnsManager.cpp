@@ -300,7 +300,7 @@ LRESULT CALLBACK DlgWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             Config::Instance().Save();
             DnsManager::Instance().ApplySettings();
 
-            std::wstring alertMsg = L"公共 DNS 设置已更新并成功应用！\n\n";
+            std::wstring alertMsg = L"公共 DNS 设置已更新并成功保存！\n\n";
             if (enableDns) {
                 alertMsg += L"当前状态: 【已启用】\n";
                 if (settings.selectedDnsProvider == "custom") {
@@ -309,9 +309,9 @@ LRESULT CALLBACK DlgWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     const auto* p = DnsManager::Instance().GetActiveProvider();
                     if (p) alertMsg += L"服务商: " + p->name + L"\n";
                 }
-                alertMsg += L"\n提示: 设置已安全写入本地用户配置 (UserData/EBWebView/Local State)，完全隔离且不触碰/不篡改系统 Edge 策略。\n点击确定后建议刷新网页以生效。";
+                alertMsg += L"\n提示: 设置已安全写入本地用户配置 (UserData/EBWebView/Local State)。\n注意: 安全 DNS (DoH) 解析策略将在重启浏览器后完全生效。";
             } else {
-                alertMsg += L"当前状态: 【已关闭 (使用系统默认 DNS)】\n\n设置已恢复为系统网络解析。";
+                alertMsg += L"当前状态: 【已关闭 (使用系统默认 DNS)】\n\n设置已恢复为系统网络解析，重启浏览器后完全生效。";
             }
 
             MessageBoxW(hWnd, alertMsg.c_str(), L"DNS 设置已保存", MB_OK | MB_ICONINFORMATION);
@@ -516,56 +516,52 @@ bool DnsManager::ApplySettings() {
         RegCloseKey(hKey);
     }
 
-    // 2. Safely merge and write DoH configuration to WebView2 Local State and Preferences
+    // 2. Safely merge and write DoH configuration ONLY to WebView2 EBWebView/Local State
 #if __has_include(<nlohmann/json.hpp>)
     try {
         std::filesystem::path userDataDir = Config::Instance().GetUserDataDirectory();
-        std::vector<std::filesystem::path> targetPaths = {
-            userDataDir / "EBWebView" / "Local State",
-            userDataDir / "Local State",
-            userDataDir / "Default" / "Preferences"
-        };
+        std::filesystem::path targetPath = userDataDir / "EBWebView" / "Local State";
 
-        for (const auto& targetPath : targetPaths) {
-            try {
-                std::filesystem::create_directories(targetPath.parent_path());
+        try {
+            std::filesystem::create_directories(targetPath.parent_path());
 
-                json root = json::object();
-                if (std::filesystem::exists(targetPath)) {
-                    std::ifstream inFile(targetPath);
-                    if (inFile.is_open()) {
-                        try { inFile >> root; } catch (...) {}
-                    }
+            json root = json::object();
+            if (std::filesystem::exists(targetPath)) {
+                std::ifstream inFile(targetPath);
+                if (inFile.is_open()) {
+                    try { inFile >> root; } catch (...) {}
                 }
-                if (!root.is_object()) {
-                    root = json::object();
-                }
+            }
+            if (!root.is_object()) {
+                root = json::object();
+            }
 
-                if (settings.enablePublicDns && !templateNarrow.empty()) {
-                    root["dns_over_https"]["mode"] = "secure";
-                    root["dns_over_https"]["templates"] = templateNarrow;
-                } else {
-                    root["dns_over_https"]["mode"] = "off";
-                    root["dns_over_https"]["templates"] = "";
-                }
+            if (settings.enablePublicDns && !templateNarrow.empty()) {
+                // Use "automatic" mode (opportunistic DoH): prioritizes encrypted DoH,
+                // but safely falls back to system DNS if the DoH server is unreachable/blocked.
+                root["dns_over_https"]["mode"] = "automatic";
+                root["dns_over_https"]["templates"] = templateNarrow;
+            } else {
+                root["dns_over_https"]["mode"] = "off";
+                root["dns_over_https"]["templates"] = "";
+            }
 
-                std::filesystem::path tmpPath = targetPath;
-                tmpPath += L".tmp";
-                {
-                    std::ofstream outFile(tmpPath);
-                    if (outFile.is_open()) {
-                        outFile << root.dump(4);
-                        outFile.flush();
-                    }
+            std::filesystem::path tmpPath = targetPath;
+            tmpPath += L".tmp";
+            {
+                std::ofstream outFile(tmpPath);
+                if (outFile.is_open()) {
+                    outFile << root.dump(4);
+                    outFile.flush();
                 }
-                std::error_code ec;
-                std::filesystem::rename(tmpPath, targetPath, ec);
-                if (ec) {
-                    std::filesystem::copy_file(tmpPath, targetPath, std::filesystem::copy_options::overwrite_existing, ec);
-                    std::filesystem::remove(tmpPath, ec);
-                }
-            } catch (...) {}
-        }
+            }
+            std::error_code ec;
+            std::filesystem::rename(tmpPath, targetPath, ec);
+            if (ec) {
+                std::filesystem::copy_file(tmpPath, targetPath, std::filesystem::copy_options::overwrite_existing, ec);
+                std::filesystem::remove(tmpPath, ec);
+            }
+        } catch (...) {}
     } catch (...) {
         // Fallback gracefully
     }

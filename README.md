@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.0/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.5.0%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.1/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.5.1%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -23,12 +23,12 @@
 
 ---
 
-## 📥 最新版便携下载 / Direct Download (v1.5.0 环绕立体声 & 内核拦截强化版)
+## 📥 最新版便携下载 / Direct Download (v1.5.1 环绕声防静音 & DNS 智能回退版)
 
 可在 GitHub Releases 页面直接下载最新构建的预编译二进制文件：
 
-* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.5.0)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.0/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
-* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.5.0-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.0/UltraLightBrowser-v1.5.0-windows-x64.zip)**
+* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.5.1)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.1/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
+* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.5.1-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.1/UltraLightBrowser-v1.5.1-windows-x64.zip)**
 * 🌟 **[访问 GitHub Latest Release 最新发布页](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**
 * 🔗 **[查看所有历史版本与构建产物](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
@@ -202,6 +202,27 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
   * 支持一键拷贝当前网页 URL 到系统剪贴板。
   * 支持将当前网页一键移交（Handoff）到系统默认浏览器打开。
   * 整合一键全屏视图（F11）。
+
+---
+
+## 🛠️ v1.5.1 审计修复与稳定性强化 (Audit Fixes & Robust Fallbacks)
+
+在 **v1.5.1** 版本中，项目根据针对 v1.5.0 的全方位深度审计报告，迅速完成了 4 项关键修复与强化：
+
+### 1. 🌐 DNS DoH 智能回退机制与单文件写入保护
+* **严格模式改为自动优先回退模式 (`mode: "automatic"`)**：不再强制使用严格 DoH（`"mode": "secure"`），杜绝了在加密 DNS 节点网络超时、国内无法访问或被代理拦截时引发全站 `ERR_NAME_NOT_RESOLVED` 导致网页打不开的问题；现在优先尝试安全加密解析，失败时无缝自动回退到系统 DNS，兼顾极致隐私与 100% 访问可用性。
+* **单源写入保护**：完全移除对 `UserData/Local State` 和 `Default/Preferences` 的多余写入，DoH 策略唯一受控于 `UserData/EBWebView/Local State`。
+* **重启生效提示**：明确提示用户安全 DNS 策略在重启浏览器后完全生效，杜绝多进程并发文件锁定冲突。
+
+### 2. 🎧 环绕声防静音与性能彻底重构
+* **消除自动播放静音**：改为仅在 `AudioContext` 确认进入 `running` 状态（或首次用户交互唤醒）后方才接入音频图管线；未交互前的自动播放视频保持系统原生输出管线，绝不静音。
+* **CORS 外站音源全面检测**：严格扫描包括所有 `<source>` 子标签在内的媒体资源，对未配置 CORS 的外站资源坚决放行原生管线，杜绝跨域静音。
+* **网页自带 Web Audio 优先**：深度 Hook `AudioContext.prototype.createMediaElementSource`，网页自身需要处理音频时立即主动让位并断开环绕声节点，杜绝 `InvalidStateError`。
+* **DOM 变动节流与安全启动**：采用 200ms 防抖并仅比对音视频新增节点，消除 YouTube/B站等动态网站频繁 `querySelectorAll` 导致的微卡顿；规避 `document-start` 阶段 `documentElement` 为空导致的脚本错误。
+
+### 3. 🎯 主框架导航放行与公共后缀多租户域名识别
+* **主框架导航无条件放行**：通过监听主框架导航事件精确识别顶级页面跳转，杜绝因 `get_Source` 滞后将新主页误判为第三方子框架的问题。
+* **公共后缀 (Public Suffix) 识别库**：精准支持包括 `github.io`、`gitlab.io`、`blogspot.com`、`pages.dev`、`vercel.app` 在内的多租户托管域名以及多级 ccTLD，杜绝跨子域误判。
 
 ---
 

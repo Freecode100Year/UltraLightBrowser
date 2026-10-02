@@ -155,6 +155,32 @@ std::wstring NativeRequestFilter::ExtractHost(const std::wstring& uri) {
     return host;
 }
 
+namespace {
+
+static const std::unordered_set<std::wstring> kPublicSuffixes = {
+    L"github.io", L"gitlab.io", L"gitee.io",
+    L"blogspot.com", L"wordpress.com",
+    L"pages.dev", L"workers.dev",
+    L"vercel.app", L"netlify.app", L"web.app", L"firebaseapp.com",
+    L"herokuapp.com", L"azurewebsites.net", L"cloudfront.net",
+    L"fastly.net", L"fly.dev", L"render.com", L"onrender.com",
+    L"myshopify.com", L"railway.app", L"glitch.me", L"surge.sh"
+};
+
+bool IsPublicSuffix(const std::wstring& sld, const std::wstring& tld) {
+    if (tld.length() == 2) {
+        if (sld == L"com" || sld == L"net" || sld == L"org" || sld == L"gov" ||
+            sld == L"gob" || sld == L"edu" || sld == L"co" || sld == L"ne" ||
+            sld == L"ac" || sld == L"go" || sld == L"or" || sld == L"re") {
+            return true;
+        }
+    }
+    std::wstring combined = sld + L"." + tld;
+    return kPublicSuffixes.find(combined) != kPublicSuffixes.end();
+}
+
+} // namespace
+
 std::wstring NativeRequestFilter::GetBaseDomain(const std::wstring& host) {
     if (host.empty()) return L"";
 
@@ -174,15 +200,14 @@ std::wstring NativeRequestFilter::GetBaseDomain(const std::wstring& host) {
         return host;
     }
 
-    // Check common two-level ccTLDs (e.g. .com.cn, .co.uk, .org.cn, etc.)
     const auto& tld = parts[parts.size() - 1];
     const auto& sld = parts[parts.size() - 2];
-    bool isSecondLevelCctld = false;
-    if (tld.length() == 2 && (sld == L"com" || sld == L"net" || sld == L"org" || sld == L"gov" || sld == L"edu" || sld == L"co")) {
-        isSecondLevelCctld = true;
+
+    size_t takeParts = 2;
+    if (IsPublicSuffix(sld, tld)) {
+        takeParts = 3;
     }
 
-    size_t takeParts = isSecondLevelCctld ? 3 : 2;
     if (parts.size() < takeParts) return host;
 
     std::wstring baseDomain;
@@ -197,6 +222,31 @@ bool NativeRequestFilter::IsThirdParty(const std::wstring& reqHost, const std::w
     if (reqHost.empty() || topHost.empty()) return true;
     if (reqHost == topHost) return false;
     return GetBaseDomain(reqHost) != GetBaseDomain(topHost);
+}
+
+void NativeRequestFilter::SetMainFrameNavigation(const std::wstring& uri) {
+    std::lock_guard<std::mutex> lock(m_navMutex);
+    m_pendingMainNavigationUri = uri;
+    m_currentMainHost = ExtractHost(uri);
+}
+
+void NativeRequestFilter::ClearMainFrameNavigation() {
+    std::lock_guard<std::mutex> lock(m_navMutex);
+    m_pendingMainNavigationUri.clear();
+}
+
+bool NativeRequestFilter::IsMainFrameNavigation(const std::wstring& uri) const {
+    std::lock_guard<std::mutex> lock(m_navMutex);
+    if (m_pendingMainNavigationUri.empty()) return false;
+    if (uri == m_pendingMainNavigationUri) return true;
+    std::wstring navHost = m_currentMainHost;
+    std::wstring reqHost = ExtractHost(uri);
+    return (!navHost.empty() && navHost == reqHost);
+}
+
+std::wstring NativeRequestFilter::GetCurrentMainHost() const {
+    std::lock_guard<std::mutex> lock(m_navMutex);
+    return m_currentMainHost;
 }
 
 bool NativeRequestFilter::ShouldBlock(const std::wstring& uri) {
@@ -274,18 +324,26 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, I
     wil::unique_cotaskmem_string uri;
     if (FAILED(request->get_Uri(&uri)) || !uri.get()) return S_OK;
 
-    // For documents (subframes/iframes) and images (tracking pixels), only inspect third-party requests
+    // 1. If this request is for the main frame document navigation, ALWAYS allow directly!
+    if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) {
+        if (IsMainFrameNavigation(uri.get())) {
+            return S_OK;
+        }
+    }
+
+    // 2. For documents (subframes/iframes) and images (tracking pixels), only inspect third-party requests
     if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE || context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) {
-        if (sender) {
+        std::wstring topHost = GetCurrentMainHost();
+        if (topHost.empty() && sender) {
             wil::unique_cotaskmem_string topUri;
             if (SUCCEEDED(sender->get_Source(&topUri)) && topUri.get()) {
-                std::wstring topHost = ExtractHost(topUri.get());
-                std::wstring reqHost = ExtractHost(uri.get());
-                if (!topHost.empty() && !reqHost.empty() && !IsThirdParty(reqHost, topHost)) {
-                    // First-party subframe or image: allow directly without blocking
-                    return S_OK;
-                }
+                topHost = ExtractHost(topUri.get());
             }
+        }
+        std::wstring reqHost = ExtractHost(uri.get());
+        if (!topHost.empty() && !reqHost.empty() && !IsThirdParty(reqHost, topHost)) {
+            // First-party subframe or image: allow directly without blocking
+            return S_OK;
         }
     }
 
