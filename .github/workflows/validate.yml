@@ -20,6 +20,15 @@ jobs:
       - name: Run lifecycle and process tree regression tests
         run: ./power-tests
 
+  window-geometry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Test fullscreen and maximized client bounds
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/window_geometry_test.cpp -o geometry-tests
+          ./geometry-tests
+
   windows-build:
     runs-on: windows-2022
     steps:

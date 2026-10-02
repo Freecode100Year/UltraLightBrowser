@@ -29,3 +29,16 @@ Before release, test on Windows 11 with WebView2:
 3. Leave a silent window unfocused for five minutes, then focus it again.
 4. Repeat minimize/restore during navigation and with multiple renderer processes.
 5. Verify child renderer EcoQoS is removed for foreground and audio playback.
+
+## Fullscreen geometry
+
+```sh
+g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/window_geometry_test.cpp -o /tmp/geometry-tests
+/tmp/geometry-tests
+```
+
+Tests cover fullscreen from normal/maximized state, normal maximization respecting
+the taskbar, and negative monitor coordinates. On Windows, check F11 and a video
+player's fullscreen button from both normal and maximized windows. Confirm all
+four edges cover the monitor, square corners, no taskbar gap, and correct restore
+with Esc/F11. Repeat on a second display and at 125%/150% DPI.

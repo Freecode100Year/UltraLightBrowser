@@ -5,6 +5,7 @@
 #include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
+#include "WindowGeometry.hpp"
 #include <windowsx.h>
 #include <uxtheme.h>
 #include <shellapi.h>
@@ -524,7 +525,16 @@ void MainWindow::SetFullScreen(bool enable) {
         MONITORINFO mi{ sizeof(MONITORINFO) };
         GetMonitorInfoW(hMon, &mi);
 
-        SetWindowLongW(m_hWnd, GWL_STYLE, m_dwStylePrev & ~(WS_CAPTION | WS_THICKFRAME));
+        // Fullscreen must not inherit maximized work-area sizing or DWM corners.
+        const DWORD fullscreenStyle = (m_dwStylePrev & ~WS_OVERLAPPEDWINDOW) | WS_POPUP;
+        SetWindowLongW(m_hWnd, GWL_STYLE, fullscreenStyle);
+        const MARGINS margins{};
+        DwmExtendFrameIntoClientArea(m_hWnd, &margins);
+        const DWORD cornerPreference = 1; // DWMWCP_DONOTROUND (Windows 11)
+        DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                              &cornerPreference, sizeof(cornerPreference));
+        const COLORREF borderColor = 0xFFFFFFFE; // DWMWA_COLOR_NONE
+        DwmSetWindowAttribute(m_hWnd, 34 /* DWMWA_BORDER_COLOR */, &borderColor, sizeof(borderColor));
         int monW = mi.rcMonitor.right - mi.rcMonitor.left;
         int monH = mi.rcMonitor.bottom - mi.rcMonitor.top;
         SetWindowPos(
@@ -535,11 +545,19 @@ void MainWindow::SetFullScreen(bool enable) {
         );
 
         if (m_webViewManager) {
-            RECT fsRect{ 0, 0, monW, monH };
-            m_webViewManager->Resize(fsRect);
+            RECT client{};
+            GetClientRect(m_hWnd, &client);
+            m_webViewManager->Resize(client);
         }
     } else {
         SetWindowLongW(m_hWnd, GWL_STYLE, m_dwStylePrev);
+        const MARGINS margins{ 0, 0, 1, 0 };
+        DwmExtendFrameIntoClientArea(m_hWnd, &margins);
+        const DWORD cornerPreference = 2; // DWMWCP_ROUND
+        DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                              &cornerPreference, sizeof(cornerPreference));
+        const COLORREF borderColor = 0xFFFFFFFF; // DWMWA_COLOR_DEFAULT
+        DwmSetWindowAttribute(m_hWnd, 34 /* DWMWA_BORDER_COLOR */, &borderColor, sizeof(borderColor));
         SetWindowPlacement(m_hWnd, &m_wpPrev);
         SetWindowPos(
             m_hWnd, nullptr, 0, 0, 0, 0,
@@ -649,12 +667,14 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_NCCALCSIZE: {
         if (wParam == TRUE) {
-            if (IsZoomed(m_hWnd)) {
+            if (m_isFullScreen || IsZoomed(m_hWnd)) {
                 auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
                 HMONITOR hMon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
                 MONITORINFO mi{ sizeof(MONITORINFO) };
                 if (GetMonitorInfoW(hMon, &mi)) {
-                    params->rgrc[0] = mi.rcWork;
+                    params->rgrc[0] = CalculateClientBounds(
+                        params->rgrc[0], mi.rcMonitor, mi.rcWork,
+                        m_isFullScreen, IsZoomed(m_hWnd) != FALSE);
                 }
             }
             return 0; // Remove standard Windows caption and frame
