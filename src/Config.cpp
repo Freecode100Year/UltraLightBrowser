@@ -62,6 +62,10 @@ void Config::Load() {
             if (s.contains("startUrl") && s["startUrl"].is_string()) {
                 m_settings.startUrl = StringUtils::Utf8ToWide(s["startUrl"].get<std::string>());
             }
+            if (s.contains("userAgentProfile") && s["userAgentProfile"].is_string()) {
+                const auto profile = s["userAgentProfile"].get<std::string>();
+                m_settings.userAgentProfile = profile == "macos-edge" ? profile : "default";
+            }
             if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
             if (s.contains("enableAdBlock")) m_settings.enableAdBlock = s["enableAdBlock"];
             if (s.contains("ecoMode")) m_settings.ecoMode = s["ecoMode"];
@@ -116,6 +120,7 @@ void Config::Save() {
         std::string startUrlNarrow = StringUtils::WideToUtf8(m_settings.startUrl);
         root["settings"] = {
             {"startUrl", startUrlNarrow},
+            {"userAgentProfile", m_settings.userAgentProfile},
             {"hardwareAcceleration", m_settings.hardwareAcceleration},
             {"enableAdBlock", m_settings.enableAdBlock},
             {"ecoMode", m_settings.ecoMode},

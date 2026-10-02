@@ -1245,6 +1245,20 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             DnsManager::Instance().ShowDnsDialog(m_hWnd);
             UpdateDnsDisplay();
             break;
+        case IDM_UA_DEFAULT:
+        case IDM_UA_MACOS_EDGE: {
+            const std::string profile = id == IDM_UA_MACOS_EDGE ? "macos-edge" : "default";
+            auto& settings = Config::Instance().GetSettings();
+            if (settings.userAgentProfile == profile) break;
+            const HRESULT hr = m_webViewManager ? m_webViewManager->ApplyUserAgentProfile(profile, true) : E_PENDING;
+            if (SUCCEEDED(hr)) {
+                settings.userAgentProfile = profile;
+                Config::Instance().Save();
+            } else {
+                MessageBoxW(m_hWnd, L"UA 切换失败，设置未保存。请等待页面初始化，或更新 WebView2 Runtime 后重试。", L"浏览器标识", MB_OK | MB_ICONWARNING);
+            }
+            break;
+        }
         case IDC_BTN_SOUND:
             ShowSoundMenu();
             break;
@@ -1719,6 +1733,15 @@ void MainWindow::ShowShareMenu() {
     AppendMenuW(hMenu, MF_STRING, IDM_SHARE_OPEN_DEFAULT, L"🌐  在系统默认浏览器中打开");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_FULLSCREEN, m_isFullScreen ? L"🖥️  退出全屏视图 (F11)" : L"🖥️  全屏视图 (F11)");
+
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    HMENU uaMenu = CreatePopupMenu();
+    if (uaMenu) {
+        const bool mac = Config::Instance().GetSettings().userAgentProfile == "macos-edge";
+        AppendMenuW(uaMenu, MF_STRING | (!mac ? MF_CHECKED : 0), IDM_UA_DEFAULT, L"Windows Edge（默认）");
+        AppendMenuW(uaMenu, MF_STRING | (mac ? MF_CHECKED : 0), IDM_UA_MACOS_EDGE, L"macOS Edge");
+        AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(uaMenu), L"浏览器 UA 标识（切换会刷新）");
+    }
 
     RECT btnRect{};
     GetWindowRect(m_hBtnShare, &btnRect);

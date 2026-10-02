@@ -1,7 +1,7 @@
 # UltraLightBrowser — 整合修复源码版
 
 Windows 原生 Win32 / C++20 / Microsoft Edge WebView2 浏览器外壳。
-当前版本 1.6.4，基于 v1.6.0，整合全屏、后台节能、音频保真和可选增强修复。
+当前版本 1.6.5，基于 v1.6.0，整合全屏、后台节能、音频保真和可选增强修复。
 
 完整说明：[FULL_VERSION_GUIDE.md](FULL_VERSION_GUIDE.md)。
 本包不含编译后的 EXE，Windows 实机验证尚未完成。
@@ -14,6 +14,7 @@ Windows 原生 Win32 / C++20 / Microsoft Edge WebView2 浏览器外壳。
 - 可选对白、轻柔、标准和影院 DSP；音箱保留左右声道；按需建立 HRTF/混响节点。
 - 音量与 EQ 平滑调整，软件动态压缩保护；全部效果关闭时旁路处理。
 - 借鉴 XQL-MUSIC：EQ 预衰减、补偿式交叉馈送、齿音抑制和夜间模式。
+- 分享菜单支持默认 Windows Edge / macOS Edge UA 切换，刷新生效并保存选择。
 - 播放诊断显示增强状态、视频尺寸和丢帧统计。
 - 原有地址搜索、缩放、元素隐藏、请求拦截及 DNS 设置。
 

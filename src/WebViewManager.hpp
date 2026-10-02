@@ -43,6 +43,7 @@ public:
     void GoBack();
     void GoForward();
     void Reload();
+    HRESULT ApplyUserAgentProfile(const std::string& profile, bool reloadPage = false);
     void Stop();
 
     // Zoom controls
@@ -96,6 +97,7 @@ private:
     unsigned m_pendingAudioScriptRegistrations = 0;
     bool m_audioReloadPending = false;
     std::wstring m_audioScriptId;
+    std::wstring m_defaultUserAgent;
     bool m_isPlayingAudio = false;
     EventRegistrationToken m_audioPlayingToken{};
 

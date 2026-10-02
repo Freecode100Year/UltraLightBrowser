@@ -56,6 +56,8 @@ enum AppCommandID : WORD {
     IDM_AUDIO_DIAGNOSTICS   = 2054,
     IDM_AUDIO_DEESSER       = 2055,
     IDM_AUDIO_NIGHT         = 2056,
+    IDM_UA_DEFAULT         = 2060,
+    IDM_UA_MACOS_EDGE       = 2061,
     IDM_DNS_SELECT_BASE     = 2100
 };
 

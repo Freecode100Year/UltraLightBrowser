@@ -1,4 +1,4 @@
-# UltraLightBrowser 1.6.2 整合修复版
+# UltraLightBrowser 1.6.3 整合修复版
 
 这是基于 v1.6.0 的完整源码版本，包含全屏、后台节能与音频处理修复。
 压缩包不含预编译 EXE；当前开发环境为 Linux，Windows 编译和实际播放仍需验证。
@@ -126,3 +126,17 @@ Web Audio 压缩器延迟参考：https://www.w3.org/TR/webaudio/#DynamicsCompre
 Web Audio 的这两类滤波器 Q 使用 dB，因此 Butterworth 设置为约 -3.0103dB，
 而 peaking EQ 的 Q 仍使用线性值。数值验证采用相同的 Web Audio 单位转换。
 本版不是未经修改地照搬源项目的参数。
+
+## 1.6.3：浏览器 UA 标识切换
+
+点击工具栏分享按钮 →「浏览器 UA 标识」→ Windows Edge（默认）或 macOS Edge。
+切换成功后自动刷新当前页，选择保存到 config.json 的 settings.userAgentProfile，启动时在首次导航前应用。
+macOS 使用 Macintosh / Intel Mac OS X 10_15_7 平台标识，保留当前 WebView2 的 Chrome 和 Edg 版本；此系统字段是兼容性标识，不代表实际 macOS 版本。
+默认模式恢复初始化时读取的完整原始 UA，避免写死版本。失败时不保存菜单切换，旧 Runtime 不支持接口时显示提示。
+
+这是 UA 兼容性切换，不是完整的系统指纹模拟。Windows 渲染引擎、字体、GPU、解码和 DRM 能力不会因此变成 macOS。
+WebView2 设置 UA 可能清除 Sec-CH-UA-* 与 navigator.userAgentData，行为取决于 Runtime；不保证所有站点识别为 Mac。
+页面 navigator.platform 仍可能显示 Windows。本版不额外伪造平台或高熵 Client Hints。
+切换会刷新，表单或未保存内容可能丢失；已经运行的 worker 需要站点自行重新创建，某些共享 worker 的 UA 由最后设置的 WebView 决定。
+Windows 实机验收：检查请求 User-Agent 与 navigator.userAgent，两个方向切换，退出重启验证保存；检查实际站点兼容性。
+接口参考：https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2settings2

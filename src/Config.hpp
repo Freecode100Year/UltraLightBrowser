@@ -10,6 +10,7 @@ namespace UltraLight {
 
 struct AppSettings {
     std::wstring startUrl = L"https://www.google.com";
+    std::string userAgentProfile = "default"; // default / macos-edge
     bool hardwareAcceleration = true;
     bool enableAdBlock = true;
     bool ecoMode = false;

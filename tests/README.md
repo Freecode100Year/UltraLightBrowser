@@ -67,3 +67,7 @@ failure and synchronous failure. It still does not emulate real COM ownership.
 `node tests/verify_audio_response.mjs` checks 48kHz static crossfeed centre response,
 LR4 idle sum and vocal EQ headroom from shipped constants. Matching the 6ms
 compressor lookahead is checked too. This is not an end-to-end sound-quality test.
+
+## UA profiles
+
+`g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/user_agent_test.cpp -o /tmp/ua-tests && /tmp/ua-tests` checks actual platform replacement, version preservation, default restoration and malformed UA rejection. Native settings application needs Windows verification.

@@ -1,6 +1,7 @@
 #include "WebViewManager.hpp"
 #include "MainWindow.hpp"
 #include "Config.hpp"
+#include "UserAgent.hpp"
 #include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
@@ -171,6 +172,10 @@ HRESULT WebViewManager::TryInitEnvironment(int attempt) {
                             }
                             m_controller = controller;
                             m_controller->get_CoreWebView2(&m_webView);
+                            const auto uaResult = ApplyUserAgentProfile(Config::Instance().GetSettings().userAgentProfile);
+                            if (FAILED(uaResult) && Config::Instance().GetSettings().userAgentProfile != "default") {
+                                MessageBoxW(m_hWndParent, L"无法应用已保存的 UA，当前使用默认浏览器标识。", L"浏览器标识", MB_OK | MB_ICONWARNING);
+                            }
 
                             // Foreground starts at NORMAL. PowerManager lowers the
                             // memory budget only for silent background content.
@@ -501,6 +506,32 @@ void WebViewManager::NotifyParentWindowPositionChanged() {
     if (m_controller) {
         m_controller->NotifyParentWindowPositionChanged();
     }
+}
+
+HRESULT WebViewManager::ApplyUserAgentProfile(const std::string& profile, bool reloadPage) {
+    if (!m_webView) return E_PENDING;
+    wil::com_ptr<ICoreWebView2Settings> settings;
+    HRESULT hr = m_webView->get_Settings(&settings);
+    if (FAILED(hr)) return hr;
+    wil::com_ptr<ICoreWebView2Settings2> settings2;
+    hr = settings->QueryInterface(IID_PPV_ARGS(&settings2));
+    if (FAILED(hr)) return hr;
+    const bool firstCapture = m_defaultUserAgent.empty();
+    if (firstCapture) {
+        LPWSTR original = nullptr;
+        hr = settings2->get_UserAgent(&original);
+        if (SUCCEEDED(hr) && original) m_defaultUserAgent = original;
+        CoTaskMemFree(original);
+        if (FAILED(hr)) return hr;
+        if (m_defaultUserAgent.empty()) return E_FAIL;
+    }
+    // Leave untouched default startup metadata and Client Hints intact.
+    if (firstCapture && profile != "macos-edge") return S_OK;
+    const auto ua = BuildUserAgent(m_defaultUserAgent, profile);
+    if (ua.empty()) return E_INVALIDARG;
+    hr = settings2->put_UserAgent(ua.c_str());
+    if (SUCCEEDED(hr) && reloadPage) Reload();
+    return hr;
 }
 
 void WebViewManager::Navigate(const std::wstring& url) {
