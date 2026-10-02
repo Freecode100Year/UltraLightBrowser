@@ -7,6 +7,7 @@
 #include <WebView2EnvironmentOptions.h>
 #include <string>
 #include <functional>
+#include <filesystem>
 
 namespace UltraLight {
 
