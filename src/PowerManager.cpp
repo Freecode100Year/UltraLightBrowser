@@ -1,7 +1,8 @@
 #include "PowerManager.hpp"
 #include <tlhelp32.h>
 #include <psapi.h>
-#include <iostream>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace UltraLight {
 
@@ -56,31 +57,34 @@ void PowerManager::SetProcessTreeEcoQoS(DWORD parentPid, bool enableEcoQoS) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return;
 
+    // Capture the process tree once instead of taking a full system snapshot
+    // recursively for every descendant. Iteration also avoids stack exhaustion.
+    std::unordered_map<DWORD, std::vector<DWORD>> children;
     PROCESSENTRY32W entry{};
     entry.dwSize = sizeof(PROCESSENTRY32W);
-
     if (Process32FirstW(snapshot, &entry)) {
         do {
-            if (entry.th32ParentProcessID == parentPid) {
-                HANDLE hChild = OpenProcess(
-                    PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
-                    FALSE,
-                    entry.th32ProcessID
-                );
-                if (hChild) {
-                    if (enableEcoQoS) {
-                        EnableEcoQoS(hChild);
-                    } else {
-                        DisableEcoQoS(hChild);
-                    }
-                    CloseHandle(hChild);
-                }
-                // Recursively traverse child processes
-                SetProcessTreeEcoQoS(entry.th32ProcessID, enableEcoQoS);
-            }
+            children[entry.th32ParentProcessID].push_back(entry.th32ProcessID);
         } while (Process32NextW(snapshot, &entry));
     }
     CloseHandle(snapshot);
+
+    std::vector<DWORD> pending{parentPid};
+    std::unordered_set<DWORD> visited{parentPid};
+    for (size_t i = 0; i < pending.size(); ++i) {
+        const auto it = children.find(pending[i]);
+        if (it == children.end()) continue;
+        for (DWORD pid : it->second) {
+            if (!visited.insert(pid).second) continue;
+            pending.push_back(pid);
+            HANDLE hChild = OpenProcess(PROCESS_SET_INFORMATION, FALSE, pid);
+            if (hChild) {
+                if (enableEcoQoS) EnableEcoQoS(hChild);
+                else DisableEcoQoS(hChild);
+                CloseHandle(hChild);
+            }
+        }
+    }
 }
 
 void PowerManager::HandleWindowMinimize(ICoreWebView2Controller* controller, ICoreWebView2* webView, bool isPlayingAudio) {
@@ -90,13 +94,20 @@ void PowerManager::HandleWindowMinimize(ICoreWebView2Controller* controller, ICo
     webView->get_BrowserProcessId(&browserPid);
 
     if (isPlayingAudio) {
-        // Backstage audio playback:
-        // NEVER call TrySuspend() as it halts the renderer process and kills the audio stream!
-        // Cull DirectComposition / GPU frame rasterization via put_IsVisible(FALSE).
+        // A document may start audio while a background suspend is pending.
+        // Invalidate that request and undo all renderer throttling first.
+        if (m_isSuspended || m_suspendPending) {
+            HandleWindowRestore(controller, webView);
+        }
         controller->put_IsVisible(FALSE);
+        m_isBackgrounded = true;
         m_isAudioPlaybackBackgrounded = true;
-
-        // Keep audio rendering threads un-throttled at standard priority to prevent crackling / buffer underrun
+        // A rejected suspension still lowered the memory target. Audio must
+        // restore it even when no suspend operation remains pending.
+        wil::com_ptr<ICoreWebView2_19> webView19;
+        if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView19))) && webView19) {
+            webView19->put_MemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL);
+        }
         DisableEcoQoS(GetCurrentProcess());
         if (browserPid != 0) {
             HANDLE hBrowser = OpenProcess(PROCESS_SET_INFORMATION, FALSE, browserPid);
@@ -104,39 +115,52 @@ void PowerManager::HandleWindowMinimize(ICoreWebView2Controller* controller, ICo
                 DisableEcoQoS(hBrowser);
                 CloseHandle(hBrowser);
             }
+            SetProcessTreeEcoQoS(browserPid, false);
+        }
+        return;
+    }
+
+    controller->put_IsVisible(FALSE);
+    m_isBackgrounded = true;
+    m_isAudioPlaybackBackgrounded = false;
+    if (m_isSuspended || m_suspendPending) return;
+
+    if (browserPid != 0) SetProcessTreeEcoQoS(browserPid, true);
+    EnableEcoQoS(GetCurrentProcess());
+    wil::com_ptr<ICoreWebView2_19> webView19;
+    if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView19))) && webView19) {
+        webView19->put_MemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
+    }
+
+    wil::com_ptr<ICoreWebView2_3> webView3;
+    if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView3))) && webView3) {
+        m_suspendPending = true;
+        const auto generation = ++m_suspendGeneration;
+        const HRESULT hr = webView3->TrySuspend(
+            Microsoft::WRL::Callback<ICoreWebView2TrySuspendCompletedHandler>(
+                [this, generation, webView3](HRESULT result, BOOL successful) -> HRESULT {
+                    if (generation != m_suspendGeneration) {
+                        // A restore raced this asynchronous completion. Do not
+                        // apply the stale result or trim a now-active window.
+                        if ((!m_isBackgrounded || m_isAudioPlaybackBackgrounded) &&
+                            SUCCEEDED(result) && successful) {
+                            webView3->Resume();
+                        }
+                        return S_OK;
+                    }
+                    m_suspendPending = false;
+                    m_isSuspended = SUCCEEDED(result) && successful;
+                    if (m_isSuspended) TrimWorkingSet();
+                    return S_OK;
+                }
+            ).Get()
+        );
+        if (FAILED(hr) && generation == m_suspendGeneration) {
+            m_suspendPending = false;
+            m_isSuspended = false;
         }
     } else {
-        // Inactive non-audio background:
-        if (!m_isSuspended) {
-            wil::com_ptr<ICoreWebView2_3> webView3;
-            if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView3))) && webView3) {
-                m_isSuspended = true;
-                webView3->TrySuspend(
-                    Microsoft::WRL::Callback<ICoreWebView2TrySuspendCompletedHandler>(
-                        [this](HRESULT hr, BOOL isSuccessful) -> HRESULT {
-                            if (SUCCEEDED(hr) && isSuccessful) {
-                                this->TrimWorkingSet();
-                            }
-                            return S_OK;
-                        }
-                    ).Get()
-                );
-            } else {
-                TrimWorkingSet();
-            }
-
-            // Enforce Windows 11 EcoQoS on child renderer processes (scheduled on E-Cores)
-            if (browserPid != 0) {
-                SetProcessTreeEcoQoS(browserPid, true);
-            }
-            EnableEcoQoS(GetCurrentProcess());
-
-            // Target low memory usage when backgrounded
-            wil::com_ptr<ICoreWebView2_19> webView19;
-            if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView19))) && webView19) {
-                webView19->put_MemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
-            }
-        }
+        TrimWorkingSet();
     }
 }
 
@@ -146,12 +170,18 @@ void PowerManager::HandleWindowRestore(ICoreWebView2Controller* controller, ICor
     UINT32 browserPid = 0;
     webView->get_BrowserProcessId(&browserPid);
 
+    // Invalidate pending callbacks before restoring foreground state.
+    ++m_suspendGeneration;
+    const bool needsResume = m_isSuspended || m_suspendPending;
+    m_suspendPending = false;
+    m_isBackgrounded = false;
+
     // 1. Restore visibility (DirectComposition rasterization resume)
     controller->put_IsVisible(TRUE);
     m_isAudioPlaybackBackgrounded = false;
 
     // 2. Resume renderer if suspended
-    if (m_isSuspended) {
+    if (needsResume) {
         wil::com_ptr<ICoreWebView2_3> webView3;
         if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView3))) && webView3) {
             webView3->Resume();

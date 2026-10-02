@@ -5,6 +5,7 @@
 #include <wil/com.h>
 #include <WebView2.h>
 #include <vector>
+#include <cstdint>
 
 namespace UltraLight {
 
@@ -29,6 +30,7 @@ public:
     void HandleInactivitySuspend(ICoreWebView2Controller* controller, ICoreWebView2* webView, bool isPlayingAudio);
     void HandleActivityResume(ICoreWebView2Controller* controller, ICoreWebView2* webView);
 
+    bool IsBackgrounded() const { return m_isBackgrounded; }
     bool IsSuspended() const { return m_isSuspended; }
     bool IsAudioPlaybackBackgrounded() const { return m_isAudioPlaybackBackgrounded; }
 
@@ -43,6 +45,9 @@ private:
     PowerManager& operator=(const PowerManager&) = delete;
 
     bool m_isHighPerformance = false;
+    bool m_isBackgrounded = false;
+    bool m_suspendPending = false;
+    std::uint64_t m_suspendGeneration = 0;
     bool m_isSuspended = false;
     bool m_isAudioPlaybackBackgrounded = false;
 };

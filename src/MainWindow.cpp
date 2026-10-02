@@ -737,10 +737,21 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             UpdateZoomDisplay(zoom);
         });
 
+        m_webViewManager->SetAudioPlayingCallback([this](bool isPlayingAudio) {
+            if (m_webViewManager && m_webViewManager->GetWebView() &&
+                PowerManager::Instance().IsBackgrounded()) {
+                PowerManager::Instance().HandleWindowMinimize(
+                    m_webViewManager->GetController(),
+                    m_webViewManager->GetWebView(),
+                    isPlayingAudio
+                );
+            }
+        });
+
         m_webViewManager->SetUserActivityCallback([this]() {
             m_lastInteractionTick = GetTickCount64();
             if (m_webViewManager && m_webViewManager->GetWebView() &&
-                (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
+                PowerManager::Instance().IsBackgrounded()) {
                 PowerManager::Instance().HandleActivityResume(
                     m_webViewManager->GetController(),
                     m_webViewManager->GetWebView()
@@ -1021,7 +1032,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             KillTimer(m_hWnd, IDT_INACTIVITY_CHECK);
             m_lastInteractionTick = GetTickCount64();
             if (m_webViewManager && m_webViewManager->GetWebView() &&
-                (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
+                PowerManager::Instance().IsBackgrounded()) {
                 PowerManager::Instance().HandleActivityResume(
                     m_webViewManager->GetController(),
                     m_webViewManager->GetWebView()
@@ -1037,7 +1048,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_SETFOCUS: {
         m_lastInteractionTick = GetTickCount64();
         if (m_webViewManager && m_webViewManager->GetWebView() &&
-            (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
+            PowerManager::Instance().IsBackgrounded()) {
             PowerManager::Instance().HandleActivityResume(
                 m_webViewManager->GetController(),
                 m_webViewManager->GetWebView()
@@ -1059,7 +1070,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         } else if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) {
             if (m_webViewManager && m_webViewManager->GetWebView() &&
-                (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
+                PowerManager::Instance().IsBackgrounded()) {
                 PowerManager::Instance().HandleWindowRestore(
                     m_webViewManager->GetController(),
                     m_webViewManager->GetWebView()
