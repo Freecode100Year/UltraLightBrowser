@@ -36,6 +36,13 @@ struct Tab {
     bool applyingZoom = false;
 };
 
+// Thumbnail produced on a worker thread and posted back with WM_APP_THUMBNAIL.
+struct ThumbnailMessage {
+    int tabId = 0;
+    std::string dataUrl;
+    std::function<void()> done;
+};
+
 // Lightweight WebView2 host for built-in panels (sidebar, tab overview).
 struct PanelView {
     wil::com_ptr<ICoreWebView2Controller> controller;
@@ -108,7 +115,11 @@ private:
     void NavigateActive(const std::wstring& input);
     std::wstring NewTabUrl() const;
     void UpdateWindowTitle();
-    void TabsChanged();             // repaint + notify panels
+    void TabsChanged();             // repaint + notify panels (debounced)
+    void FlushPanels();
+    void PrepareSpareTab();
+    Tab* TakeSpareTab(int insertAfterId);
+    void OnThumbnailReady(int tabId, std::string dataUrl);
 
     // ---- Toolbar (MainWindowPaint.cpp)
     enum class Hit { None, Traffic, Sidebar, Back, Forward, Share, NewTab, Overview, Menu,
@@ -193,6 +204,8 @@ private:
     int m_activeId = 0;
     int m_nextTabId = 1;
     std::vector<std::wstring> m_closedUrls;
+    std::unique_ptr<Tab> m_spare;       // pre-warmed new-tab page, shown instantly on Ctrl+T
+    bool m_panelsDirty = false;
 
     // Toolbar geometry
     int m_topbarHeight = 52;
@@ -269,6 +282,15 @@ private:
     static constexpr UINT_PTR IDT_TOAST = 5006;
     static constexpr UINT_PTR IDT_THUMB = 5007;
     static constexpr UINT_PTR IDT_LIBRARY_SAVE = 5008;
+    static constexpr UINT_PTR IDT_PANELS = 5009;
+    static constexpr UINT_PTR IDT_SPARE = 5010;
+    static constexpr UINT WM_APP_THUMBNAIL = WM_APP + 1;
+
+    // Toolbar paint cache
+    HBITMAP m_paintBitmap = nullptr;
+    SIZE m_paintSize{};
+    std::unique_ptr<Gdiplus::Font> m_gpUiFont, m_gpAddressFont, m_gpSmallFont;
+    void EnsurePaintFonts(HDC hdc);
 };
 
 } // namespace UltraLight

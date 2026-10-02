@@ -44,25 +44,6 @@ bool ReadJson(const std::filesystem::path& path, json& out) {
     }
 }
 
-void WriteJson(const std::filesystem::path& path, const json& value) {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    auto tmp = path;
-    tmp += ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out.is_open()) return;
-        out << value.dump();
-        out.flush();
-        if (!out) return;
-    }
-    std::filesystem::rename(tmp, path, ec);
-    if (ec) {
-        std::filesystem::copy_file(tmp, path, std::filesystem::copy_options::overwrite_existing, ec);
-        std::filesystem::remove(tmp, ec);
-    }
-}
-
 std::string Str(const json& obj, const char* key) {
     if (!obj.is_object()) return {};
     const auto it = obj.find(key);
@@ -312,7 +293,31 @@ void Library::LoadSessionFile() {
     }
 }
 
+void Library::WriteFileAtomic(const std::filesystem::path& path, const std::string& data) {
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    auto tmp = path;
+    tmp += ".tmp";
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out.is_open()) return;
+        out << data;
+        out.flush();
+        if (!out) return;
+    }
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        std::filesystem::copy_file(tmp, path, std::filesystem::copy_options::overwrite_existing, ec);
+        std::filesystem::remove(tmp, ec);
+    }
+}
+
 void Library::Save() {
+    for (const auto& [path, data] : TakeSnapshot()) WriteFileAtomic(path, data);
+}
+
+std::vector<std::pair<std::filesystem::path, std::string>> Library::TakeSnapshot() {
+    std::vector<std::pair<std::filesystem::path, std::string>> out;
     if (m_dirtyLibrary) {
         json root;
         root["folders"] = m_folders;
@@ -330,25 +335,25 @@ void Library::Save() {
         }
         root["groups"] = std::move(groups);
         json sites = json::object();
-        for (const auto& [host, s] : m_sites) {
-            sites[host] = {{"zoom", s.zoom}, {"autoReader", s.autoReader}, {"camera", s.camera},
-                           {"microphone", s.microphone}, {"location", s.location}, {"popups", s.popups}, {"adblock", s.adblock}};
+        for (const auto& [host, st] : m_sites) {
+            sites[host] = {{"zoom", st.zoom}, {"autoReader", st.autoReader}, {"camera", st.camera},
+                           {"microphone", st.microphone}, {"location", st.location}, {"popups", st.popups}, {"adblock", st.adblock}};
         }
         root["sites"] = std::move(sites);
-        WriteJson(m_dir / "library.json", root);
+        out.emplace_back(m_dir / "library.json", root.dump(-1, ' ', false, json::error_handler_t::replace));
         m_dirtyLibrary = false;
     }
     if (m_dirtyHistory) {
         json arr = json::array();
         for (const auto& e : m_history) arr.push_back({{"url", e.url}, {"title", e.title}, {"last", e.last}, {"visits", e.visits}});
-        WriteJson(m_dir / "history.json", arr);
+        out.emplace_back(m_dir / "history.json", arr.dump(-1, ' ', false, json::error_handler_t::replace));
         m_dirtyHistory = false;
     }
     if (m_dirtyPrivacy) {
         json root = json::object();
         for (const auto& [day, trackers] : m_trackersByDay) root[day]["trackers"] = trackers;
         for (const auto& [day, sites] : m_sitesByDay) root[day]["sites"] = sites;
-        WriteJson(m_dir / "privacy.json", root);
+        out.emplace_back(m_dir / "privacy.json", root.dump(-1, ' ', false, json::error_handler_t::replace));
         m_dirtyPrivacy = false;
     }
     if (m_dirtySession) {
@@ -358,9 +363,10 @@ void Library::Save() {
             for (const auto& t : w) tabs.push_back({{"title", t.title}, {"url", t.url}});
             arr.push_back(std::move(tabs));
         }
-        WriteJson(m_dir / "session.json", arr);
+        out.emplace_back(m_dir / "session.json", arr.dump(-1, ' ', false, json::error_handler_t::replace));
         m_dirtySession = false;
     }
+    return out;
 }
 
 // ---------------------------------------------------------------- bookmarks

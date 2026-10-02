@@ -4,7 +4,12 @@
 
 #include <wil/com.h>
 #include <fstream>
+#include <iterator>
 #include <string_view>
+
+#ifndef ULB_VERSION
+#define ULB_VERSION "dev"
+#endif
 
 namespace UltraLight::InternalPages {
 
@@ -112,6 +117,19 @@ void Extract() {
     const auto root = Folder();
     std::filesystem::create_directories(root / "vendor", ec);
     std::filesystem::create_directories(FaviconCacheDir(), ec);
+    // Skip rewriting the pages when this build already extracted them.
+    std::string stamp = ULB_VERSION;
+    for (const auto& f : kUiFiles) stamp += "|" + std::to_string(Resource(f.id).size());
+    {
+        std::ifstream in(root / ".stamp", std::ios::binary);
+        std::string existing((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        bool complete = existing == stamp;
+        for (const auto& f : kUiFiles) {
+            if (!complete) break;
+            complete = std::filesystem::exists(root / std::filesystem::path(StringUtils::Utf8ToWide(f.name)), ec);
+        }
+        if (complete) return;
+    }
     for (const auto& f : kUiFiles) {
         const auto data = Resource(f.id);
         if (data.empty()) continue;
@@ -119,6 +137,7 @@ void Extract() {
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         out.write(data.data(), static_cast<std::streamsize>(data.size()));
     }
+    std::ofstream(root / ".stamp", std::ios::binary | std::ios::trunc) << stamp;
 }
 
 std::wstring Url(const std::wstring& page) {

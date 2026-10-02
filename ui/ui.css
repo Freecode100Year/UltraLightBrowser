@@ -26,7 +26,8 @@ h2{font-size:18px;font-weight:600;margin:28px 0 12px}
 .row{display:flex;gap:12px;align-items:center}
 .spacer{flex:1}
 .tile{flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:#fff;font-weight:700;overflow:hidden;position:relative}
-.tile img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff}
+.tile img{position:absolute;left:50%;top:50%;width:min(100%,32px);height:min(100%,32px);transform:translate(-50%,-50%);object-fit:contain}
+.tile.has-img{background:#f4f5f7!important;color:transparent!important}
 .list .item{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:8px}
 .list .item:hover{background:var(--hover)}
 .list .item .t{flex:1;min-width:0}

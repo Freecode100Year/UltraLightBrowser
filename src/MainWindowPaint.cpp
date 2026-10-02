@@ -236,9 +236,9 @@ void MainWindow::UpdateLayout() {
         if (m_hFindEdit) ShowWindow(m_hFindEdit, SW_HIDE);
     }
 
-    for (const auto& tab : m_tabs) {
-        if (tab->view) tab->view->Resize(content);
-    }
+    // Only the visible tab is resized; others get their bounds when activated
+    // (resizing every hidden WebView made window dragging stutter with many tabs).
+    if (Tab* active = ActiveTab(); active && active->view) active->view->Resize(content);
     LayoutPanels();
     InvalidateToolbar();
     if (m_findVisible) InvalidateRect(m_hWnd, &m_rcFindBar, FALSE);
@@ -328,9 +328,10 @@ void MainWindow::PaintToolbar(HDC hdc, int width) {
     button(m_rcOverviewBtn, Icon::Grid, Hit::Overview, true, m_overviewVisible);
     button(m_rcMenuBtn, Icon::More, Hit::Menu, true);
 
-    Font uiFont(hdc, m_hUiFont);
-    Font addressFont(hdc, m_hAddressFont);
-    Font smallFont(hdc, m_hSmallFont);
+    EnsurePaintFonts(hdc);
+    Font& uiFont = *m_gpUiFont;
+    Font& addressFont = *m_gpAddressFont;
+    Font& smallFont = *m_gpSmallFont;
 
     if (m_private) {
         FillRound(g, F(m_rcPrivateBadge), static_cast<REAL>(S(11)), C(92, 62, 150));
@@ -483,7 +484,8 @@ void MainWindow::PaintFindBar(HDC hdc) {
     Pen sep(C(24, 25, 29), 1);
     g.DrawLine(&sep, static_cast<REAL>(m_rcFindBar.left), m_rcFindBar.bottom - 0.5f, static_cast<REAL>(m_rcFindBar.right), m_rcFindBar.bottom - 0.5f);
 
-    Font uiFont(hdc, m_hUiFont);
+    EnsurePaintFonts(hdc);
+    Font& uiFont = *m_gpUiFont;
     // Search field background
     if (m_hFindEdit) {
         RECT er{};

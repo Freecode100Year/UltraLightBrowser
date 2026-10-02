@@ -13,6 +13,7 @@
 #include <wincrypt.h>
 #include <cmath>
 #include <fstream>
+#include <thread>
 #include <nlohmann/json.hpp>
 
 #pragma comment(lib, "crypt32.lib")
@@ -79,12 +80,46 @@ std::filesystem::path FaviconPath(const std::string& host) {
 
 Tab* MainWindow::FindTab(int id) {
     for (auto& t : m_tabs) if (t->id == id) return t.get();
+    if (m_spare && m_spare->id == id) return m_spare.get();
     return nullptr;
 }
 
 const Tab* MainWindow::FindTab(int id) const {
     for (const auto& t : m_tabs) if (t->id == id) return t.get();
+    if (m_spare && m_spare->id == id) return m_spare.get();
     return nullptr;
+}
+
+void MainWindow::PrepareSpareTab() {
+    if (m_spare || m_closing || m_destroyed) return;
+    auto tab = std::make_unique<Tab>();
+    tab->id = m_nextTabId++;
+    tab->url = NewTabUrl();
+    tab->title = InternalPages::PageName(tab->url) == L"start.html" ? L"起始页" : L"";
+    const int id = tab->id;
+    const std::wstring url = tab->url;
+    m_spare = std::move(tab);
+    CreateTabView(id, [url](Tab& t) {
+        t.view->Navigate(url);
+        t.view->ApplyMemoryUsageTargetLow();
+    });
+}
+
+Tab* MainWindow::TakeSpareTab(int insertAfterId) {
+    if (!m_spare || !m_spare->view || !m_spare->view->IsReady() || m_spare->url != NewTabUrl()) return nullptr;
+    std::unique_ptr<Tab> tab = std::move(m_spare);
+    Tab* raw = tab.get();
+    raw->lastActive = GetTickCount64();
+    int insertAt = static_cast<int>(m_tabs.size());
+    if (insertAfterId) {
+        const int idx = IndexOf(insertAfterId);
+        if (idx >= 0) insertAt = idx + 1;
+    }
+    m_tabs.insert(m_tabs.begin() + insertAt, std::move(tab));
+    // Refresh the pre-rendered start page (favorites, reading list) and warm the next one.
+    if (raw->view->GetWebView() && InternalPages::IsInternal(raw->url)) PostEvent(raw->view->GetWebView(), "library", "null");
+    SetTimer(m_hWnd, IDT_SPARE, 1500, nullptr);
+    return raw;
 }
 
 int MainWindow::IndexOf(int id) const {
@@ -103,6 +138,12 @@ std::wstring MainWindow::NewTabUrl() const {
 }
 
 Tab* MainWindow::NewTab(const std::wstring& url, bool activate, int insertAfterId, std::function<void(Tab&)> onReady) {
+    if (!onReady && activate && url == NewTabUrl()) {
+        if (Tab* spare = TakeSpareTab(insertAfterId)) {
+            ActivateTab(spare->id);
+            return spare;
+        }
+    }
     auto tab = std::make_unique<Tab>();
     tab->id = m_nextTabId++;
     tab->url = url;
@@ -142,6 +183,7 @@ void MainWindow::CreateTabView(int tabId, std::function<void(Tab&)> onReady) {
         Tab* t = FindTab(tabId);
         if (!t || !t->view || m_closing) return;
         t->view->Resize(ContentRect());
+        if (!m_spare) SetTimer(m_hWnd, IDT_SPARE, 2500, nullptr);
         t->view->Initialize(m_hWnd, env, m_private, tabId == m_activeId, [this, tabId, onReady]() {
             Tab* ready = FindTab(tabId);
             if (!ready) return;
@@ -195,7 +237,7 @@ void MainWindow::WireTab(Tab& tab) {
         t->loading = loading;
         if (loading) {
             t->loadStarted = GetTickCount64();
-            if (id == m_activeId) SetTimer(m_hWnd, IDT_PROGRESS, 60, nullptr);
+            if (id == m_activeId) SetTimer(m_hWnd, IDT_PROGRESS, 100, nullptr);
         }
         InvalidateToolbar();
     });
@@ -318,7 +360,7 @@ void MainWindow::ActivateTab(int id) {
         if (auto* c = next->view->GetController()) c->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
     }
     if (m_findVisible) HideFindBar();
-    if (next->loading) SetTimer(m_hWnd, IDT_PROGRESS, 60, nullptr);
+    if (next->loading) SetTimer(m_hWnd, IDT_PROGRESS, 100, nullptr);
     UpdateLayout();
     UpdateWindowTitle();
     TabsChanged();
@@ -558,6 +600,40 @@ COREWEBVIEW2_PERMISSION_STATE MainWindow::PermissionFor(COREWEBVIEW2_PERMISSION_
     return COREWEBVIEW2_PERMISSION_STATE_DEFAULT;
 }
 
+namespace {
+
+// Runs on a worker thread: decode the JPEG preview, scale it down, re-encode.
+std::string MakeThumbnail(const std::vector<std::uint8_t>& jpeg) {
+    wil::com_ptr<IStream> in;
+    in.attach(SHCreateMemStream(jpeg.data(), static_cast<UINT>(jpeg.size())));
+    if (!in) return {};
+    std::unique_ptr<Gdiplus::Bitmap> full(Gdiplus::Bitmap::FromStream(in.get()));
+    if (!full || full->GetLastStatus() != Gdiplus::Ok || full->GetWidth() == 0) return {};
+    const UINT w = 400;
+    const UINT h = (std::max)(1u, (std::min)(260u, full->GetHeight() * w / full->GetWidth()));
+    Gdiplus::Bitmap scaled(static_cast<INT>(w), static_cast<INT>(h), PixelFormat24bppRGB);
+    {
+        Gdiplus::Graphics g(&scaled);
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBilinear);
+        const UINT srcH = (std::min)(full->GetHeight(), full->GetWidth() * h / w);
+        g.DrawImage(full.get(), Gdiplus::Rect(0, 0, static_cast<INT>(w), static_cast<INT>(h)),
+                    0, 0, static_cast<INT>(full->GetWidth()), static_cast<INT>(srcH), Gdiplus::UnitPixel);
+    }
+    CLSID clsid{};
+    wil::com_ptr<IStream> out;
+    out.attach(SHCreateMemStream(nullptr, 0));
+    if (!out || !EncoderClsid(L"image/jpeg", &clsid) || scaled.Save(out.get(), &clsid, nullptr) != Gdiplus::Ok) return {};
+    return "data:image/jpeg;base64," + Base64(ReadStream(out.get()));
+}
+
+struct ThumbnailResult {
+    int tabId;
+    std::string dataUrl;
+    std::function<void()> done;
+};
+
+} // namespace
+
 void MainWindow::CaptureThumbnail(int tabId, std::function<void()> done) {
     Tab* tab = FindTab(tabId);
     if (!tab || !tab->view || !tab->view->GetWebView() || tab->id != m_activeId) {
@@ -570,37 +646,24 @@ void MainWindow::CaptureThumbnail(int tabId, std::function<void()> done) {
         if (done) done();
         return;
     }
+    const HWND hwnd = m_hWnd;
     const HRESULT hr = tab->view->GetWebView()->CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG, stream.get(),
-        Callback<ICoreWebView2CapturePreviewCompletedHandler>([this, tabId, stream, done](HRESULT result) -> HRESULT {
-            Tab* t = FindTab(tabId);
-            if (t && SUCCEEDED(result)) {
-                LARGE_INTEGER zero{};
-                stream->Seek(zero, STREAM_SEEK_SET, nullptr);
-                std::unique_ptr<Gdiplus::Bitmap> full(Gdiplus::Bitmap::FromStream(stream.get()));
-                if (full && full->GetLastStatus() == Gdiplus::Ok && full->GetWidth() > 0) {
-                    // Downscale to keep the overview payload small; never written to disk.
-                    const UINT w = 400;
-                    const UINT h = (std::max)(1u, (std::min)(260u, full->GetHeight() * w / full->GetWidth()));
-                    Gdiplus::Bitmap scaled(static_cast<INT>(w), static_cast<INT>(h), PixelFormat24bppRGB);
-                    {
-                        Gdiplus::Graphics g(&scaled);
-                        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
-                        const UINT srcH = (std::min)(full->GetHeight(), full->GetWidth() * h / w);
-                        g.DrawImage(full.get(), Gdiplus::Rect(0, 0, static_cast<INT>(w), static_cast<INT>(h)),
-                                    0, 0, static_cast<INT>(full->GetWidth()), static_cast<INT>(srcH), Gdiplus::UnitPixel);
-                    }
-                    CLSID jpeg{};
-                    wil::com_ptr<IStream> out;
-                    out.attach(SHCreateMemStream(nullptr, 0));
-                    if (out && EncoderClsid(L"image/jpeg", &jpeg) && scaled.Save(out.get(), &jpeg, nullptr) == Gdiplus::Ok) {
-                        t->thumbDataUrl = "data:image/jpeg;base64," + Base64(ReadStream(out.get()));
-                    }
-                }
-            }
-            if (done) done();
+        Callback<ICoreWebView2CapturePreviewCompletedHandler>([hwnd, tabId, stream, done](HRESULT result) -> HRESULT {
+            std::vector<std::uint8_t> jpeg;
+            if (SUCCEEDED(result)) jpeg = ReadStream(stream.get());
+            // Decoding and re-encoding a full-window image takes tens of milliseconds:
+            // keep it off the UI thread and hand the result back with a message.
+            std::thread([hwnd, tabId, jpeg = std::move(jpeg), done]() {
+                auto* r = new ThumbnailResult{tabId, jpeg.empty() ? std::string() : MakeThumbnail(jpeg), done};
+                if (!IsWindow(hwnd) || !PostMessageW(hwnd, MainWindow::WM_APP_THUMBNAIL, 0, reinterpret_cast<LPARAM>(r))) delete r;
+            }).detach();
             return S_OK;
         }).Get());
     if (FAILED(hr) && done) done();
+}
+
+void MainWindow::OnThumbnailReady(int tabId, std::string dataUrl) {
+    if (Tab* t = FindTab(tabId); t && !dataUrl.empty()) t->thumbDataUrl = std::move(dataUrl);
 }
 
 void MainWindow::CheckReaderAvailability(int tabId) {
@@ -672,6 +735,14 @@ void MainWindow::UpdateWindowTitle() {
 
 void MainWindow::TabsChanged() {
     InvalidateToolbar();
+    if (!m_panelsDirty) {
+        m_panelsDirty = true;
+        SetTimer(m_hWnd, IDT_PANELS, 120, nullptr);
+    }
+}
+
+void MainWindow::FlushPanels() {
+    m_panelsDirty = false;
     if ((m_sidebarVisible && m_sidebar.ready) || (m_overviewVisible && m_overview.ready)) {
         const std::string tabs = TabsJson(m_overviewVisible);
         if (m_sidebarVisible && m_sidebar.webView) PostEvent(m_sidebar.webView.get(), "tabs", tabs);

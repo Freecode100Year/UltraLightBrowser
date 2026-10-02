@@ -88,6 +88,10 @@ public:
     // Writes changed stores; history and privacy are batched, so call this from a
     // periodic timer and once more on exit.
     void Save();
+    // Serializes changed stores and clears their dirty flags; the caller may write
+    // the files on another thread with WriteFileAtomic.
+    std::vector<std::pair<std::filesystem::path, std::string>> TakeSnapshot();
+    static void WriteFileAtomic(const std::filesystem::path& path, const std::string& data);
     bool IsDirty() const { return m_dirtyLibrary || m_dirtyHistory || m_dirtyPrivacy || m_dirtySession; }
 
     // Bookmarks

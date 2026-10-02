@@ -88,6 +88,7 @@ void MainWindow::BroadcastToInternalPages(const char* event, const std::string& 
             PostEvent(t->view->GetWebView(), event, dataJson);
         }
     }
+    if (m_spare && m_spare->view && m_spare->view->GetWebView()) PostEvent(m_spare->view->GetWebView(), event, dataJson);
     if (m_sidebar.ready) PostEvent(m_sidebar.webView.get(), event, dataJson);
 }
 

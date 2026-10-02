@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include "Library.hpp"
@@ -36,7 +37,8 @@ public:
 
     Library& Lib() { return *m_library; }
     void LibraryChanged();                     // refresh built-in pages in every window
-    void SaveLibrarySoon();
+    void SaveLibrarySoon();     // serialize now, write on a background thread
+    void SaveLibraryNow();      // synchronous (exit)
 
     // Closed tabs stay alive until late completions have drained.
     void Retire(std::unique_ptr<WebViewManager> view);
@@ -69,6 +71,7 @@ private:
     UINT32 m_browserPid = 0;
     ULONG_PTR m_gdiplusToken = 0;
     bool m_exiting = false;
+    std::mutex m_saveMutex;
 };
 
 } // namespace UltraLight

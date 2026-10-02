@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <thread>
 #include "GdiPlus.hpp"
 
 #pragma comment(lib, "gdiplus.lib")
@@ -177,7 +178,7 @@ void AppShell::PrepareExit(MainWindow* lastWindow) {
     }
     m_library->SetSession(session);
     if (settings.clearHistoryOnExit) m_library->ClearHistory(0);
-    m_library->Save();
+    SaveLibraryNow();
 
     // Same privacy guarantee as before: cookies, cache and site data never outlive the session.
     if (lastWindow) {
@@ -189,7 +190,7 @@ void AppShell::PrepareExit(MainWindow* lastWindow) {
 void AppShell::FinalCleanup() {
     if (!m_exiting) {
         m_exiting = true;
-        m_library->Save();
+        SaveLibraryNow();
     }
     for (auto& [when, view] : m_graveyard) view->Close();
     m_graveyard.clear();
@@ -237,7 +238,17 @@ void AppShell::LibraryChanged() {
 }
 
 void AppShell::SaveLibrarySoon() {
-    // Library writes are cheap; windows also flush on a timer and at exit.
+    auto snapshot = m_library->TakeSnapshot();
+    if (snapshot.empty()) return;
+    // File I/O stays off the UI thread; writes are serialized by the mutex.
+    std::thread([this, snapshot = std::move(snapshot)]() {
+        std::lock_guard<std::mutex> lock(m_saveMutex);
+        for (const auto& [path, data] : snapshot) Library::WriteFileAtomic(path, data);
+    }).detach();
+}
+
+void AppShell::SaveLibraryNow() {
+    std::lock_guard<std::mutex> lock(m_saveMutex);  // waits for background writes
     m_library->Save();
 }
 

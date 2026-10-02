@@ -67,6 +67,8 @@ MainWindow::~MainWindow() {
         if (t->view) AppShell::Instance().Retire(std::move(t->view));
     }
     m_tabs.clear();
+    if (m_spare && m_spare->view) AppShell::Instance().Retire(std::move(m_spare->view));
+    if (m_paintBitmap) DeleteObject(m_paintBitmap);
     if (m_sidebar.controller) m_sidebar.controller->Close();
     if (m_overview.controller) m_overview.controller->Close();
     if (m_hSuggest) DestroyWindow(m_hSuggest);
@@ -172,11 +174,20 @@ void MainWindow::UpdateDpiScaling(UINT dpi) {
         return CreateFontW(-MulDiv(pt, static_cast<int>(m_dpi), 72), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
     };
+    m_gpUiFont.reset();
+    m_gpAddressFont.reset();
+    m_gpSmallFont.reset();
     m_hUiFont = font(9, FW_NORMAL);
     m_hAddressFont = font(10, FW_NORMAL);
     m_hSmallFont = font(8, FW_BOLD);
     if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hAddressFont), TRUE);
     if (m_hFindEdit) SendMessageW(m_hFindEdit, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+}
+
+void MainWindow::EnsurePaintFonts(HDC hdc) {
+    if (!m_gpUiFont) m_gpUiFont = std::make_unique<Gdiplus::Font>(hdc, m_hUiFont);
+    if (!m_gpAddressFont) m_gpAddressFont = std::make_unique<Gdiplus::Font>(hdc, m_hAddressFont);
+    if (!m_gpSmallFont) m_gpSmallFont = std::make_unique<Gdiplus::Font>(hdc, m_hSmallFont);
 }
 
 // ------------------------------------------------------------------ public hooks
@@ -751,6 +762,8 @@ void MainWindow::OnClose() {
         if (t->view) AppShell::Instance().Retire(std::move(t->view));
     }
     m_tabs.clear();
+    if (m_spare && m_spare->view) AppShell::Instance().Retire(std::move(m_spare->view));
+    m_spare.reset();
     if (m_sidebar.controller) { m_sidebar.controller->Close(); m_sidebar = {}; }
     if (m_overview.controller) { m_overview.controller->Close(); m_overview = {}; }
     DestroyWindow(m_hWnd);
@@ -864,18 +877,24 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         const int w = client.right;
         const int h = m_isFullScreen ? 0 : m_topbarHeight + (m_findVisible ? S(40) : 0);
         if (w > 0 && h > 0) {
+            // Reuse one back buffer instead of allocating a bitmap on every paint.
+            if (!m_paintBitmap || m_paintSize.cx < w || m_paintSize.cy < h) {
+                if (m_paintBitmap) DeleteObject(m_paintBitmap);
+                m_paintSize = {(std::max)(static_cast<LONG>(w), m_paintSize.cx), (std::max)(static_cast<LONG>(h), m_paintSize.cy)};
+                m_paintBitmap = CreateCompatibleBitmap(hdc, m_paintSize.cx, m_paintSize.cy);
+            }
             HDC mem = CreateCompatibleDC(hdc);
-            HBITMAP bmp = CreateCompatibleBitmap(hdc, w, h);
-            HGDIOBJ old = SelectObject(mem, bmp);
+            HGDIOBJ old = SelectObject(mem, m_paintBitmap);
+            EnsurePaintFonts(mem);
             RECT all{0, 0, w, h};
             HBRUSH bg = CreateSolidBrush(RGB(30, 32, 37));
             FillRect(mem, &all, bg);
             DeleteObject(bg);
             PaintToolbar(mem, w);
             PaintFindBar(mem);
-            BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
+            BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
+                   (std::min)(static_cast<LONG>(h), ps.rcPaint.bottom) - ps.rcPaint.top, mem, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
             SelectObject(mem, old);
-            DeleteObject(bmp);
             DeleteDC(mem);
         }
         // Area under not-yet-ready web views
@@ -975,7 +994,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
         if (timer == IDT_LIBRARY_SAVE) {
-            AppShell::Instance().Lib().Save();
+            AppShell::Instance().SaveLibrarySoon();
             return 0;
         }
         if (timer == IDT_PROGRESS) {
@@ -991,6 +1010,16 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         if (timer == IDT_TOAST) {
             KillTimer(m_hWnd, IDT_TOAST);
             if (m_hToast) ShowWindow(m_hToast, SW_HIDE);
+            return 0;
+        }
+        if (timer == IDT_PANELS) {
+            KillTimer(m_hWnd, IDT_PANELS);
+            FlushPanels();
+            return 0;
+        }
+        if (timer == IDT_SPARE) {
+            KillTimer(m_hWnd, IDT_SPARE);
+            PrepareSpareTab();
             return 0;
         }
         if (timer == IDT_THUMB) {
@@ -1089,6 +1118,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_GETMINMAXINFO: {
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
         mmi->ptMinTrackSize = {S(560), S(360)};
+        return 0;
+    }
+
+    case WM_APP_THUMBNAIL: {
+        std::unique_ptr<ThumbnailMessage> r(reinterpret_cast<ThumbnailMessage*>(lParam));
+        if (r && !m_closing) {
+            OnThumbnailReady(r->tabId, std::move(r->dataUrl));
+            if (r->done) r->done();
+        }
         return 0;
     }
 

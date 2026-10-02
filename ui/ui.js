@@ -60,7 +60,7 @@ const ULB = (() => {
     if (src) {
       const img = new Image();
       img.alt = "";
-      img.onload = () => { if (img.naturalWidth > 1) tile.append(img); };
+      img.onload = () => { if (img.naturalWidth > 1) { tile.classList.add("has-img"); tile.append(img); } };
       img.src = src;
     }
     return tile;
