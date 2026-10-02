@@ -8,6 +8,7 @@
 #include <string>
 #include <functional>
 #include <filesystem>
+#include <cstdint>
 
 namespace UltraLight {
 
@@ -71,8 +72,9 @@ public:
     void ApplyMemoryUsageTargetLow();
 
     // Audio Enhancement & Virtual Surround (v1.6.0)
-    void UpdateAudioEnhancer();
-    void InjectSurroundSoundScript();
+    void UpdateAudioEnhancer(bool reloadPage = false);
+    void ShowMediaDiagnostics();
+    void InjectSurroundSoundScript(bool reloadPage = false);
     AudioEndpointType GetDetectedAudioEndpoint() const;
 
     // Direct interface access
@@ -90,6 +92,10 @@ private:
     wil::com_ptr<ICoreWebView2Controller> m_controller;
     wil::com_ptr<ICoreWebView2> m_webView;
 
+    std::uint64_t m_audioScriptGeneration = 0;
+    unsigned m_pendingAudioScriptRegistrations = 0;
+    bool m_audioReloadPending = false;
+    std::wstring m_audioScriptId;
     bool m_isPlayingAudio = false;
     EventRegistrationToken m_audioPlayingToken{};
 

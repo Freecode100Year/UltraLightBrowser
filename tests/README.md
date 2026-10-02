@@ -42,3 +42,22 @@ the taskbar, and negative monitor coordinates. On Windows, check F11 and a video
 player's fullscreen button from both normal and maximized windows. Confirm all
 four edges cover the monitor, square corners, no taskbar gap, and correct restore
 with Esc/F11. Repeat on a second display and at 125%/150% DPI.
+
+## Audio routing
+
+```sh
+node tests/audio_enhancer_test.cjs
+```
+
+The test reconstructs the actual C++ raw-string injection script and executes it
+with deterministic DOM/Web Audio boundaries. It verifies native mode creates no
+AudioContext, speaker output uses separate merger channels, disabled effects
+bypass processing, speaker mode avoids HRTF, dialogue uses mild compression,
+diagnostics do not claim native media, and gain updates preserve the source.
+These tests verify graph topology and parameters, not audible quality or actual
+browser channel-mixing/latency behavior. Native Windows checks are required.
+
+`python3 tests/audio_registration_test.py` compiles the actual C++ registration
+block extracted from WebViewManager.cpp. Deterministic callbacks exercise both
+completion orders, retained reload requests, stale-script removal, asynchronous
+failure and synchronous failure. It still does not emulate real COM ownership.

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(UltraLightBrowser
-    VERSION 1.6.2
+    VERSION 1.6.3
     DESCRIPTION "Minimal, Ultra-Fast Windows 11 Native Browser Shell (macOS Safari UI Edition)"
     LANGUAGES CXX C
 )
@@ -23,11 +23,11 @@ add_compile_definitions(
 # Compiler & Linker optimizations for MSVC
 if(MSVC)
     add_compile_options(
-        /O2                 # Maximum optimization (favor speed)
-        /Oi                 # Enable intrinsic functions
-        /Ot                 # Favor fast code
-        /GL                 # Whole program optimization
-        /Gy                 # Enable function-level linking
+        $<$<NOT:$<CONFIG:Debug>>:/O2>                 # Maximum optimization (favor speed)
+        $<$<NOT:$<CONFIG:Debug>>:/Oi>                 # Enable intrinsic functions
+        $<$<NOT:$<CONFIG:Debug>>:/Ot>                 # Favor fast code
+        $<$<NOT:$<CONFIG:Debug>>:/GL>                 # Whole program optimization
+        $<$<NOT:$<CONFIG:Debug>>:/Gy>                 # Enable function-level linking
         /utf-8              # Set source and execution character sets to UTF-8
         /permissive-        # Strict standard conformance
         /EHsc               # Standard C++ stack unwinding
@@ -38,9 +38,9 @@ if(MSVC)
         /sdl                # Additional Security Development Lifecycle checks
     )
     add_link_options(
-        /LTCG               # Link-time code generation
-        /OPT:REF            # Eliminate unreferenced functions/data
-        /OPT:ICF            # Identical COMDAT folding (reduce binary size)
+        $<$<NOT:$<CONFIG:Debug>>:/LTCG>               # Link-time code generation
+        $<$<NOT:$<CONFIG:Debug>>:/OPT:REF>            # Eliminate unreferenced functions/data
+        $<$<NOT:$<CONFIG:Debug>>:/OPT:ICF>            # Identical COMDAT folding (reduce binary size)
         /SUBSYSTEM:WINDOWS  # Pure Win32 GUI application
         /MANIFEST:NO        # Custom manifest embedded via resource.rc
         /guard:cf           # Control Flow Guard

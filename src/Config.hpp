@@ -16,6 +16,7 @@ struct AppSettings {
     bool enablePublicDns = false;
     std::string selectedDnsProvider = "quad9";
     std::string customDnsTemplate = "";
+    bool systemAudioPassthrough = true;       // Keep original output for Windows spatial audio.
     bool enableSurroundSound = true;
     std::string surroundSoundMode = "standard"; // "light", "standard", "cinema"
     std::string audioDeviceMode = "auto";       // "auto", "headphones", "speakers"

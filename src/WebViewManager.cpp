@@ -120,12 +120,12 @@ HRESULT WebViewManager::TryInitEnvironment(int attempt) {
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
-        L"--enable-features=NvidiaVsr,IntelVsr,Prerender2,DnsOverHttps,HighEfficiencyModeAvailable,PageDiscarding,Freezer,BatterySaverModeAvailable "
+        L"--enable-features=DnsOverHttps,HighEfficiencyModeAvailable,PageDiscarding,Freezer,BatterySaverModeAvailable "
         L"--enable-hardware-overlays=\"single-fullscreen,single-on-top,underlay\" "
         L"--enable-native-gpu-memory-buffers "
         L"--media-cache-size=134217728 "
         L"--disk-cache-size=209715200 "
-        L"--disable-features=AudioServiceOutOfProcess,Translate,OptimizationHints,MediaRouter "
+        L"--disable-features=Translate,OptimizationHints,MediaRouter "
         L"--disable-sync "
         L"--disable-domain-reliability "
         L"--disable-breakpad "
@@ -135,6 +135,9 @@ HRESULT WebViewManager::TryInitEnvironment(int attempt) {
     // NOTE: --host-resolver-rules was completely removed to prevent command-line parsing conflicts
     // and argument mismatch 0x8007139F errors with running processes. NativeRequestFilter handles all blocking.
 
+    if (!Config::Instance().GetSettings().hardwareAcceleration) {
+        performanceArgs += L" --disable-gpu";
+    }
     options->put_AdditionalBrowserArguments(performanceArgs.c_str());
 
     std::wstring userDataDirStr = userDataDir.wstring();
@@ -169,8 +172,12 @@ HRESULT WebViewManager::TryInitEnvironment(int attempt) {
                             m_controller = controller;
                             m_controller->get_CoreWebView2(&m_webView);
 
-                            // Aggressive memory compression: LOW target level forces V8 Major GC and trims image decode cache
-                            ApplyMemoryUsageTargetLow();
+                            // Foreground starts at NORMAL. PowerManager lowers the
+                            // memory budget only for silent background content.
+                            wil::com_ptr<ICoreWebView2_19> webView19;
+                            if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView19))) && webView19) {
+                                webView19->put_MemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL);
+                            }
 
                             // Enable native strict tracking prevention (engine-level tracker blocking)
                             wil::com_ptr<ICoreWebView2_13> webView13;
@@ -779,7 +786,7 @@ AudioEndpointType WebViewManager::GetDetectedAudioEndpoint() const {
     return result;
 }
 
-void WebViewManager::InjectSurroundSoundScript() {
+void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
     if (!m_webView) return;
 
     const auto& settings = Config::Instance().GetSettings();
@@ -793,6 +800,7 @@ void WebViewManager::InjectSurroundSoundScript() {
     std::string initVocalBoost = settings.enableVocalBoost ? "true" : "false";
     std::string initVolumeBoost = std::to_string(settings.audioVolumeBoost);
     std::string initMonoDownmix = settings.enableMonoDownmix ? "true" : "false";
+    std::string initNativeOutput = settings.systemAudioPassthrough ? "true" : "false";
 
     std::string jsCode;
     jsCode.reserve(16384);
@@ -803,6 +811,9 @@ void WebViewManager::InjectSurroundSoundScript() {
     window.__UltraLightSurroundInstalled = true;
 
     let cfg = {
+        nativeOutput: )raw";
+    jsCode += initNativeOutput;
+    jsCode += R"raw(,
         enabled: )raw";
     jsCode += initEnabled;
     jsCode += R"raw(,
@@ -824,6 +835,7 @@ void WebViewManager::InjectSurroundSoundScript() {
     };
 
     const PRESETS = {
+        dialogue: { width: 1.0, crossfeed: 0.0, reverbAmount: 0.0 },
         off: { width: 1.0, crossfeed: 0.0, reverbAmount: 0.0 },
         light: { width: 1.15, crossfeed: 0.12, reverbAmount: 0.06 },
         standard: { width: 1.35, crossfeed: 0.20, reverbAmount: 0.10 },
@@ -840,7 +852,7 @@ void WebViewManager::InjectSurroundSoundScript() {
     // 1. Give precedence to web-page native Web Audio
     try {
         const AC = window.AudioContext || window.webkitAudioContext;
-        if (AC && AC.prototype && AC.prototype.createMediaElementSource) {
+        if (!cfg.nativeOutput && AC && AC.prototype && AC.prototype.createMediaElementSource) {
             const origCreate = AC.prototype.createMediaElementSource;
             AC.prototype.createMediaElementSource = function(mediaEl) {
                 if (mediaEl) {
@@ -858,6 +870,7 @@ void WebViewManager::InjectSurroundSoundScript() {
 
     // 2. Interactive Low-Latency AudioContext (avoids lip-sync drift)
     function getAudioContext() {
+        if (cfg.nativeOutput) return null;
         if (!audioCtx) {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!AudioContextClass) return null;
@@ -973,8 +986,12 @@ void WebViewManager::InjectSurroundSoundScript() {
         }
     }
 
+    function needsProcessing() {
+        return !cfg.nativeOutput && (cfg.enabled || cfg.vocalBoost || cfg.monoDownmix || cfg.volumeBoost > 1.0);
+    }
+
     function trySetupSurround(el) {
-        if (!canProcessElement(el)) return;
+        if (!needsProcessing() || !canProcessElement(el)) return;
         const ctx = getAudioContext();
         if (!ctx) return;
 
@@ -996,245 +1013,156 @@ void WebViewManager::InjectSurroundSoundScript() {
 )raw";
 
     jsCode += R"raw(
-    // 6. Build the Full DSP Graph for Media Element
+    // 6. Build only the DSP nodes required by the selected preset.
     function setupSurroundForElement(el) {
-        if (!canProcessElement(el)) return;
+        if (!needsProcessing() || !canProcessElement(el)) return;
         const ctx = getAudioContext();
         if (!ctx || ctx.state !== "running") return;
+        let sourceNode;
+        try { sourceNode = ctx.createMediaElementSource(el); } catch (e) { return; }
 
-        let sourceNode = null;
-        try {
-            sourceNode = ctx.createMediaElementSource(el);
-        } catch (e) {
-            return;
+        let graphNodes = [];
+        let preamp = null;
+        let vocal = null;
+        let topology = "";
+        let rebuildTimer = null;
+        const output = ctx.createGain();
+        output.connect(ctx.destination);
+        function smooth(param, value) {
+            param.cancelScheduledValues(ctx.currentTime);
+            param.setTargetAtTime(value, ctx.currentTime, 0.015);
         }
-
-        // --- DSP GRAPH ---
-        // A. Input Preamp Boost Gain (100% ~ 300%)
-        const preampGain = ctx.createGain();
-        preampGain.gain.setValueAtTime(cfg.volumeBoost || 1.0, ctx.currentTime);
-        sourceNode.connect(preampGain);
-
-        // B. Channel Splitter
-        const splitter = ctx.createChannelSplitter(2);
-        preampGain.connect(splitter);
-
-        // C. Mid Bus = 0.5 * L + 0.5 * R
-        const midL = ctx.createGain(); midL.gain.value = 0.5;
-        const midR = ctx.createGain(); midR.gain.value = 0.5;
-        const midBus = ctx.createGain();
-        splitter.connect(midL, 0); midL.connect(midBus);
-        splitter.connect(midR, 1); midR.connect(midBus);
-
-        // Vocal Boost: Peaking Filter on Mid Bus (3000Hz, Q=1.2, +4.5dB)
-        const vocalFilter = ctx.createBiquadFilter();
-        vocalFilter.type = "peaking";
-        vocalFilter.frequency.value = 3000;
-        vocalFilter.Q.value = 1.2;
-        vocalFilter.gain.value = cfg.vocalBoost ? 4.5 : 0.0;
-        midBus.connect(vocalFilter);
-
-        // D. Side Bus = 0.5 * L - 0.5 * R
-        const sideL = ctx.createGain(); sideL.gain.value = 0.5;
-        const sideR = ctx.createGain(); sideR.gain.value = -0.5;
-        const sideBus = ctx.createGain();
-        splitter.connect(sideL, 0); sideL.connect(sideBus);
-        splitter.connect(sideR, 1); sideR.connect(sideBus);
-
-        // Mono Bass Protection: 150Hz Highpass Filter on Side
-        const sideHighpass = ctx.createBiquadFilter();
-        sideHighpass.type = "highpass";
-        sideHighpass.frequency.value = 150;
-        sideHighpass.Q.value = 0.707;
-        sideBus.connect(sideHighpass);
-
-        const sideWidthGain = ctx.createGain();
-        sideHighpass.connect(sideWidthGain);
-
-        const sideToLeft = ctx.createGain(); sideToLeft.gain.value = 1.0;
-        const sideToRight = ctx.createGain(); sideToRight.gain.value = -1.0;
-        sideWidthGain.connect(sideToLeft);
-        sideWidthGain.connect(sideToRight);
-
-        // Reconstructed widened signals
-        const postWidenerL = ctx.createGain();
-        const postWidenerR = ctx.createGain();
-        vocalFilter.connect(postWidenerL);
-        sideToLeft.connect(postWidenerL);
-        vocalFilter.connect(postWidenerR);
-        sideToRight.connect(postWidenerR);
+        function make(method, ...args) {
+            const node = ctx[method](...args);
+            graphNodes.push(node);
+            return node;
+        }
+        function gain(value) {
+            const node = make("createGain"); node.gain.value = value; return node;
+        }
+        function clearGraph() {
+            sourceNode.disconnect();
+            for (const node of graphNodes) { try { node.disconnect(); } catch (e) {} }
+            graphNodes = []; preamp = null; vocal = null;
+        }
+        function build() {
+            clearGraph();
+            // This unity path retains the source channels; no EQ or compression.
+            if (!needsProcessing()) {
+                sourceNode.connect(output);
+                return;
+            }
+            preamp = gain(Math.max(1, Math.min(3, Number(cfg.volumeBoost) || 1)));
+            preamp.channelCount = 2;
+            preamp.channelCountMode = "explicit";
+            preamp.channelInterpretation = "speakers";
+            sourceNode.connect(preamp);
+            vocal = make("createBiquadFilter");
+            vocal.type = "peaking"; vocal.frequency.value = 3000;
+            vocal.Q.value = 1.2; vocal.gain.value = (cfg.vocalBoost || (cfg.enabled && cfg.mode === "dialogue")) ? 4.5 : 0;
+            preamp.connect(vocal);
+            const splitter = make("createChannelSplitter", 2);
+            vocal.connect(splitter);
+            const mid = gain(1), side = gain(1);
+            const midL = gain(0.5), midR = gain(0.5);
+            const sideL = gain(0.5), sideR = gain(-0.5);
+            splitter.connect(midL, 0); splitter.connect(midR, 1);
+            midL.connect(mid); midR.connect(mid);
+            splitter.connect(sideL, 0); splitter.connect(sideR, 1);
+            sideL.connect(side); sideR.connect(side);
+            const preset = cfg.enabled ? (PRESETS[cfg.mode] || PRESETS.standard) : PRESETS.off;
+            const left = gain(1), right = gain(1);
+            mid.connect(left); mid.connect(right);
+            if (!cfg.monoDownmix) {
+                let sideInput = side;
+                if (cfg.enabled && cfg.mode !== "dialogue") {
+                    const highpass = make("createBiquadFilter");
+                    highpass.type = "highpass"; highpass.frequency.value = 150;
+                    highpass.Q.value = 0.707; side.connect(highpass); sideInput = highpass;
+                }
+                const widthL = gain(preset.width), widthR = gain(-preset.width);
+                sideInput.connect(widthL); sideInput.connect(widthR);
+                widthL.connect(left); widthR.connect(right);
+            }
+            let program;
+            if (cfg.enabled && cfg.device !== "speakers" && cfg.mode !== "dialogue") {
+                const crossLeft = gain(1), crossRight = gain(1);
+                left.connect(crossLeft); right.connect(crossRight);
+                function crossfeed(from, to) {
+                    const delay = make("createDelay", 0.01); delay.delayTime.value = 0.0003;
+                    const filter = make("createBiquadFilter");
+                    filter.type = "lowpass"; filter.frequency.value = 2500;
+                    const mix = gain(preset.crossfeed);
+                    from.connect(delay); delay.connect(filter); filter.connect(mix); mix.connect(to);
+                }
+                crossfeed(left, crossRight); crossfeed(right, crossLeft);
+                function panner(from, x, z) {
+                    const p = make("createPanner"); p.panningModel = "HRTF";
+                    p.positionX.value = x; p.positionY.value = 0; p.positionZ.value = z;
+                    from.connect(p); return p;
+                }
+                program = gain(1);
+                panner(crossLeft, -0.5, -0.866).connect(program);
+                panner(crossRight, 0.5, -0.866).connect(program);
+                if (cfg.mode === "cinema" && !cfg.monoDownmix) {
+                    const delay = make("createDelay", 0.05); delay.delayTime.value = 0.015;
+                    const rear = gain(0.20); side.connect(delay); delay.connect(rear);
+                    panner(rear, -0.94, 0.34).connect(program);
+                    panner(rear, 0.94, 0.34).connect(program);
+                }
+            } else {
+                // A gain bus would sum L/R to mono; a merger preserves stereo.
+                program = make("createChannelMerger", 2);
+                left.connect(program, 0, 0); right.connect(program, 0, 1);
+            }
+            let finalMix = program;
+            if (cfg.enabled && cfg.mode === "cinema") {
+                const mix = gain(1), convolver = make("createConvolver");
+                convolver.buffer = getSmallRoomBuffer(ctx);
+                const wet = gain(preset.reverbAmount);
+                program.connect(mix); program.connect(convolver);
 )raw";
 
-    jsCode += R"raw(
-        // E. Crossfeed Network (~0.3ms ITD delay + 2.5kHz head shadow lowpass)
-        const delayLR = ctx.createDelay(0.01); delayLR.delayTime.value = 0.0003;
-        const filterLR = ctx.createBiquadFilter(); filterLR.type = "lowpass"; filterLR.frequency.value = 2500;
-        const crossGainLR = ctx.createGain();
-        postWidenerL.connect(delayLR); delayLR.connect(filterLR); filterLR.connect(crossGainLR);
-
-        const delayRL = ctx.createDelay(0.01); delayRL.delayTime.value = 0.0003;
-        const filterRL = ctx.createBiquadFilter(); filterRL.type = "lowpass"; filterRL.frequency.value = 2500;
-        const crossGainRL = ctx.createGain();
-        postWidenerR.connect(delayRL); delayRL.connect(filterRL); filterRL.connect(crossGainRL);
-
-        const crossMergedL = ctx.createGain();
-        const crossMergedR = ctx.createGain();
-        postWidenerL.connect(crossMergedL);
-        crossGainRL.connect(crossMergedL);
-        postWidenerR.connect(crossMergedR);
-        crossGainLR.connect(crossMergedR);
-
-        // F. Virtual 3D HRTF Speakers (Headphones)
-        const pannerL = ctx.createPanner();
-        pannerL.panningModel = "HRTF";
-        pannerL.distanceModel = "inverse";
-        pannerL.positionX.setValueAtTime(-0.5, ctx.currentTime);
-        pannerL.positionY.setValueAtTime(0.0, ctx.currentTime);
-        pannerL.positionZ.setValueAtTime(-0.866, ctx.currentTime);
-
-        const pannerR = ctx.createPanner();
-        pannerR.panningModel = "HRTF";
-        pannerR.distanceModel = "inverse";
-        pannerR.positionX.setValueAtTime(0.5, ctx.currentTime);
-        pannerR.positionY.setValueAtTime(0.0, ctx.currentTime);
-        pannerR.positionZ.setValueAtTime(-0.866, ctx.currentTime);
-
-        crossMergedL.connect(pannerL);
-        crossMergedR.connect(pannerR);
-
-        // Cinema Mode Rear Surround Panners (±110 deg)
-        const rearDelay = ctx.createDelay(0.05); rearDelay.delayTime.value = 0.015;
-        const rearGain = ctx.createGain(); rearGain.gain.value = 0.0;
-        sideBus.connect(rearDelay);
-        rearDelay.connect(rearGain);
-
-        const pannerRearL = ctx.createPanner();
-        pannerRearL.panningModel = "HRTF";
-        pannerRearL.positionX.setValueAtTime(-0.94, ctx.currentTime);
-        pannerRearL.positionY.setValueAtTime(0.0, ctx.currentTime);
-        pannerRearL.positionZ.setValueAtTime(0.34, ctx.currentTime);
-
-        const pannerRearR = ctx.createPanner();
-        pannerRearR.panningModel = "HRTF";
-        pannerRearR.positionX.setValueAtTime(0.94, ctx.currentTime);
-        pannerRearR.positionY.setValueAtTime(0.0, ctx.currentTime);
-        pannerRearR.positionZ.setValueAtTime(0.34, ctx.currentTime);
-
-        rearGain.connect(pannerRearL);
-        rearGain.connect(pannerRearR);
-
-        // G. Speaker Direct Path (Bypasses HRTF when in Speaker mode)
-        const speakerBusL = ctx.createGain();
-        const speakerBusR = ctx.createGain();
-        postWidenerL.connect(speakerBusL);
-        postWidenerR.connect(speakerBusR);
-
-        // H. Wet Mix Bus
-        const wetMerger = ctx.createGain();
-        pannerL.connect(wetMerger);
-        pannerR.connect(wetMerger);
-        pannerRearL.connect(wetMerger);
-        pannerRearR.connect(wetMerger);
-        speakerBusL.connect(wetMerger);
-        speakerBusR.connect(wetMerger);
-)raw";
-
-    jsCode += R"raw(
-        // I. Convolver Reverb Node (Small Room Acoustic Space)
-        const convolver = ctx.createConvolver();
-        try { convolver.buffer = getSmallRoomBuffer(ctx); } catch (e) {}
-        const reverbGain = ctx.createGain();
-        postWidenerL.connect(convolver);
-        postWidenerR.connect(convolver);
-        convolver.connect(reverbGain);
-        reverbGain.connect(wetMerger);
-
-        // J. Output Limiter & Dry/Wet Mixer
-        const dryGain = ctx.createGain();
-        const wetGain = ctx.createGain();
-        preampGain.connect(dryGain);
-
-        const limiter = ctx.createDynamicsCompressor();
-        // True Brickwall Peak Limiter settings (no pumping):
-        limiter.threshold.setValueAtTime(-1.0, ctx.currentTime);
-        limiter.knee.setValueAtTime(0.0, ctx.currentTime);
-        limiter.ratio.setValueAtTime(20.0, ctx.currentTime);
-        limiter.attack.setValueAtTime(0.001, ctx.currentTime);
-        limiter.release.setValueAtTime(0.05, ctx.currentTime);
-
-        dryGain.connect(limiter);
-        wetMerger.connect(wetGain);
-        wetGain.connect(limiter);
-
-        limiter.connect(ctx.destination);
-
+    jsCode += R"raw(                convolver.connect(wet); wet.connect(mix); finalMix = mix;
+            }
+            const compressor = make("createDynamicsCompressor");
+            // Soft protection, not a certified true-peak/brickwall limiter.
+            const dialogue = cfg.enabled && cfg.mode === "dialogue";
+            compressor.threshold.value = dialogue ? -18 : -3;
+            compressor.knee.value = dialogue ? 6 : 3;
+            compressor.ratio.value = dialogue ? 3 : 12; compressor.attack.value = 0.003;
+            compressor.release.value = 0.10;
+            finalMix.connect(compressor); compressor.connect(output);
+        }
+        function key() {
+            return JSON.stringify([needsProcessing(), cfg.enabled, cfg.mode, cfg.device, cfg.monoDownmix]);
+        }
         const controller = {
-            update(newCfg) {
-                const now = ctx.currentTime;
-                cfg = Object.assign(cfg, newCfg);
-
-                preampGain.gain.setValueAtTime(cfg.volumeBoost || 1.0, now);
-                vocalFilter.gain.setValueAtTime(cfg.vocalBoost ? 4.5 : 0.0, now);
-
-                if (cfg.monoDownmix) {
-                    sideWidthGain.gain.setValueAtTime(0.0, now);
-                }
-
-                if (!cfg.enabled || cfg.mode === "off") {
-                    dryGain.gain.setValueAtTime(1.0, now);
-                    wetGain.gain.setValueAtTime(0.0, now);
-                    return;
-                }
-
-                dryGain.gain.setValueAtTime(0.0, now);
-                wetGain.gain.setValueAtTime(1.0, now);
-
-                const preset = PRESETS[cfg.mode] || PRESETS.standard;
-                const isHp = (cfg.device !== "speakers");
-
-                if (!cfg.monoDownmix) {
-                    sideWidthGain.gain.setValueAtTime(preset.width, now);
-                }
-
-                if (isHp) {
-                    crossGainLR.gain.setValueAtTime(preset.crossfeed, now);
-                    crossGainRL.gain.setValueAtTime(preset.crossfeed, now);
-                    speakerBusL.gain.setValueAtTime(0.0, now);
-                    speakerBusR.gain.setValueAtTime(0.0, now);
-                    pannerL.positionX.setValueAtTime(-0.5, now);
-                    pannerR.positionX.setValueAtTime(0.5, now);
-
-                    if (cfg.mode === "cinema") {
-                        rearGain.gain.setValueAtTime(0.35, now);
-                    } else {
-                        rearGain.gain.setValueAtTime(0.0, now);
-                    }
+            update() {
+                const next = key();
+                if (next !== topology) {
+                    topology = next;
+                    if (rebuildTimer) clearTimeout(rebuildTimer);
+                    smooth(output.gain, 0);
+                    rebuildTimer = setTimeout(() => {
+                        rebuildTimer = null;
+                        try { build(); } catch (e) { clearGraph(); sourceNode.connect(output); }
+                        smooth(output.gain, 1);
+                    }, 40);
                 } else {
-                    crossGainLR.gain.setValueAtTime(0.0, now);
-                    crossGainRL.gain.setValueAtTime(0.0, now);
-                    rearGain.gain.setValueAtTime(0.0, now);
-                    speakerBusL.gain.setValueAtTime(1.0, now);
-                    speakerBusR.gain.setValueAtTime(1.0, now);
+                    if (preamp) smooth(preamp.gain, Math.max(1, Math.min(3, Number(cfg.volumeBoost) || 1)));
+                    if (vocal) smooth(vocal.gain, (cfg.vocalBoost || (cfg.enabled && cfg.mode === "dialogue")) ? 4.5 : 0);
                 }
-
-                reverbGain.gain.setValueAtTime(preset.reverbAmount, now);
             },
             release() {
-                try {
-                    dryGain.disconnect();
-                    wetGain.disconnect();
-                    limiter.disconnect();
-                    sourceNode.disconnect();
-                } catch (e) {}
+                if (rebuildTimer) clearTimeout(rebuildTimer);
+                clearGraph(); output.disconnect();
             }
         };
-
-        controller.update(cfg);
+        topology = key();
+        try { build(); } catch (e) { clearGraph(); sourceNode.connect(output); }
         attachedElements.set(el, controller);
     }
-)raw";
-
-    jsCode += R"raw(
     function registerElementEvents(el) {
         if (el.__ultraLightEventsAttached) return;
         el.__ultraLightEventsAttached = true;
@@ -1258,7 +1186,7 @@ void WebViewManager::InjectSurroundSoundScript() {
         try {
             document.querySelectorAll("video, audio").forEach(el => {
                 registerElementEvents(el);
-                if (cfg.enabled && !el.paused) {
+                if (needsProcessing() && !el.paused) {
                     trySetupSurround(el);
                 }
             });
@@ -1323,6 +1251,19 @@ void WebViewManager::InjectSurroundSoundScript() {
 
     // Global controller API
     window.__UltraLightSurround = {
+        getStatus() {
+            const media = [];
+            document.querySelectorAll("video, audio").forEach(el => {
+                const quality = el.getVideoPlaybackQuality ? el.getVideoPlaybackQuality() : null;
+                media.push({ kind: el.tagName || "media", paused: el.paused,
+                    processed: attachedElements.has(el),
+                    width: el.videoWidth || 0, height: el.videoHeight || 0,
+                    totalFrames: quality ? quality.totalVideoFrames : null,
+                    droppedFrames: quality ? quality.droppedVideoFrames : null });
+            });
+            return { output: cfg.nativeOutput ? "native" : "enhanced",
+                preset: cfg.mode, audioContext: audioCtx ? audioCtx.state : "not-created", media };
+        },
         updateConfig(newCfg) {
             cfg = Object.assign(cfg, newCfg);
             try {
@@ -1330,7 +1271,7 @@ void WebViewManager::InjectSurroundSoundScript() {
                     const c = attachedElements.get(el);
                     if (c) {
                         c.update(cfg);
-                    } else if (cfg.enabled && !el.paused && canProcessElement(el)) {
+                    } else if (needsProcessing() && !el.paused && canProcessElement(el)) {
                         trySetupSurround(el);
                     }
                 });
@@ -1353,11 +1294,77 @@ void WebViewManager::InjectSurroundSoundScript() {
 )raw";
 
     std::wstring wideJs = StringUtils::Utf8ToWide(jsCode);
-    m_webView->AddScriptToExecuteOnDocumentCreated(wideJs.c_str(), nullptr);
+    const auto generation = ++m_audioScriptGeneration;
+    m_audioReloadPending = m_audioReloadPending || reloadPage;
+    if (!m_audioScriptId.empty()) {
+        m_webView->RemoveScriptToExecuteOnDocumentCreated(m_audioScriptId.c_str());
+        m_audioScriptId.clear();
+    }
+    ++m_pendingAudioScriptRegistrations;
+    const HRESULT registrationResult = m_webView->AddScriptToExecuteOnDocumentCreated(wideJs.c_str(),
+        Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+            [this, generation](HRESULT result, LPCWSTR id) -> HRESULT {
+                --m_pendingAudioScriptRegistrations;
+                if (generation != m_audioScriptGeneration) {
+                    if (SUCCEEDED(result) && id && m_webView) {
+                        m_webView->RemoveScriptToExecuteOnDocumentCreated(id);
+                    }
+                } else if (SUCCEEDED(result) && id) {
+                    m_audioScriptId = id;
+                }
+                // Wait for all older callbacks to remove their stale scripts.
+                // A subsequent volume/preset update must not lose a mode-switch reload.
+                if (m_pendingAudioScriptRegistrations == 0) {
+                    const bool shouldReload = m_audioReloadPending && !m_audioScriptId.empty();
+                    m_audioReloadPending = false;
+                    if (shouldReload && m_webView) m_webView->Reload();
+                }
+                return S_OK;
+            }).Get());
+    if (FAILED(registrationResult)) {
+        --m_pendingAudioScriptRegistrations;
+        if (m_pendingAudioScriptRegistrations == 0) m_audioReloadPending = false;
+    }
     m_webView->ExecuteScript(wideJs.c_str(), nullptr);
 }
 
-void WebViewManager::UpdateAudioEnhancer() {
+void WebViewManager::ShowMediaDiagnostics() {
+    if (!m_webView) return;
+    const HWND owner = m_hWndParent;
+    const wchar_t* script = LR"diagnostic((() => {
+        const api = window.__UltraLightSurround;
+        if (!api || !api.getStatus) return "当前页面的音频诊断尚未就绪，请刷新后再试。";
+        const s = api.getStatus();
+        const lines = ["输出模式：" + (s.output === "native" ? "原声 / 系统处理" : "浏览器增强"),
+                       "音频处理：" + (s.audioContext === "not-created" ? "未创建处理上下文" : s.audioContext),
+                       "媒体数量：" + s.media.length];
+        s.media.forEach((m, i) => {
+            lines.push("媒体 " + (i + 1) + "：" + (m.paused ? "已暂停" : "正在播放") +
+                       "，浏览器增强：" + (m.processed ? "是" : "否"));
+            if (m.width) lines.push("分辨率：" + m.width + " × " + m.height);
+            if (m.totalFrames !== null) lines.push("视频帧：" + m.totalFrames + "，丢帧：" + m.droppedFrames);
+        });
+        lines.push("此信息不能确认 Dolby Atmos 已启用或媒体包含 Atmos 音轨。");
+        return lines.join("\n");
+    })())diagnostic";
+    m_webView->ExecuteScript(script,
+        Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+            [owner](HRESULT result, LPCWSTR payload) -> HRESULT {
+                if (FAILED(result) || !payload || !IsWindow(owner)) return S_OK;
+#if __has_include(<nlohmann/json.hpp>)
+                try {
+                    const auto value = json::parse(StringUtils::WideToUtf8(payload));
+                    if (value.is_string()) {
+                        const auto text = StringUtils::Utf8ToWide(value.get<std::string>());
+                        MessageBoxW(owner, text.c_str(), L"播放诊断", MB_OK | MB_ICONINFORMATION);
+                    }
+                } catch (...) {}
+#endif
+                return S_OK;
+            }).Get());
+}
+
+void WebViewManager::UpdateAudioEnhancer(bool reloadPage) {
     if (!m_webView) return;
 
     const auto& settings = Config::Instance().GetSettings();
@@ -1370,6 +1377,7 @@ void WebViewManager::UpdateAudioEnhancer() {
 #if __has_include(<nlohmann/json.hpp>)
     json msg = {
         {"type", "updateAudioEnhancer"},
+        {"nativeOutput", settings.systemAudioPassthrough},
         {"enabled", settings.enableSurroundSound},
         {"mode", settings.surroundSoundMode.empty() ? "standard" : settings.surroundSoundMode},
         {"device", effectiveDevice},
@@ -1393,6 +1401,8 @@ void WebViewManager::UpdateAudioEnhancer() {
     std::wstring script = L"if (window.__UltraLightSurround && window.__UltraLightSurround.updateConfig) { "
                           L"window.__UltraLightSurround.updateConfig(" + wideJson + L"); }";
     m_webView->ExecuteScript(script.c_str(), nullptr);
+    // Refresh the document-created script so subsequent navigations keep settings.
+    InjectSurroundSoundScript(reloadPage);
 }
 
 } // namespace UltraLight
