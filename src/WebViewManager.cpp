@@ -782,18 +782,33 @@ void WebViewManager::InjectSurroundSoundScript() {
     std::string initVolumeBoost = std::to_string(settings.audioVolumeBoost);
     std::string initMonoDownmix = settings.enableMonoDownmix ? "true" : "false";
 
-    std::string jsCode = R"raw(
+    std::string jsCode;
+    jsCode.reserve(16384);
+
+    jsCode += R"raw(
 (function() {
     if (window.__UltraLightSurroundInstalled) return;
     window.__UltraLightSurroundInstalled = true;
 
     let cfg = {
-        enabled: )raw" + initEnabled + R"raw(,
-        mode: ")raw" + initMode + R"raw(",
-        device: ")raw" + effectiveDevice + R"raw(",
-        vocalBoost: )raw" + initVocalBoost + R"raw(,
-        volumeBoost: )raw" + initVolumeBoost + R"raw(,
-        monoDownmix: )raw" + initMonoDownmix + R"raw(
+        enabled: )raw";
+    jsCode += initEnabled;
+    jsCode += R"raw(,
+        mode: ")raw";
+    jsCode += initMode;
+    jsCode += R"raw(",
+        device: ")raw";
+    jsCode += effectiveDevice;
+    jsCode += R"raw(",
+        vocalBoost: )raw";
+    jsCode += initVocalBoost;
+    jsCode += R"raw(,
+        volumeBoost: )raw";
+    jsCode += initVolumeBoost;
+    jsCode += R"raw(,
+        monoDownmix: )raw";
+    jsCode += initMonoDownmix;
+    jsCode += R"raw(
     };
 
     const PRESETS = {
@@ -842,14 +857,16 @@ void WebViewManager::InjectSurroundSoundScript() {
         }
         return audioCtx;
     }
+)raw";
 
+    jsCode += R"raw(
     // 3. Synthesized Small-Room Impulse Response (Reverb)
     function getSmallRoomBuffer(ctx) {
         if (cachedReverbBuffer && cachedReverbBuffer.sampleRate === ctx.sampleRate) {
             return cachedReverbBuffer;
         }
         const rate = ctx.sampleRate;
-        const duration = 0.035; // 35ms studio acoustic space
+        const duration = 0.035;
         const numSamples = Math.floor(rate * duration);
         const buf = ctx.createBuffer(2, numSamples, rate);
         const left = buf.getChannelData(0);
@@ -883,7 +900,6 @@ void WebViewManager::InjectSurroundSoundScript() {
 
     function canProcessElement(el) {
         if (!el || attachedElements.has(el) || pageClaimedElements.has(el)) return false;
-        // Strict guard: Skip DRM encrypted media (Netflix, Spotify, Apple TV+, etc.)
         if (el.mediaKeys) return false;
 
         const src = el.currentSrc || el.src;
@@ -909,7 +925,9 @@ void WebViewManager::InjectSurroundSoundScript() {
 
         return false;
     }
+)raw";
 
+    jsCode += R"raw(
     // 5. Idle Auto-Suspend / Wakeup
     function wakeAudioContext() {
         if (idleTimer) {
@@ -963,7 +981,9 @@ void WebViewManager::InjectSurroundSoundScript() {
 
         setupSurroundForElement(el);
     }
+)raw";
 
+    jsCode += R"raw(
     // 6. Build the Full DSP Graph for Media Element
     function setupSurroundForElement(el) {
         if (!canProcessElement(el)) return;
@@ -1010,7 +1030,6 @@ void WebViewManager::InjectSurroundSoundScript() {
         splitter.connect(sideR, 1); sideR.connect(sideBus);
 
         // Mono Bass Protection: 150Hz Highpass Filter on Side
-        // Low frequencies (<150Hz) stay 100% in Mid, never phase-widened or attenuated!
         const sideHighpass = ctx.createBiquadFilter();
         sideHighpass.type = "highpass";
         sideHighpass.frequency.value = 150;
@@ -1032,7 +1051,9 @@ void WebViewManager::InjectSurroundSoundScript() {
         sideToLeft.connect(postWidenerL);
         vocalFilter.connect(postWidenerR);
         sideToRight.connect(postWidenerR);
+)raw";
 
+    jsCode += R"raw(
         // E. Crossfeed Network (~0.3ms ITD delay + 2.5kHz head shadow lowpass)
         const delayLR = ctx.createDelay(0.01); delayLR.delayTime.value = 0.0003;
         const filterLR = ctx.createBiquadFilter(); filterLR.type = "lowpass"; filterLR.frequency.value = 2500;
@@ -1104,7 +1125,9 @@ void WebViewManager::InjectSurroundSoundScript() {
         pannerRearR.connect(wetMerger);
         speakerBusL.connect(wetMerger);
         speakerBusR.connect(wetMerger);
+)raw";
 
+    jsCode += R"raw(
         // I. Convolver Reverb Node (Small Room Acoustic Space)
         const convolver = ctx.createConvolver();
         try { convolver.buffer = getSmallRoomBuffer(ctx); } catch (e) {}
@@ -1197,7 +1220,9 @@ void WebViewManager::InjectSurroundSoundScript() {
         controller.update(cfg);
         attachedElements.set(el, controller);
     }
+)raw";
 
+    jsCode += R"raw(
     function registerElementEvents(el) {
         if (el.__ultraLightEventsAttached) return;
         el.__ultraLightEventsAttached = true;
@@ -1272,7 +1297,9 @@ void WebViewManager::InjectSurroundSoundScript() {
         }
     }
     startObserving();
+)raw";
 
+    jsCode += R"raw(
     // Interaction wakeup
     function onUserGesture() {
         wakeAudioContext();
