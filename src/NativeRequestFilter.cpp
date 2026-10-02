@@ -241,9 +241,9 @@ void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Enviro
     if (!webView || !environment) return;
     m_environment = environment;
 
-    // Register request filters (scripts, subframes, images, XHR, fetch, ping, other)
+    // Register request filters (scripts, documents/iframes, images, XHR, fetch, ping, other)
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT);
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SUB_FRAME);
+    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT);
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE);
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST);
     webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH);
@@ -274,8 +274,8 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, I
     wil::unique_cotaskmem_string uri;
     if (FAILED(request->get_Uri(&uri)) || !uri.get()) return S_OK;
 
-    // For subframes and images (e.g. ad iframes and tracking pixels), only inspect third-party requests
-    if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE || context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SUB_FRAME) {
+    // For documents (subframes/iframes) and images (tracking pixels), only inspect third-party requests
+    if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE || context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) {
         if (sender) {
             wil::unique_cotaskmem_string topUri;
             if (SUCCEEDED(sender->get_Source(&topUri)) && topUri.get()) {
