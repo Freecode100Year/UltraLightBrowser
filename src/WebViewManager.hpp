@@ -29,7 +29,13 @@ public:
     using NavigationStateCallback = std::function<void(bool isLoading)>;
 
     WebViewManager();
-    ~WebViewManager() = default;
+    ~WebViewManager() {
+        // Probe timers carry `this` as their id; never let one fire on a dead object.
+        if (m_hWndParent) {
+            KillTimer(m_hWndParent, reinterpret_cast<UINT_PTR>(this));
+            KillTimer(m_hWndParent, reinterpret_cast<UINT_PTR>(this) + 1);
+        }
+    }
 
     // Initialize environment and controller bound to hWnd
     HRESULT Initialize(HWND hWndParent, ReadyCallback onReady = nullptr);
@@ -94,6 +100,7 @@ private:
     void OnTargetAttached(const std::wstring& paramsJson);
     void CallCdp(const wchar_t* method, const std::string& params, const wchar_t* sessionId = nullptr);
     static void CALLBACK ProbeTimeoutProc(HWND, UINT, UINT_PTR, DWORD);
+    static void CALLBACK ProbeFinishProc(HWND, UINT, UINT_PTR, DWORD);
     static void SanitizeLocalState(const std::filesystem::path& userDataDir);
     void RegisterEventHandlers();
 
@@ -116,6 +123,8 @@ private:
     bool m_targetEventsHooked = false;
     wil::com_ptr<ICoreWebView2Controller> m_probeController;
     std::function<void(const std::string&)> m_probeDone;
+    bool m_probeFinishing = false;
+    std::string m_probeResult;
     UINT_PTR m_probeTimer = 0;
     bool m_isPlayingAudio = false;
     EventRegistrationToken m_audioPlayingToken{};

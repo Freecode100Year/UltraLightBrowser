@@ -586,12 +586,25 @@ void CALLBACK WebViewManager::ProbeTimeoutProc(HWND hWnd, UINT, UINT_PTR id, DWO
 }
 
 void WebViewManager::FinishProbe(const std::string& result) {
-    if (!m_probeDone) return;
-    auto done = std::move(m_probeDone);
-    m_probeDone = nullptr;
+    if (!m_probeDone || m_probeFinishing) return;
+    m_probeFinishing = true;
+    m_probeResult = result;
     if (m_probeTimer) { KillTimer(m_hWndParent, m_probeTimer); m_probeTimer = 0; }
-    if (m_probeController) { m_probeController->Close(); m_probeController = nullptr; }
-    done(result);
+    // Never close the probe WebView (or start the override) from inside one of
+    // its own callbacks: WebView2 still touches the controller after we return.
+    SetTimer(m_hWndParent, reinterpret_cast<UINT_PTR>(this) + 1, 0, &WebViewManager::ProbeFinishProc);
+}
+
+void CALLBACK WebViewManager::ProbeFinishProc(HWND hWnd, UINT, UINT_PTR id, DWORD) {
+    KillTimer(hWnd, id);
+    auto* self = reinterpret_cast<WebViewManager*>(id - 1);
+    auto done = std::move(self->m_probeDone);
+    self->m_probeDone = nullptr;
+    self->m_probeFinishing = false;
+    auto controller = std::move(self->m_probeController);
+    self->m_probeController = nullptr;
+    if (controller) controller->Close();
+    if (done) done(self->m_probeResult);
 }
 
 // Reads the runtime's real brand list / full versions from a hidden WebView on a
@@ -638,7 +651,9 @@ void WebViewManager::CaptureUaMetadata(std::function<void(const std::string&)> d
                                         if (SUCCEEDED(hr) && resultJson) {
                                             try {
                                                 const auto r = json::parse(StringUtils::WideToUtf8(resultJson));
-                                                if (r["result"]["value"].is_string()) value = r["result"]["value"].get<std::string>();
+                                                const auto res = r.find("result");
+                                                if (res != r.end() && res->contains("value") && (*res)["value"].is_string())
+                                                    value = (*res)["value"].get<std::string>();
                                             } catch (...) {}
                                         }
                                         FinishProbe(value);
@@ -661,11 +676,20 @@ void WebViewManager::EnableMacSpoof(const std::string& capturedJson) {
     bool captured = false;
     try {
         const auto c = json::parse(capturedJson);
-        if (c["brands"].is_array() && !c["brands"].empty() && c["fullVersionList"].is_array()) {
-            meta["brands"] = c["brands"];
-            meta["fullVersionList"] = c["fullVersionList"];
-            meta["fullVersion"] = c.value("uaFullVersion", std::string());
-            if (c["formFactors"].is_array()) meta["formFactors"] = c["formFactors"];
+        const auto isArray = [&c](const char* key) { return c.contains(key) && c[key].is_array(); };
+        if (isArray("brands") && !c["brands"].empty() && isArray("fullVersionList")) {
+            // Real Edge does not list the "Microsoft Edge WebView2" brand.
+            const auto withoutWebView2 = [](const json& list) {
+                json out = json::array();
+                for (const auto& b : list) {
+                    if (!(b.is_object() && b.contains("brand") && b["brand"] == "Microsoft Edge WebView2")) out.push_back(b);
+                }
+                return out;
+            };
+            meta["brands"] = withoutWebView2(c["brands"]);
+            meta["fullVersionList"] = withoutWebView2(c["fullVersionList"]);
+            if (c.contains("uaFullVersion") && c["uaFullVersion"].is_string()) meta["fullVersion"] = c["uaFullVersion"];
+            if (isArray("formFactors")) meta["formFactors"] = c["formFactors"];
             captured = true;
         }
     } catch (...) {}
@@ -740,8 +764,10 @@ void WebViewManager::OnTargetAttached(const std::wstring& paramsJson) {
     std::string type;
     try {
         const auto p = json::parse(StringUtils::WideToUtf8(paramsJson));
-        sessionId = StringUtils::Utf8ToWide(p.value("sessionId", std::string()));
-        type = p["targetInfo"].value("type", std::string());
+        if (p.contains("sessionId") && p["sessionId"].is_string())
+            sessionId = StringUtils::Utf8ToWide(p["sessionId"].get<std::string>());
+        if (p.contains("targetInfo") && p["targetInfo"].is_object())
+            type = p["targetInfo"].value("type", std::string());
     } catch (...) {}
     if (sessionId.empty()) return;
     const wchar_t* sid = sessionId.c_str();
