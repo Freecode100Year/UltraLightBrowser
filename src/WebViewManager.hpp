@@ -73,6 +73,8 @@ public:
     ICoreWebView2* GetWebView() const { return m_webView.get(); }
 
 private:
+    HRESULT TryInitEnvironment(int attempt);
+    static void SanitizeLocalState(const std::filesystem::path& userDataDir);
     void RegisterEventHandlers();
 
     HWND m_hWndParent = nullptr;

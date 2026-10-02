@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.2/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.5.2%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.3/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.5.3%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -23,12 +23,12 @@
 
 ---
 
-## 📥 最新版便携下载 / Direct Download (v1.5.2 启动诊断与进程冲突排查强化版)
+## 📥 最新版便携下载 / Direct Download (v1.5.3 启动崩溃彻底根治与内核自愈版)
 
 可在 GitHub Releases 页面直接下载最新构建的预编译二进制文件：
 
-* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.5.2)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.2/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
-* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.5.2-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.2/UltraLightBrowser-v1.5.2-windows-x64.zip)**
+* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.5.3)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.3/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
+* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.5.3-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.3/UltraLightBrowser-v1.5.3-windows-x64.zip)**
 * 🌟 **[访问 GitHub Latest Release 最新发布页](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**
 * 🔗 **[查看所有历史版本与构建产物](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
@@ -104,9 +104,8 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **Low-Latency Transport**：`--enable-quic --enable-async-dns` 零延迟异步 DNS 与 QUIC 快速传输。
 * **Bloatware Purge**：`--disable-features=Translate,OptimizationHints,MediaRouter --disable-background-networking --disable-sync --disable-domain-reliability --disable-breakpad --no-pings --disable-speech-api --no-first-run` 彻底剔除遥测与后台多余组件。
 
-### 3. ⚡ 原生网络请求拦截与内核级 DNS 阻断（提速 40%+，省流量 50%+）
-内置纯原生 C++ 网络拦截引擎（`NativeRequestFilter`）与内核级主机解析阻断：
-* **内核层 DNS 级秒速阻断 (`--host-resolver-rules`)**：在 Chromium 进程启动阶段直接将全量高危广告与跟踪域名映射为 `~NOTFOUND`，广告请求在底层 Socket 解析阶段直接夭折，无需经过任何 UI 线程与 IPC 转发，性能开销趋近于 0。
+### 3. ⚡ 原生网络请求拦截（提速 40%+，省流量 50%+）
+内置纯原生 C++ 网络拦截引擎（`NativeRequestFilter`），安全稳定且不依赖脆弱的启动参数：
 * **原生底层精确过滤**：基于 WebView2 `AddWebResourceRequestedFilter` 与 `add_WebResourceRequested` 原生事件，在网络请求尚未离开本机前进行 O(1) 哈希倒序父域名匹配与第三方域名鉴别。
 * **内置精准规则特征库**：全量拦截主流广告联盟（Google DoubleClick、PageAd、Baidu Pos/Cpro/HM、Tencent GDT、Alibaba Tanx/Alimama 等）及跟踪探针与遥测上报（Google Analytics, CNZZ, Umeng, Hotjar, Clarity, TikTok Ads 等）。
 * **本地瞬时空响应 (204 No Content)**：对命中目标直接在本地生成 204 空响应并带缓存头，从源头阻断网络 I/O，**网页载入提速 40% 以上，实测节省流量超过 50%**。
@@ -141,9 +140,15 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **双模快捷操作**：
   * 工具栏快捷菜单：点击 `[ 🌐 DNS ]` 按钮可一键开启/关闭公共 DNS，或直接单选切换服务商。
   * 完整设置面板：提供完整的 IPv4/IPv6 地址展示、一键复制单条或全部 IP 节点与 DoH 地址自定义。
-* **双重内核级同步应用**：启动前自动将安全 DoH 配置写入 `UserData/EBWebView/Local State`，保障真正的端到端 DNS-over-HTTPS 加密防劫持生效（可通过 `on.quad9.net` 验证）。
+* **安全配置保护与加密直连**：DoH 设置安全写入 `UserData/EBWebView/Local State`，并在读取失败或格式不完整时严禁覆盖，确保底层 `os_crypt` 密钥毫发无损（可通过 `on.quad9.net` 验证）。
 
-### 6. 🔒 退出时强制清除所有缓存与临时文件（零痕迹无痕浏览保障）
+### 6. 🛡️ 启动崩溃彻底根治与内核自愈机制 (v1.5.3)
+针对 v1.5.0~v1.5.2 在部分极端环境下出现的 `0x8007139F (ERROR_INVALID_STATE)` 启动失败进行了深度根治与多层自愈：
+* **剔除启动参数风险**：彻底移除 `--host-resolver-rules` 命令行长参数，杜绝 Chromium 命令行参数长度边界问题以及与后台残留旧进程参数不一致引发的状态冲突；
+* **Local State 完整性防护与自愈**：严禁在缺少 Chromium 原生密钥 `os_crypt` 的情况下创建桩文件；启动与清理时自动侦测并销毁历史版本残留的损坏空文件，确保 WebView2 生成完整、合法的初始配置；
+* **三级渐进式自愈重试与安全目录降级**：当侦测到底层返回 `0x8007139F` 时，自动延时重试清理，若旧进程长期霸占原目录，则自动无缝降级至独立数据目录（`UserData_Safe`），实现用户零感知的 100% 成功启动。
+
+### 7. 🔒 退出时强制清除所有缓存与临时文件（零痕迹无痕浏览保障）
 真正做到无痕私密安全，关闭浏览器时即刻执行多层深度粉碎清理，不留任何浏览历史与临时文件：
 * **实时内核级数据擦除**：窗口关闭时首先触发 `ICoreWebView2Profile2::ClearBrowsingDataAll`，在进程退出前完整清理 HTTP 缓存、Cookies、浏览历史、密码自动填充、IndexedDB 及全部 DOM 存储。
 * **进程级优雅同步关闭**：追踪底层 Chromium 渲染主进程 PID，关闭 WebView 控制器后等待子进程释放文件句柄，杜绝文件被占用锁定。
@@ -151,23 +156,23 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **开机/启动二次冗余清理**：每次启动浏览器时，在内核初始化前均自动执行全盘冗余清理，确保即便遭遇系统断电或任务管理器强制结束，旧会话也绝不留存任何痕迹。
 * **延时静默自清理兜底**：配套独立的延时无窗口后台自毁任务，确保即使极少数字节被杀毒软件异步扫描，也能在退出后瞬间彻底清除。
 
-### 7. 🛡️ Zero-Flicker Element Hiding & Interactive Picker
+### 8. 🛡️ Zero-Flicker Element Hiding & Interactive Picker
 `ElementBlocker` ensures user privacy and ad-blocking without layout shifts:
 * **Pre-Render Injection**: Injects domain-matched CSS rules via `AddScriptToExecuteOnDocumentCreated` before DOM construction, preventing ad flash.
 * **Interactive DOM Picker (`Ctrl + Shift + H`)**: Injects an element inspector with red outlines; clicking an element computes its optimal CSS selector and saves it directly to local JSON storage.
 
-### 8. 🔋 Power & WorkingSet Memory Optimization
+### 9. 🔋 Power & WorkingSet Memory Optimization
 `PowerManager` dynamically manages system and child processes:
 * **EcoQoS Disabling**: Traverses process trees to disable `PROCESS_POWER_THROTTLING_EXECUTION_SPEED`, ensuring maximum frame rates and zero micro-stutters during heavy media playback.
 * **Smart Memory Trimming**: On `WM_SYSCOMMAND (SC_MINIMIZE)`, signals `ICoreWebView2_3::TrySuspend` and invokes `SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1)` (`EmptyWorkingSet`), purging unneeded physical pages down to ~20MB.
 * **Instant Resume**: Restores execution immediately upon `SC_RESTORE` or focus.
 
-### 9. 📺 Fullscreen HTML5 Video & Raw-Pixel Adaptive Viewport
+### 10. 📺 Fullscreen HTML5 Video & Raw-Pixel Adaptive Viewport
 * **HTML5 Video Fullscreen**: Full support for YouTube, Bilibili, and modern web video players. Automatically transitions the Win32 window to borderless full-screen on the active monitor, hides toolbars, and expands WebView2 bounds smoothly.
 * **F11 & Escape Keyboard Control**: Seamlessly toggle fullscreen with <kbd>F11</kbd> or exit with <kbd>Esc</kbd> across both the browser frame and web contents.
 * **Raw-Pixel Viewport Scaling (`COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS`)**: Matches WebView2 bounds 1:1 with Win32 client area physical pixels, eliminating DIP scaling distortion and ensuring webpage layouts adapt dynamically and crisply to any window size, maximization state, or monitor DPI (100%, 125%, 150%, 200%).
 
-### 10. 🔍 页面缩放与实时比例指示 (Page Zoom & Interactive Indicator)
+### 11. 🔍 页面缩放与实时比例指示 (Page Zoom & Interactive Indicator)
 * **全套快捷键支持**：
   * <kbd>Ctrl</kbd> + <kbd>+</kbd> / <kbd>=</kbd> : 放大页面（逐步放大至最高 500%）
   * <kbd>Ctrl</kbd> + <kbd>-</kbd> : 缩小页面（逐步缩小至最低 25%）
@@ -177,7 +182,7 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **快速预设菜单**：点击缩放按钮即可唤出原生快捷菜单，支持一键切换预设比例（25%、33%、50%、67%、75%、80%、90%、100%、110%、125%、150%、175%、200%、250%、300%、400%、500%），并在当前比例项显示勾选标。
 * **双层全局按键拦截**：无论焦点在页面 DOM 内部还是在 Win32 地址栏/工具栏，快捷键均由底层直接拦截派发，实现无缝缩放体验。
 
-### 11. 🧭 深度还原 macOS Safari 极简优雅界面 (macOS Safari UI Edition)
+### 12. 🧭 深度还原 macOS Safari 极简优雅界面 (macOS Safari UI Edition)
 基于原生 Win32 双缓冲自绘与 DWM 现代视觉合成，像素级还原 macOS Sonoma / Sequoia Safari 标志性设计语言：
 * **macOS 经典红黄绿三色红绿灯控制 (macOS Traffic Light Buttons)**：
   * **左上角一体化控制**：关闭（🔴 `#FF5F56`）、最小化（🟡 `#FFBD2E`）、最大化/缩放（🟢 `#27C93F`）直接内嵌于顶栏左上角。

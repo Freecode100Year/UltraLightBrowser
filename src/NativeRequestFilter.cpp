@@ -368,16 +368,4 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, I
     return S_OK;
 }
 
-std::wstring NativeRequestFilter::BuildHostResolverRules() const {
-    std::wstring rules = L"--host-resolver-rules=\"";
-    bool first = true;
-    for (const auto& domain : m_blockedDomainSet) {
-        if (!first) rules += L", ";
-        first = false;
-        rules += L"MAP " + domain + L" ~NOTFOUND, MAP *." + domain + L" ~NOTFOUND";
-    }
-    rules += L"\"";
-    return rules;
-}
-
 } // namespace UltraLight

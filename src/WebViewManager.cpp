@@ -6,9 +6,15 @@
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
 #include <iostream>
+#include <fstream>
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+
+#if __has_include(<nlohmann/json.hpp>)
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+#endif
 
 using namespace Microsoft::WRL;
 
@@ -55,8 +61,54 @@ WebViewManager::WebViewManager() {}
 HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
     m_hWndParent = hWndParent;
     m_onReady = onReady;
+    return TryInitEnvironment(0);
+}
 
-    std::wstring userDataDir = Config::Instance().GetUserDataDirectory().wstring();
+void WebViewManager::SanitizeLocalState(const std::filesystem::path& userDataDir) {
+    std::filesystem::path localStatePath = userDataDir / "EBWebView" / "Local State";
+    std::error_code ec;
+    if (!std::filesystem::exists(localStatePath, ec)) return;
+
+    bool isValid = false;
+    try {
+        auto sz = std::filesystem::file_size(localStatePath, ec);
+        if (!ec && sz > 200) {
+            std::ifstream inFile(localStatePath);
+            if (inFile.is_open()) {
+                std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                if (content.find("\"os_crypt\"") != std::string::npos) {
+#if __has_include(<nlohmann/json.hpp>)
+                    if (json::accept(content)) {
+                        isValid = true;
+                    }
+#else
+                    isValid = true;
+#endif
+                }
+            }
+        }
+    } catch (...) {
+        isValid = false;
+    }
+
+    if (!isValid) {
+        // Strip damaged or stub Local State (e.g. bare {"dns_over_https":...} lacking os_crypt)
+        // allowing Chromium to cleanly regenerate a pristine, fully-featured Local State.
+        std::filesystem::remove(localStatePath, ec);
+    }
+}
+
+HRESULT WebViewManager::TryInitEnvironment(int attempt) {
+    std::filesystem::path userDataDir;
+    if (attempt < 2) {
+        userDataDir = Config::Instance().GetUserDataDirectory();
+    } else {
+        // Fallback directory to isolate from any stubborn stale Edge processes
+        userDataDir = Config::Instance().GetAppDataPath() / L"UserData_Safe";
+    }
+
+    // Proactively self-heal: remove damaged or stub Local State before WebView2 initializes
+    SanitizeLocalState(userDataDir);
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
 
@@ -77,20 +129,23 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         L"--disable-speech-api "
         L"--no-first-run";
 
-    std::wstring hostResolverArgs = NativeRequestFilter::Instance().BuildHostResolverRules();
-    if (!hostResolverArgs.empty()) {
-        performanceArgs += L" " + hostResolverArgs;
-    }
+    // NOTE: --host-resolver-rules was completely removed to prevent command-line parsing conflicts
+    // and argument mismatch 0x8007139F errors with running processes. NativeRequestFilter handles all blocking.
 
     options->put_AdditionalBrowserArguments(performanceArgs.c_str());
 
+    std::wstring userDataDirStr = userDataDir.wstring();
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
         nullptr,
-        userDataDir.c_str(),
+        userDataDirStr.c_str(),
         options.Get(),
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+            [this, attempt](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(result) || !env) {
+                    if ((result == HRESULT_FROM_WIN32(ERROR_INVALID_STATE) || result == static_cast<HRESULT>(0x8007139F)) && attempt < 2) {
+                        Sleep(500);
+                        return TryInitEnvironment(attempt + 1);
+                    }
                     ShowWebView2InitError(m_hWndParent, L"环境初始化", FAILED(result) ? result : E_FAIL);
                     return result;
                 }
@@ -99,8 +154,12 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                 return m_environment->CreateCoreWebView2Controller(
                     m_hWndParent,
                     Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [this](HRESULT res, ICoreWebView2Controller* controller) -> HRESULT {
+                        [this, attempt](HRESULT res, ICoreWebView2Controller* controller) -> HRESULT {
                             if (FAILED(res) || !controller) {
+                                if ((res == HRESULT_FROM_WIN32(ERROR_INVALID_STATE) || res == static_cast<HRESULT>(0x8007139F)) && attempt < 2) {
+                                    Sleep(500);
+                                    return TryInitEnvironment(attempt + 1);
+                                }
                                 ShowWebView2InitError(m_hWndParent, L"控制器创建", FAILED(res) ? res : E_FAIL);
                                 return res;
                             }
@@ -226,6 +285,10 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
     );
 
     if (FAILED(hr)) {
+        if ((hr == HRESULT_FROM_WIN32(ERROR_INVALID_STATE) || hr == static_cast<HRESULT>(0x8007139F)) && attempt < 2) {
+            Sleep(500);
+            return TryInitEnvironment(attempt + 1);
+        }
         ShowWebView2InitError(m_hWndParent, L"环境创建调用", hr);
     }
 
@@ -524,12 +587,53 @@ void WebViewManager::PurgeAllCacheAndTempFiles() {
     std::error_code ec;
 
     if (std::filesystem::exists(userDataDir, ec)) {
+        std::filesystem::path ebWebViewDir = userDataDir / "EBWebView";
+        std::filesystem::path localStatePath = ebWebViewDir / "Local State";
+
+        bool hasValidLocalState = false;
+        std::string localStateContent;
+        if (std::filesystem::exists(localStatePath, ec)) {
+            try {
+                auto sz = std::filesystem::file_size(localStatePath, ec);
+                if (!ec && sz > 200) {
+                    std::ifstream inFile(localStatePath);
+                    if (inFile.is_open()) {
+                        std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                        if (content.find("\"os_crypt\"") != std::string::npos) {
+#if __has_include(<nlohmann/json.hpp>)
+                            if (json::accept(content)) {
+                                hasValidLocalState = true;
+                                localStateContent = std::move(content);
+                            }
+#else
+                            hasValidLocalState = true;
+                            localStateContent = std::move(content);
+#endif
+                        }
+                    }
+                }
+            } catch (...) {
+                hasValidLocalState = false;
+            }
+        }
+
         for (int retry = 0; retry < 5; ++retry) {
             std::filesystem::remove_all(userDataDir, ec);
             if (!std::filesystem::exists(userDataDir, ec)) {
                 break;
             }
             Sleep(50);
+        }
+
+        // Restore healthy Local State so encryption keys and DoH settings survive cleanup
+        if (hasValidLocalState && !localStateContent.empty()) {
+            try {
+                std::filesystem::create_directories(ebWebViewDir, ec);
+                std::ofstream outFile(localStatePath);
+                if (outFile.is_open()) {
+                    outFile << localStateContent;
+                }
+            } catch (...) {}
         }
     }
 
@@ -543,6 +647,11 @@ void WebViewManager::PurgeAllCacheAndTempFiles() {
             }
             Sleep(50);
         }
+    }
+
+    std::filesystem::path safeUserDataDir = appDataDir / "UserData_Safe";
+    if (std::filesystem::exists(safeUserDataDir, ec)) {
+        SanitizeLocalState(safeUserDataDir);
     }
 }
 

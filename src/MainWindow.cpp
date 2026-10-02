@@ -755,6 +755,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             GetClientRect(m_hWnd, &client);
             UpdateLayout(client.right, client.bottom);
             UpdateZoomDisplay(m_webViewManager->GetZoomFactor());
+            DnsManager::Instance().ApplySettings();
             m_webViewManager->Navigate(Config::Instance().GetSettings().startUrl);
         });
         if (FAILED(hrInit)) {

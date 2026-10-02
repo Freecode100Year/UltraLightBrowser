@@ -516,52 +516,68 @@ bool DnsManager::ApplySettings() {
         RegCloseKey(hKey);
     }
 
-    // 2. Safely merge and write DoH configuration ONLY to WebView2 EBWebView/Local State
+    // 2. Safely merge DoH configuration ONLY when WebView2 EBWebView/Local State
+    // already exists and contains Chromium os_crypt encryption keys.
+    // NEVER overwrite with a bare/minimal stub file, which strips os_crypt and causes 0x8007139F crash!
 #if __has_include(<nlohmann/json.hpp>)
     try {
         std::filesystem::path userDataDir = Config::Instance().GetUserDataDirectory();
         std::filesystem::path targetPath = userDataDir / "EBWebView" / "Local State";
+        std::error_code ec;
 
+        if (!std::filesystem::exists(targetPath, ec)) {
+            // Local State does not exist yet. Do NOT create a stub file!
+            // Allow WebView2 to create its initial state and encryption keys on launch.
+            return true;
+        }
+
+        json root;
+        bool readSuccess = false;
         try {
-            std::filesystem::create_directories(targetPath.parent_path());
+            std::ifstream inFile(targetPath);
+            if (inFile.is_open()) {
+                inFile >> root;
+                readSuccess = true;
+            }
+        } catch (...) {
+            readSuccess = false;
+        }
 
-            json root = json::object();
-            if (std::filesystem::exists(targetPath)) {
-                std::ifstream inFile(targetPath);
-                if (inFile.is_open()) {
-                    try { inFile >> root; } catch (...) {}
-                }
-            }
-            if (!root.is_object()) {
-                root = json::object();
-            }
+        if (!readSuccess || !root.is_object()) {
+            // Per security audit: Never overwrite Local State if reading/parsing fails!
+            return false;
+        }
 
-            if (settings.enablePublicDns && !templateNarrow.empty()) {
-                // Use "automatic" mode (opportunistic DoH): prioritizes encrypted DoH,
-                // but safely falls back to system DNS if the DoH server is unreachable/blocked.
-                root["dns_over_https"]["mode"] = "automatic";
-                root["dns_over_https"]["templates"] = templateNarrow;
-            } else {
-                root["dns_over_https"]["mode"] = "off";
-                root["dns_over_https"]["templates"] = "";
-            }
+        if (!root.contains("os_crypt")) {
+            // Damaged stub Local State lacking os_crypt; remove so WebView2 can cleanly initialize
+            std::filesystem::remove(targetPath, ec);
+            return true;
+        }
 
-            std::filesystem::path tmpPath = targetPath;
-            tmpPath += L".tmp";
-            {
-                std::ofstream outFile(tmpPath);
-                if (outFile.is_open()) {
-                    outFile << root.dump(4);
-                    outFile.flush();
-                }
+        if (settings.enablePublicDns && !templateNarrow.empty()) {
+            // Use "automatic" mode (opportunistic DoH): prioritizes encrypted DoH,
+            // but safely falls back to system DNS if the DoH server is unreachable/blocked.
+            root["dns_over_https"]["mode"] = "automatic";
+            root["dns_over_https"]["templates"] = templateNarrow;
+        } else {
+            root["dns_over_https"]["mode"] = "off";
+            root["dns_over_https"]["templates"] = "";
+        }
+
+        std::filesystem::path tmpPath = targetPath;
+        tmpPath += L".tmp";
+        {
+            std::ofstream outFile(tmpPath);
+            if (outFile.is_open()) {
+                outFile << root.dump(4);
+                outFile.flush();
             }
-            std::error_code ec;
-            std::filesystem::rename(tmpPath, targetPath, ec);
-            if (ec) {
-                std::filesystem::copy_file(tmpPath, targetPath, std::filesystem::copy_options::overwrite_existing, ec);
-                std::filesystem::remove(tmpPath, ec);
-            }
-        } catch (...) {}
+        }
+        std::filesystem::rename(tmpPath, targetPath, ec);
+        if (ec) {
+            std::filesystem::copy_file(tmpPath, targetPath, std::filesystem::copy_options::overwrite_existing, ec);
+            std::filesystem::remove(tmpPath, ec);
+        }
     } catch (...) {
         // Fallback gracefully
     }
