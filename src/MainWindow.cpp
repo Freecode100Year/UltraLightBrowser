@@ -740,11 +740,17 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         m_webViewManager->SetAudioPlayingCallback([this](bool isPlayingAudio) {
             if (m_webViewManager && m_webViewManager->GetWebView() &&
                 PowerManager::Instance().IsBackgrounded()) {
-                PowerManager::Instance().HandleWindowMinimize(
-                    m_webViewManager->GetController(),
-                    m_webViewManager->GetWebView(),
-                    isPlayingAudio
-                );
+                KillTimer(m_hWnd, IDT_AUDIO_STOP_GRACE);
+                if (isPlayingAudio) {
+                    PowerManager::Instance().HandleWindowMinimize(
+                        m_webViewManager->GetController(),
+                        m_webViewManager->GetWebView(),
+                        true
+                    );
+                } else {
+                    // Playlists pause briefly between tracks; suspending at once would stop autoplay.
+                    SetTimer(m_hWnd, IDT_AUDIO_STOP_GRACE, 60000, nullptr);
+                }
             }
         });
 
@@ -1008,7 +1014,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_TIMER: {
         if (wParam == IDT_INACTIVITY_CHECK) {
             KillTimer(m_hWnd, IDT_INACTIVITY_CHECK);
-            if (!m_isWindowActive || IsIconic(m_hWnd)) {
+            // Only a minimized window may be hidden and suspended; an unfocused but visible
+            // window (e.g. on a second monitor) must keep rendering.
+            if (IsIconic(m_hWnd)) {
                 if (m_webViewManager && m_webViewManager->GetWebView()) {
                     bool isPlayingAudio = m_webViewManager->IsDocumentPlayingAudio();
                     PowerManager::Instance().HandleInactivitySuspend(
@@ -1017,6 +1025,19 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                         isPlayingAudio
                     );
                 }
+            }
+            return 0;
+        }
+        if (wParam == IDT_AUDIO_STOP_GRACE) {
+            KillTimer(m_hWnd, IDT_AUDIO_STOP_GRACE);
+            if (m_webViewManager && m_webViewManager->GetWebView() &&
+                PowerManager::Instance().IsBackgrounded() &&
+                !m_webViewManager->IsDocumentPlayingAudio()) {
+                PowerManager::Instance().HandleWindowMinimize(
+                    m_webViewManager->GetController(),
+                    m_webViewManager->GetWebView(),
+                    false
+                );
             }
             return 0;
         }

@@ -130,6 +130,7 @@ private:
 
     ULONGLONG m_lastInteractionTick = 0;
     static constexpr UINT_PTR IDT_INACTIVITY_CHECK = 5001;
+    static constexpr UINT_PTR IDT_AUDIO_STOP_GRACE = 5002;
 
     std::unique_ptr<WebViewManager> m_webViewManager;
 };
