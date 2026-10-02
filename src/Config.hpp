@@ -11,6 +11,7 @@ namespace UltraLight {
 struct AppSettings {
     std::wstring startUrl = L"https://www.google.com";
     std::string userAgentProfile = "default"; // default / macos-edge
+    std::string macPlatformVersion = "26.2.0"; // Sec-CH-UA-Platform-Version in macOS mode
     bool hardwareAcceleration = true;
     bool enableAdBlock = true;
     bool ecoMode = false;

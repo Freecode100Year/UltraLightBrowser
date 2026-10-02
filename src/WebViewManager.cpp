@@ -3,10 +3,12 @@
 #include "Config.hpp"
 #include "UserAgent.hpp"
 #include "MacStealth.hpp"
+#include "SelfTestPage.hpp"
 #include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
+#include <cwchar>
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -653,7 +655,7 @@ void WebViewManager::CaptureUaMetadata(std::function<void(const std::string&)> d
 void WebViewManager::EnableMacSpoof(const std::string& capturedJson) {
     if (!m_webView) return;
     json meta = {
-        {"platform", "macOS"}, {"platformVersion", "15.7.1"}, {"architecture", "arm"},
+        {"platform", "macOS"}, {"platformVersion", Config::Instance().GetSettings().macPlatformVersion}, {"architecture", "arm"},
         {"model", ""}, {"mobile", false}, {"bitness", "64"}, {"wow64", false},
         {"formFactors", json::array({"Desktop"})}};
     bool captured = false;
@@ -689,12 +691,16 @@ void WebViewManager::EnableMacSpoof(const std::string& capturedJson) {
         {"platform", "MacIntel"},
         {"userAgentMetadata", meta}};
     m_macOverrideParams = ov.dump();
+    m_stealthSource = kMacStealthScript;
+    const std::wstring quotedUa = StringUtils::Utf8ToWide(ov["userAgent"].dump());
+    const auto at = m_stealthSource.find(kMacUaPlaceholder);
+    if (at != std::wstring::npos) m_stealthSource.replace(at, wcslen(kMacUaPlaceholder), quotedUa);
 
     CallCdp(L"Emulation.setUserAgentOverride", m_macOverrideParams);
     // macOS uses overlay scrollbars: no layout width, unlike Windows' ~17px.
     CallCdp(L"Emulation.setScrollbarsHidden", R"({"hidden":true})");
 
-    m_webView->AddScriptToExecuteOnDocumentCreated(kMacStealthScript,
+    m_webView->AddScriptToExecuteOnDocumentCreated(m_stealthSource.c_str(),
         Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
             [this](HRESULT hr, LPCWSTR id) -> HRESULT {
                 if (SUCCEEDED(hr) && id) {
@@ -744,9 +750,9 @@ void WebViewManager::OnTargetAttached(const std::wstring& paramsJson) {
             CallCdp(L"Emulation.setUserAgentOverride", m_macOverrideParams, sid);
             CallCdp(L"Emulation.setScrollbarsHidden", R"({"hidden":true})", sid);
             CallCdp(L"Target.setAutoAttach", R"({"autoAttach":true,"waitForDebuggerOnStart":true,"flatten":true})", sid);
-        } else if (type == "worker") {
+        } else if (type == "worker" || type == "service_worker" || type == "shared_worker") {
             CallCdp(L"Network.setUserAgentOverride", m_macOverrideParams, sid);
-            const json eval = {{"expression", StringUtils::WideToUtf8(kMacStealthScript)}};
+            const json eval = {{"expression", StringUtils::WideToUtf8(m_stealthSource)}};
             CallCdp(L"Runtime.evaluate", eval.dump(), sid);
         }
     }
@@ -794,6 +800,20 @@ void WebViewManager::Navigate(const std::wstring& url) {
         return;
     }
     m_webView->Navigate(target.c_str());
+}
+
+void WebViewManager::OpenIdentitySelfTest() {
+    if (!m_webView) return;
+    wil::com_ptr<ICoreWebView2_3> webView3;
+    if (FAILED(m_webView->QueryInterface(IID_PPV_ARGS(&webView3))) || !webView3) return;
+    std::error_code ec;
+    const auto folder = Config::Instance().GetAppDataPath() / "selftest";
+    std::filesystem::create_directories(folder, ec);
+    { std::ofstream(folder / "index.html", std::ios::binary) << kSelfTestHtml; }
+    { std::ofstream(folder / "sw.js", std::ios::binary) << kSelfTestServiceWorker; }
+    webView3->SetVirtualHostNameToFolderMapping(L"ulb-selftest.example", folder.wstring().c_str(),
+        COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY);
+    Navigate(L"https://ulb-selftest.example/index.html");
 }
 
 void WebViewManager::GoBack() {

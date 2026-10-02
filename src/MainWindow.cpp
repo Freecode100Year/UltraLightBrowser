@@ -1259,6 +1259,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;
         }
+        case IDM_UA_SELFTEST:
+            if (m_webViewManager) m_webViewManager->OpenIdentitySelfTest();
+            break;
         case IDC_BTN_SOUND:
             ShowSoundMenu();
             break;
@@ -1740,6 +1743,8 @@ void MainWindow::ShowShareMenu() {
         const bool mac = Config::Instance().GetSettings().userAgentProfile == "macos-edge";
         AppendMenuW(uaMenu, MF_STRING | (!mac ? MF_CHECKED : 0), IDM_UA_DEFAULT, L"Windows Edge（默认）");
         AppendMenuW(uaMenu, MF_STRING | (mac ? MF_CHECKED : 0), IDM_UA_MACOS_EDGE, L"macOS Edge");
+        AppendMenuW(uaMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(uaMenu, MF_STRING, IDM_UA_SELFTEST, L"标识自检页");
         AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(uaMenu), L"浏览器 UA 标识（切换会刷新）");
     }
 

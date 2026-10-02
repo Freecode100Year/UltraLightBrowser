@@ -1,3 +1,4 @@
+#include <cctype>
 #include "Config.hpp"
 #include "StringUtils.hpp"
 #include <windows.h>
@@ -66,6 +67,12 @@ void Config::Load() {
                 const auto profile = s["userAgentProfile"].get<std::string>();
                 m_settings.userAgentProfile = profile == "macos-edge" ? profile : "default";
             }
+            if (s.contains("macPlatformVersion") && s["macPlatformVersion"].is_string()) {
+                const auto v = s["macPlatformVersion"].get<std::string>();
+                const bool valid = !v.empty() && v.size() <= 16 && std::isdigit(static_cast<unsigned char>(v.front())) &&
+                    v.find_first_not_of("0123456789.") == std::string::npos;
+                if (valid) m_settings.macPlatformVersion = v;
+            }
             if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
             if (s.contains("enableAdBlock")) m_settings.enableAdBlock = s["enableAdBlock"];
             if (s.contains("ecoMode")) m_settings.ecoMode = s["ecoMode"];
@@ -121,6 +128,7 @@ void Config::Save() {
         root["settings"] = {
             {"startUrl", startUrlNarrow},
             {"userAgentProfile", m_settings.userAgentProfile},
+            {"macPlatformVersion", m_settings.macPlatformVersion},
             {"hardwareAcceleration", m_settings.hardwareAcceleration},
             {"enableAdBlock", m_settings.enableAdBlock},
             {"ecoMode", m_settings.ecoMode},

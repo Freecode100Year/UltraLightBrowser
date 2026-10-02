@@ -44,6 +44,7 @@ public:
     void GoForward();
     void Reload();
     HRESULT ApplyUserAgentProfile(const std::string& profile, bool reloadPage = false);
+    void OpenIdentitySelfTest();
     void Stop();
 
     // Zoom controls
@@ -111,6 +112,7 @@ private:
     std::wstring m_pendingNavigation;
     std::string m_macOverrideParams;
     std::wstring m_stealthScriptId;
+    std::wstring m_stealthSource;
     bool m_targetEventsHooked = false;
     wil::com_ptr<ICoreWebView2Controller> m_probeController;
     std::function<void(const std::string&)> m_probeDone;

@@ -1,9 +1,11 @@
 #pragma once
 namespace UltraLight {
 // Injected into every document (AddScriptToExecuteOnDocumentCreated) and every
-// dedicated worker (Runtime.evaluate before the worker starts) in macOS mode.
+// dedicated/service worker (Runtime.evaluate before the worker starts) in macOS mode.
+// kMacUaPlaceholder is replaced with the JSON-quoted macOS user agent.
 // Hides Windows-specific values that the UA/Client Hints override cannot reach.
 // Patched functions keep their native name, length and toString() output.
+inline constexpr const wchar_t* kMacUaPlaceholder = L"\"__ULB_MAC_UA__\"";
 inline constexpr const wchar_t* kMacStealthScript = LR"js((() => {
   const G = globalThis;
   const fnToString = Function.prototype.toString;
@@ -37,8 +39,18 @@ inline constexpr const wchar_t* kMacStealthScript = LR"js((() => {
     hookGetter(P, "device", "");
     hookGetter(P, "description", "");
   }
-  // Workers are outside Emulation.setUserAgentOverride's navigator.platform reach.
-  if (G.WorkerNavigator) hookGetter(G.WorkerNavigator.prototype, "platform", "MacIntel");
+  // Workers are outside Emulation.setUserAgentOverride's navigator.platform reach,
+  // and service workers also keep the real navigator.userAgent.
+  if (G.WorkerNavigator) {
+    const UA = "__ULB_MAC_UA__";
+    const P = G.WorkerNavigator.prototype;
+    hookGetter(P, "platform", "MacIntel");
+    hookGetter(P, "userAgent", UA);
+    hookGetter(P, "appVersion", UA.slice(UA.indexOf("/") + 1));
+  }
+  // Shared workers are browser-level targets this page's DevTools session cannot
+  // reach, so they would report the real OS; hide the constructor instead.
+  if (G.SharedWorker && G.document) delete G.SharedWorker;
   // Drop locally installed Windows (SAPI) voices; Edge online voices exist on both systems.
   if (G.SpeechSynthesis) {
     hookMethod(G.SpeechSynthesis.prototype, "getVoices", (t, self, args) =>

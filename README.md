@@ -70,7 +70,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 - 后台播放音频时不挂起，避免断音；音频停止 60 秒后才进入节能
 
 **其他**
-- 浏览器标识切换：Windows Edge（默认）/ macOS Edge。macOS 模式统一改写 UA、Client Hints 请求头、`navigator.platform`、`navigator.userAgentData`（品牌与完整版本取自本机 Edge 内核实测值）、WebGL / WebGPU 显卡信息、滚动条宽度和本地语音列表，并覆盖跨进程 iframe 与 Web Worker；改写过的函数保持原生 `toString()`
+- 浏览器标识切换：Windows Edge（默认）/ macOS Edge。macOS 模式统一改写 UA、Client Hints 请求头、`navigator.platform`、`navigator.userAgentData`（品牌与完整版本取自本机 Edge 内核实测值）、WebGL / WebGPU 显卡信息、滚动条宽度和本地语音列表，并覆盖跨进程 iframe、Dedicated Worker 与 Service Worker（SharedWorker 无法改写，macOS 模式下隐藏）；改写过的函数保持原生 `toString()`。菜单“浏览器 UA 标识 → 标识自检页”可一键核对各项；系统版本号可在配置文件 `macPlatformVersion` 中修改（默认 26.2.0）
 - WebView2 启动失败时显示错误码与排查建议
 
 ## 快捷键
@@ -89,7 +89,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 - 单窗口单页面，暂不支持多标签。
 - 浏览器音频增强基于 Web Audio：跨域且未开放 CORS 的媒体、DRM 加密视频（如 Netflix）不会被处理；切换原声 / 增强模式会刷新页面。
 - 不包含 Dolby 解码器或任何 Dolby 授权技术，不保证 Atmos 输出或比特流直通。
-- macOS 伪装无法改变系统字体、Emoji 与 Canvas / WebGL 实际渲染结果，Service Worker 也不在改写范围；专业指纹检测仍可能识别出 Windows，而“伪装过”本身也是特征。macOS 模式下页面滚动条隐藏（与 macOS 默认一致）。非必要请保持默认。
+- macOS 伪装无法改变系统字体、Emoji 与 Canvas / WebGL 实际渲染结果（字体探测可区分 Segoe UI / 微软雅黑 与 PingFang 等）；专业指纹检测仍可能识别出 Windows，而“伪装过”本身也是特征。macOS 模式下页面滚动条隐藏（与 macOS 默认一致）。非必要请保持默认。
 
 ## 从源码构建
 
