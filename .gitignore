@@ -76,3 +76,4 @@ UserData/
 config.json
 UltraLightBrowser-Windows-x64/
 release_*/
+dist/
