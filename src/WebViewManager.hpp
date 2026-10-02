@@ -63,6 +63,10 @@ public:
     bool IsVisible() const;
     void ApplyMemoryUsageTargetLow();
 
+    // 2-Channel Virtual Surround Sound (v1.5.0)
+    void SetSurroundSound(bool enabled, const std::string& mode);
+    void InjectSurroundSoundScript();
+
     // Direct interface access
     ICoreWebView2Environment* GetEnvironment() const { return m_environment.get(); }
     ICoreWebView2Controller* GetController() const { return m_controller.get(); }

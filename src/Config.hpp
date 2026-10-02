@@ -16,6 +16,8 @@ struct AppSettings {
     bool enablePublicDns = false;
     std::string selectedDnsProvider = "quad9";
     std::string customDnsTemplate = "";
+    bool enableSurroundSound = true;
+    std::string surroundSoundMode = "standard"; // "light", "standard", "cinema"
 };
 
 class Config {

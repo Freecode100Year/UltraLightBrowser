@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.3/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.4.3%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.0/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.5.0%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -23,12 +23,12 @@
 
 ---
 
-## 📥 最新版便携下载 / Direct Download (v1.4.3 安全加固 & 性能提升版)
+## 📥 最新版便携下载 / Direct Download (v1.5.0 环绕立体声 & 内核拦截强化版)
 
 可在 GitHub Releases 页面直接下载最新构建的预编译二进制文件：
 
-* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.4.3)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.3/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
-* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.4.3-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.3/UltraLightBrowser-v1.4.3-windows-x64.zip)**
+* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.5.0)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.0/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
+* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.5.0-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.5.0/UltraLightBrowser-v1.5.0-windows-x64.zip)**
 * 🌟 **[访问 GitHub Latest Release 最新发布页](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**
 * 🔗 **[查看所有历史版本与构建产物](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
@@ -104,17 +104,26 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **Low-Latency Transport**：`--enable-quic --enable-async-dns` 零延迟异步 DNS 与 QUIC 快速传输。
 * **Bloatware Purge**：`--disable-features=Translate,OptimizationHints,MediaRouter --disable-background-networking --disable-sync --disable-domain-reliability --disable-breakpad --no-pings --disable-speech-api --no-first-run` 彻底剔除遥测与后台多余组件。
 
-### 3. ⚡ 原生网络请求拦截（提速 40%+，省流量 50%+）
-内置纯原生 C++ 网络拦截引擎（`NativeRequestFilter`），放弃挂载动辄消耗几十上百兆内存的重型第三方插件：
-* **底层零开销阻断**：基于 WebView2 `AddWebResourceRequestedFilter` 与 `add_WebResourceRequested` 原生事件，在 HTTP/HTTPS 网络请求尚未离开本机套接字前进行极速哈希匹配。
+### 3. ⚡ 原生网络请求拦截与内核级 DNS 阻断（提速 40%+，省流量 50%+）
+内置纯原生 C++ 网络拦截引擎（`NativeRequestFilter`）与内核级主机解析阻断：
+* **内核层 DNS 级秒速阻断 (`--host-resolver-rules`)**：在 Chromium 进程启动阶段直接将全量高危广告与跟踪域名映射为 `~NOTFOUND`，广告请求在底层 Socket 解析阶段直接夭折，无需经过任何 UI 线程与 IPC 转发，性能开销趋近于 0。
+* **原生底层精确过滤**：基于 WebView2 `AddWebResourceRequestedFilter` 与 `add_WebResourceRequested` 原生事件，在网络请求尚未离开本机前进行 O(1) 哈希倒序父域名匹配与第三方域名鉴别。
 * **内置精准规则特征库**：全量拦截主流广告联盟（Google DoubleClick、PageAd、Baidu Pos/Cpro/HM、Tencent GDT、Alibaba Tanx/Alimama 等）及跟踪探针与遥测上报（Google Analytics, CNZZ, Umeng, Hotjar, Clarity, TikTok Ads 等）。
 * **本地瞬时空响应 (204 No Content)**：对命中目标直接在本地生成 204 空响应并带缓存头，从源头阻断网络 I/O，**网页载入提速 40% 以上，实测节省流量超过 50%**。
 * **交互式快捷管理**：点击工具栏 `[ 🛡 Blocker ]` 即可实时查看阻断请求数量、一键开启/关闭原生拦截、或清空规则。
 
-### 4. 🌌 无 UI 沉浸模式（视觉干扰降为零）
-* **全景纯净视界**：按下 <kbd>F9</kbd> 或 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>U</kbd>（亦可通过 Blocker 菜单）一键开启“无 UI 沉浸模式”。
-* **100% 视口网页填充**：顶部导航工具栏、地址栏、控制按钮全部隐藏，整个窗口客户区 100% 留给网页，彻底消除任何界面视觉干扰。
-* **无缝秒级返回**：随时再次按下 <kbd>F9</kbd> 或 <kbd>Esc</kbd> 即可瞬时唤回工具栏。
+### 4. 🎧 2 声道虚拟环绕立体声（默认开启，Web Audio DSP 引擎）
+全网首创将专业演播室级别 DSP 音频处理管线无缝植入浏览器内核，戴上普通双声道耳机即可享受影院级声场扩展：
+* **Mid/Side 中置/侧边分离加宽**：将左右声道解构为中间直达声（Mid）与空间侧声（Side），独立调控声场宽度，营造自然开阔的空间立体包围感。
+* **Bauer 交叉声学反馈（Crossfeed Network）**：模拟真实音箱在听音环境中的头影效应，在对向声道混入 ~0.3ms 极低延迟及 2.5kHz 高频衰减声学信号，极大减轻耳机长时间聆听导致的声学“头中效应”与听觉疲劳。
+* **早期反射声场混响（Early Reflection）**：精心调校 16ms / 21ms 微妙早期房间反射声，重现演播室/影院真实空间环境质感。
+* **动态防破音压限器（DynamicsCompressor）**：在输出级接管自适应峰值限幅器（-1.5dB 阈值、3ms 快速起音），彻底杜绝强动态音乐与爆炸特效下的数字削波失真与爆音。
+* **三种精心调校模式**：
+  * **轻柔模式 (Light)**：自然声场加宽，人声温润纯净，适合播客、访谈与有声书。
+  * **标准模式 (Standard，默认)**：Bauer 交叉反馈 + 细腻房间反射，全能均衡，日常听歌观影首选。
+  * **影院模式 (Cinema)**：极限声场延展 + 低频空间轰鸣，专为电影大片与 3A 游戏原声打造。
+* **零重载实时热调节**：工具栏新增 `[ 🎧 环绕 ]` 控制菜单，支持一键切换模式或随时旁通直通，基于 `PostWebMessage` 实时热生效，无需重新加载网页。
+* **媒体安全检测与防静音保护**：自动规避跨域未授权媒体与 DRM 加密视频，严格使用 `WeakMap` 确保单元素单管线接管，杜绝声音冲突或异常静音。
 
 ### 5. 🌐 公共 DNS 服务器（支持 IPv4 / IPv6 / DoH 加密防劫持）
 内置专业公共 DNS 管理中心，一键切换知名国内外优质公共 DNS 服务商，彻底杜绝运营商 DNS 劫持与污染：
@@ -132,7 +141,7 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **双模快捷操作**：
   * 工具栏快捷菜单：点击 `[ 🌐 DNS ]` 按钮可一键开启/关闭公共 DNS，或直接单选切换服务商。
   * 完整设置面板：提供完整的 IPv4/IPv6 地址展示、一键复制单条或全部 IP 节点与 DoH 地址自定义。
-* **双重内核级同步应用**：自动将安全 DNS 策略同步写入 `HKCU\SOFTWARE\Policies\Microsoft\Edge\WebView2` 注册表策略以及 Chromium 用户配置 `UserData/Default/Preferences`，保障权威解析与隐私安全。
+* **双重内核级同步应用**：启动前自动将安全 DoH 配置写入 `UserData/EBWebView/Local State`，保障真正的端到端 DNS-over-HTTPS 加密防劫持生效（可通过 `on.quad9.net` 验证）。
 
 ### 6. 🔒 退出时强制清除所有缓存与临时文件（零痕迹无痕浏览保障）
 真正做到无痕私密安全，关闭浏览器时即刻执行多层深度粉碎清理，不留任何浏览历史与临时文件：
@@ -192,7 +201,28 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
   * 右侧工具栏新增专用 Safari 向上分享按钮 `[ ↥ ]`。
   * 支持一键拷贝当前网页 URL 到系统剪贴板。
   * 支持将当前网页一键移交（Handoff）到系统默认浏览器打开。
-  * 整合一键全景沉浸视图（F9）与全屏视图（F11）。
+  * 整合一键全屏视图（F11）。
+
+---
+
+## 🎧 v1.5.0 空间音频与内核防御进化 (Spatial Audio & Kernel-Level Defense)
+
+在 **v1.5.0** 版本中，UltraLightBrowser 迎来了声学体验与网络过滤的跨越式升级：
+
+### 1. 2 声道虚拟环绕立体声（默认开启，三种预设）
+* **演播室级 Web Audio DSP 图管线**：内置 Mid/Side 宽度扩展、Bauer 交叉头影衰减混音（0.3ms 极低延时 + 2.5kHz 高频衰减）与 16ms/21ms 微妙房间早期反射。
+* **终级防爆音压限器**：集成自适应峰值压限器（DynamicsCompressor），即便在爆棚低频与大动态交响乐下也绝不破音或削波。
+* **三档模式随心调校**：轻柔模式（人声播客）、标准模式（默认通吃）、影院模式（影视大片）。
+* **免刷新动态热生效**：工具栏独立 `[ 🎧 环绕 ]` 按钮，通过 `PostWebMessage` 实时热切换，无需刷新网页；同时具备 CORS 跨域安全检测与 DRM 防静音兜底。
+
+### 2. 内核级 DNS 主机解析阻断 (`--host-resolver-rules`)
+* 在 Chromium 引擎启动参数中注入 `--host-resolver-rules="MAP ad-domain ~NOTFOUND, ..."`，让全量已知广告联盟与跟踪探针在底层套接字解析阶段直接夭折，无需经过 UI 线程与 C++ IPC 转发，零开销纯净加速。
+
+### 3. DNS 加密 (DoH) 生效修复与完整验证
+* 彻底修复 WebView2 读取配置机制，在启动前直接将 DoH `mode` 与 `templates` 写入 `UserData/EBWebView/Local State`，通过 `on.quad9.net` 实测验证 100% 生效。
+
+### 4. 彻底精简冗余并解决横条问题
+* 全面移除沉浸模式（F9 / 侧边栏按钮），彻底杜绝视频底部的灰色横条显示异常，保持最纯粹的极简 Safari 体验。
 
 ---
 

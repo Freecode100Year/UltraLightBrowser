@@ -41,6 +41,11 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
         L"--disable-speech-api "
         L"--no-first-run";
 
+    std::wstring hostResolverArgs = NativeRequestFilter::Instance().BuildHostResolverRules();
+    if (!hostResolverArgs.empty()) {
+        performanceArgs += L" " + hostResolverArgs;
+    }
+
     options->put_AdditionalBrowserArguments(performanceArgs.c_str());
 
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
@@ -160,6 +165,7 @@ HRESULT WebViewManager::Initialize(HWND hWndParent, ReadyCallback onReady) {
                             // Initialize modules
                             ElementBlocker::Instance().Initialize(m_webView.get());
                             NativeRequestFilter::Instance().Initialize(m_webView.get(), m_environment.get());
+                            InjectSurroundSoundScript();
 
                             // Apply QoS optimizations
                             PowerManager::Instance().DisableEcoQoS();
@@ -526,6 +532,263 @@ void WebViewManager::ShutdownAndPurgeData() {
 
     // 4. Forcibly wipe all cache and temporary files on disk
     PurgeAllCacheAndTempFiles();
+}
+
+void WebViewManager::InjectSurroundSoundScript() {
+    if (!m_webView) return;
+
+    const auto& settings = Config::Instance().GetSettings();
+    std::string initMode = settings.surroundSoundMode.empty() ? "standard" : settings.surroundSoundMode;
+    std::string initEnabled = settings.enableSurroundSound ? "true" : "false";
+
+    std::string jsCode = R"raw(
+(function() {
+    if (window.__UltraLightSurroundLoaded) return;
+    window.__UltraLightSurroundLoaded = true;
+
+    let audioCtx = null;
+    let currentMode = ")raw" + initMode + R"raw(";
+    let isEnabled = )raw" + initEnabled + R"raw(;
+
+    const PRESETS = {
+        off: { width: 1.0, crossfeed: 0.0, earlyReflection: 0.0 },
+        light: { width: 1.35, crossfeed: 0.15, earlyReflection: 0.08 },
+        standard: { width: 1.75, crossfeed: 0.22, earlyReflection: 0.14 },
+        cinema: { width: 2.30, crossfeed: 0.28, earlyReflection: 0.20 }
+    };
+
+    const attachedElements = new WeakMap();
+
+    function getAudioContext() {
+        if (!audioCtx) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return null;
+            try {
+                audioCtx = new AudioContextClass({ latencyHint: "playback" });
+            } catch (e) {
+                return null;
+            }
+        }
+        if (audioCtx.state === "suspended") {
+            audioCtx.resume().catch(() => {});
+        }
+        return audioCtx;
+    }
+
+    function canProcessElement(el) {
+        if (!el || attachedElements.has(el)) return false;
+        // Skip encrypted DRM videos (Netflix, Spotify, etc.)
+        if (el.mediaKeys) return false;
+        
+        const src = el.currentSrc || el.src;
+        // YouTube, Bilibili, and streaming platforms use MSE blob: URLs
+        if (src && (src.startsWith("blob:") || src.startsWith("data:"))) return true;
+        
+        // Same-origin media
+        if (src) {
+            try {
+                const u = new URL(src, window.location.href);
+                if (u.origin === window.location.origin) return true;
+            } catch (e) {}
+        }
+        // Elements with CORS enabled
+        if (el.crossOrigin && (el.crossOrigin === "anonymous" || el.crossOrigin === "use-credentials")) {
+            return true;
+        }
+        // If element has no src yet but has children <source>
+        if (!src && el.children && el.children.length > 0) {
+            return true;
+        }
+        return false;
+    }
+
+    function setupSurroundForElement(el) {
+        if (!canProcessElement(el)) return;
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        let sourceNode = null;
+        try {
+            sourceNode = ctx.createMediaElementSource(el);
+        } catch (e) {
+            // Element might already be hooked by page or CORS restricted
+            return;
+        }
+
+        // --- DSP GRAPH CREATION ---
+        // 1. Input Splitter (Left, Right)
+        const splitter = ctx.createChannelSplitter(2);
+        sourceNode.connect(splitter);
+
+        // 2. Mid/Side Matrix
+        // Mid = (L + R) / 2
+        // Side = (L - R) / 2
+        const midL = ctx.createGain(); midL.gain.value = 0.5;
+        const midR = ctx.createGain(); midR.gain.value = 0.5;
+        const midBus = ctx.createGain();
+        splitter.connect(midL, 0); midL.connect(midBus);
+        splitter.connect(midR, 1); midR.connect(midBus);
+
+        const sideL = ctx.createGain(); sideL.gain.value = 0.5;
+        const sideR = ctx.createGain(); sideR.gain.value = -0.5;
+        const sideBus = ctx.createGain();
+        splitter.connect(sideL, 0); sideL.connect(sideBus);
+        splitter.connect(sideR, 1); sideR.connect(sideBus);
+
+        // Width Gain Node
+        const sideWidthGain = ctx.createGain();
+        sideBus.connect(sideWidthGain);
+
+        // Output Left: Mid + SideScaled
+        // Output Right: Mid - SideScaled
+        const sideToLeft = ctx.createGain(); sideToLeft.gain.value = 1.0;
+        const sideToRight = ctx.createGain(); sideToRight.gain.value = -1.0;
+        sideWidthGain.connect(sideToLeft);
+        sideWidthGain.connect(sideToRight);
+
+        const postWidenerL = ctx.createGain();
+        const postWidenerR = ctx.createGain();
+        midBus.connect(postWidenerL);
+        sideToLeft.connect(postWidenerL);
+        midBus.connect(postWidenerR);
+        sideToRight.connect(postWidenerR);
+
+        // 3. Crossfeed Network (~0.3ms ITD delay + 2.5kHz head shadow lowpass)
+        const delayLR = ctx.createDelay(0.01); delayLR.delayTime.value = 0.0003;
+        const filterLR = ctx.createBiquadFilter(); filterLR.type = "lowpass"; filterLR.frequency.value = 2500;
+        const crossGainLR = ctx.createGain();
+        postWidenerL.connect(delayLR); delayLR.connect(filterLR); filterLR.connect(crossGainLR);
+        crossGainLR.connect(postWidenerR); // Left crossfeeds into Right
+
+        const delayRL = ctx.createDelay(0.01); delayRL.delayTime.value = 0.0003;
+        const filterRL = ctx.createBiquadFilter(); filterRL.type = "lowpass"; filterRL.frequency.value = 2500;
+        const crossGainRL = ctx.createGain();
+        postWidenerR.connect(delayRL); delayRL.connect(filterRL); filterRL.connect(crossGainRL);
+        crossGainRL.connect(postWidenerL); // Right crossfeeds into Left
+
+        // 4. Subtle Early Room Reflections (16ms & 21ms)
+        const earlyDelayL = ctx.createDelay(0.05); earlyDelayL.delayTime.value = 0.016;
+        const earlyFilterL = ctx.createBiquadFilter(); earlyFilterL.type = "lowpass"; earlyFilterL.frequency.value = 3500;
+        const earlyGainL = ctx.createGain();
+        postWidenerL.connect(earlyDelayL); earlyDelayL.connect(earlyFilterL); earlyFilterL.connect(earlyGainL);
+
+        const earlyDelayR = ctx.createDelay(0.05); earlyDelayR.delayTime.value = 0.021;
+        const earlyFilterR = ctx.createBiquadFilter(); earlyFilterR.type = "lowpass"; earlyFilterR.frequency.value = 3500;
+        const earlyGainR = ctx.createGain();
+        postWidenerR.connect(earlyDelayR); earlyDelayR.connect(earlyFilterR); earlyFilterR.connect(earlyGainR);
+
+        // 5. Output Merger (L, R)
+        const outMerger = ctx.createChannelMerger(2);
+        postWidenerL.connect(outMerger, 0, 0);
+        earlyGainL.connect(outMerger, 0, 0);
+        postWidenerR.connect(outMerger, 0, 1);
+        earlyGainR.connect(outMerger, 0, 1);
+
+        // 6. Dynamics Compressor / Peak Limiter
+        const limiter = ctx.createDynamicsCompressor();
+        limiter.threshold.value = -1.5;
+        limiter.knee.value = 3.0;
+        limiter.ratio.value = 12.0;
+        limiter.attack.value = 0.003;
+        limiter.release.value = 0.15;
+
+        // Bypass dry gain vs wet gain
+        const dryGain = ctx.createGain();
+        const wetGain = ctx.createGain();
+        sourceNode.connect(dryGain);
+        dryGain.connect(limiter);
+
+        outMerger.connect(wetGain);
+        wetGain.connect(limiter);
+
+        limiter.connect(ctx.destination);
+
+        const controller = {
+            update(mode, enabled) {
+                const now = ctx.currentTime;
+                if (!enabled || mode === "off") {
+                    dryGain.gain.setValueAtTime(1.0, now);
+                    wetGain.gain.setValueAtTime(0.0, now);
+                } else {
+                    const preset = PRESETS[mode] || PRESETS.standard;
+                    dryGain.gain.setValueAtTime(0.0, now);
+                    wetGain.gain.setValueAtTime(1.0, now);
+                    sideWidthGain.gain.setValueAtTime(preset.width, now);
+                    crossGainLR.gain.setValueAtTime(preset.crossfeed, now);
+                    crossGainRL.gain.setValueAtTime(preset.crossfeed, now);
+                    earlyGainL.gain.setValueAtTime(preset.earlyReflection, now);
+                    earlyGainR.gain.setValueAtTime(preset.earlyReflection, now);
+                }
+            }
+        };
+
+        controller.update(currentMode, isEnabled);
+        attachedElements.set(el, controller);
+
+        // Resume AudioContext on play
+        el.addEventListener("play", () => {
+            if (ctx.state === "suspended") ctx.resume().catch(() => {});
+        });
+    }
+
+    function scanMedia() {
+        document.querySelectorAll("video, audio").forEach(setupSurroundForElement);
+    }
+
+    // Auto-detect and hook
+    scanMedia();
+    const observer = new MutationObserver(() => scanMedia());
+    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+
+    // Interaction wakeup
+    ["click", "pointerdown", "keydown"].forEach(evt => {
+        window.addEventListener(evt, () => {
+            if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+        }, { passive: true, once: true });
+    });
+
+    // Global controller API
+    window.__UltraLightSurround = {
+        setMode(mode, enabled) {
+            currentMode = mode;
+            isEnabled = enabled;
+            document.querySelectorAll("video, audio").forEach(el => {
+                const c = attachedElements.get(el);
+                if (c) c.update(mode, enabled);
+                else setupSurroundForElement(el);
+            });
+        }
+    };
+
+    // Listen for WebMessages from host application
+    if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.addEventListener("message", ev => {
+            try {
+                const data = typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data;
+                if (data && data.type === "setSurroundSound") {
+                    window.__UltraLightSurround.setMode(data.mode, data.enabled);
+                }
+            } catch (e) {}
+        });
+    }
+})();
+)raw";
+
+    std::wstring wideJs = StringUtils::Utf8ToWide(jsCode);
+    m_webView->AddScriptToExecuteOnDocumentCreated(wideJs.c_str(), nullptr);
+    m_webView->ExecuteScript(wideJs.c_str(), nullptr);
+}
+
+void WebViewManager::SetSurroundSound(bool enabled, const std::string& mode) {
+    if (!m_webView) return;
+
+    std::wstring script = L"if (window.__UltraLightSurround) { window.__UltraLightSurround.setMode('" +
+        StringUtils::Utf8ToWide(mode) + L"', " + (enabled ? L"true" : L"false") + L"); }";
+    m_webView->ExecuteScript(script.c_str(), nullptr);
+
+    std::wstring jsonMsg = L"{\"type\":\"setSurroundSound\",\"enabled\":" +
+        std::wstring(enabled ? L"true" : L"false") + L",\"mode\":\"" + StringUtils::Utf8ToWide(mode) + L"\"}";
+    m_webView->PostWebMessageAsJson(jsonMsg.c_str());
 }
 
 } // namespace UltraLight

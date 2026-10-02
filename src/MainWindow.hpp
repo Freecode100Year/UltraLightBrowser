@@ -17,6 +17,7 @@ enum ControlID : WORD {
     IDC_BTN_ZOOM        = 1006,
     IDC_BTN_BLOCKER     = 1007,
     IDC_BTN_SHARE       = 1008,
+    IDC_BTN_SOUND       = 1009,
     IDC_BTN_NEWTAB      = 1010
 };
 
@@ -34,7 +35,11 @@ enum AppCommandID : WORD {
     IDM_BLOCKER_CLEAR_RULES = 2014,
     IDM_SHARE_COPY_URL      = 2015,
     IDM_SHARE_OPEN_DEFAULT  = 2016,
-    IDM_ZOOM_SET_BASE       = 2020,
+    IDM_SURROUND_TOGGLE     = 2017,
+    IDM_SURROUND_MODE_LIGHT = 2018,
+    IDM_SURROUND_MODE_STANDARD = 2019,
+    IDM_SURROUND_MODE_CINEMA = 2020,
+    IDM_ZOOM_SET_BASE       = 2030,
     IDM_DNS_SELECT_BASE     = 2100
 };
 
@@ -64,6 +69,8 @@ private:
     void UpdateZoomDisplay(double zoom);
     void ShowDnsMenu();
     void UpdateDnsDisplay();
+    void ShowSoundMenu();
+    void UpdateSoundDisplay();
     void ShowBlockerMenu();
     void ShowShareMenu();
 
@@ -77,6 +84,7 @@ private:
     HWND m_hEditAddress = nullptr;
     HWND m_hBtnReload = nullptr;
     HWND m_hBtnShare = nullptr;
+    HWND m_hBtnSound = nullptr;
     HWND m_hBtnBlocker = nullptr;
     HWND m_hBtnDns = nullptr;
     HWND m_hBtnZoom = nullptr;

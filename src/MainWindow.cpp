@@ -174,6 +174,7 @@ void MainWindow::UpdateDpiScaling(UINT dpi) {
     if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hAddressFont), TRUE);
     if (m_hBtnReload) SendMessageW(m_hBtnReload, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnShare) SendMessageW(m_hBtnShare, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    if (m_hBtnSound) SendMessageW(m_hBtnSound, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnDns) SendMessageW(m_hBtnDns, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnZoom) SendMessageW(m_hBtnZoom, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
@@ -335,6 +336,13 @@ void MainWindow::CreateToolbarControls() {
     );
     SetWindowSubclass(m_hBtnShare, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
+    m_hBtnSound = CreateWindowExW(
+        0, L"BUTTON", L"🎧 环绕 [标]",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_SOUND), m_hInstance, nullptr
+    );
+    SetWindowSubclass(m_hBtnSound, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+
     m_hBtnBlocker = CreateWindowExW(
         0, L"BUTTON", L"🛡️",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -365,6 +373,7 @@ void MainWindow::CreateToolbarControls() {
 
     UpdateDpiScaling(GetDpiForWindow(m_hWnd));
     UpdateDnsDisplay();
+    UpdateSoundDisplay();
 }
 
 void MainWindow::UpdateLayout(int width, int height) {
@@ -411,10 +420,11 @@ void MainWindow::UpdateLayout(int width, int height) {
 
     int leftGroupEnd = leftX;
 
-    // 3. Right Action Group (Share, Blocker, DNS, Zoom, New Tab)
+    // 3. Right Action Group (Share, Blocker, Sound, DNS, Zoom, New Tab)
     int newTabBtnW = MulDiv(28, m_dpi, 96);
     int zoomBtnW = MulDiv(58, m_dpi, 96);
     int dnsBtnW = MulDiv(80, m_dpi, 96);
+    int soundBtnW = MulDiv(78, m_dpi, 96);
     int blockerBtnW = MulDiv(32, m_dpi, 96);
     int shareBtnW = MulDiv(30, m_dpi, 96);
 
@@ -428,6 +438,9 @@ void MainWindow::UpdateLayout(int width, int height) {
 
     rightX -= (dnsBtnW + pad);
     SetWindowPos(m_hBtnDns, nullptr, rightX, btnY, dnsBtnW, ctrlH, SWP_NOZORDER);
+
+    rightX -= (soundBtnW + pad);
+    SetWindowPos(m_hBtnSound, nullptr, rightX, btnY, soundBtnW, ctrlH, SWP_NOZORDER);
 
     rightX -= (blockerBtnW + pad);
     SetWindowPos(m_hBtnBlocker, nullptr, rightX, btnY, blockerBtnW, ctrlH, SWP_NOZORDER);
@@ -502,6 +515,7 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
         if (m_hBtnShare) ShowWindow(m_hBtnShare, SW_HIDE);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
+        if (m_hBtnSound) ShowWindow(m_hBtnSound, SW_HIDE);
         if (m_hBtnDns) ShowWindow(m_hBtnDns, SW_HIDE);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_HIDE);
         if (m_hBtnNewTab) ShowWindow(m_hBtnNewTab, SW_HIDE);
@@ -539,6 +553,7 @@ void MainWindow::SetFullScreen(bool enable) {
         if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
         if (m_hBtnShare) ShowWindow(m_hBtnShare, showCmd);
         if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
+        if (m_hBtnSound) ShowWindow(m_hBtnSound, showCmd);
         if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
         if (m_hBtnNewTab) ShowWindow(m_hBtnNewTab, showCmd);
@@ -1174,6 +1189,52 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             DnsManager::Instance().ShowDnsDialog(m_hWnd);
             UpdateDnsDisplay();
             break;
+        case IDC_BTN_SOUND:
+            ShowSoundMenu();
+            break;
+        case IDM_SURROUND_TOGGLE: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.enableSurroundSound = !settings.enableSurroundSound;
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->SetSurroundSound(settings.enableSurroundSound, settings.surroundSoundMode);
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_MODE_LIGHT: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.enableSurroundSound = true;
+            settings.surroundSoundMode = "light";
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->SetSurroundSound(settings.enableSurroundSound, settings.surroundSoundMode);
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_MODE_STANDARD: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.enableSurroundSound = true;
+            settings.surroundSoundMode = "standard";
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->SetSurroundSound(settings.enableSurroundSound, settings.surroundSoundMode);
+            }
+            UpdateSoundDisplay();
+            break;
+        }
+        case IDM_SURROUND_MODE_CINEMA: {
+            auto& settings = Config::Instance().GetSettings();
+            settings.enableSurroundSound = true;
+            settings.surroundSoundMode = "cinema";
+            Config::Instance().Save();
+            if (m_webViewManager) {
+                m_webViewManager->SetSurroundSound(settings.enableSurroundSound, settings.surroundSoundMode);
+            }
+            UpdateSoundDisplay();
+            break;
+        }
         case IDC_EDIT_ADDRESS: {
             WORD notify = HIWORD(wParam);
             if (notify == EN_KILLFOCUS) {
@@ -1482,6 +1543,58 @@ void MainWindow::ShowShareMenu() {
 
     RECT btnRect{};
     GetWindowRect(m_hBtnShare, &btnRect);
+
+    TrackPopupMenu(
+        hMenu,
+        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
+        btnRect.left, btnRect.bottom,
+        0, m_hWnd, nullptr
+    );
+
+    DestroyMenu(hMenu);
+}
+
+void MainWindow::UpdateSoundDisplay() {
+    if (!m_hBtnSound) return;
+    const auto& settings = Config::Instance().GetSettings();
+    std::wstring label;
+    if (!settings.enableSurroundSound) {
+        label = L"🎧 环绕 [关]";
+    } else if (settings.surroundSoundMode == "light") {
+        label = L"🎧 环绕 [轻]";
+    } else if (settings.surroundSoundMode == "cinema") {
+        label = L"🎧 环绕 [影]";
+    } else {
+        label = L"🎧 环绕 [标]";
+    }
+    SetWindowTextW(m_hBtnSound, label.c_str());
+    InvalidateRect(m_hBtnSound, nullptr, TRUE);
+}
+
+void MainWindow::ShowSoundMenu() {
+    HMENU hMenu = CreatePopupMenu();
+    if (!hMenu) return;
+
+    const auto& settings = Config::Instance().GetSettings();
+
+    UINT toggleFlags = MF_STRING | (settings.enableSurroundSound ? MF_CHECKED : MF_UNCHECKED);
+    AppendMenuW(hMenu, toggleFlags, IDM_SURROUND_TOGGLE, L"✔  开启 2 声道虚拟环绕立体声 (DSP)");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    UINT lightFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "light") ? MF_CHECKED : MF_UNCHECKED);
+    AppendMenuW(hMenu, lightFlags, IDM_SURROUND_MODE_LIGHT, L"🍃  轻柔模式 (自然声场加宽，适合人声播客)");
+
+    UINT stdFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "standard") ? MF_CHECKED : MF_UNCHECKED);
+    AppendMenuW(hMenu, stdFlags, IDM_SURROUND_MODE_STANDARD, L"🎧  标准模式 (Bauer交叉反馈+房间反射，默认)");
+
+    UINT cinemaFlags = MF_STRING | ((settings.enableSurroundSound && settings.surroundSoundMode == "cinema") ? MF_CHECKED : MF_UNCHECKED);
+    AppendMenuW(hMenu, cinemaFlags, IDM_SURROUND_MODE_CINEMA, L"🎬  影院模式 (极限声场沉浸+低频饱满，影视爆棚)");
+
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"💡 针对耳机优化，带动态防破音压限器 (实时生效)");
+
+    RECT btnRect{};
+    GetWindowRect(m_hBtnSound, &btnRect);
 
     TrackPopupMenu(
         hMenu,

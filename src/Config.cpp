@@ -72,6 +72,10 @@ void Config::Load() {
             if (s.contains("customDnsTemplate") && s["customDnsTemplate"].is_string()) {
                 m_settings.customDnsTemplate = s["customDnsTemplate"].get<std::string>();
             }
+            if (s.contains("enableSurroundSound")) m_settings.enableSurroundSound = s["enableSurroundSound"];
+            if (s.contains("surroundSoundMode") && s["surroundSoundMode"].is_string()) {
+                m_settings.surroundSoundMode = s["surroundSoundMode"].get<std::string>();
+            }
         }
 
         if (root.contains("blockRules") && root["blockRules"].is_object()) {
@@ -104,7 +108,9 @@ void Config::Save() {
             {"ecoMode", m_settings.ecoMode},
             {"enablePublicDns", m_settings.enablePublicDns},
             {"selectedDnsProvider", m_settings.selectedDnsProvider},
-            {"customDnsTemplate", m_settings.customDnsTemplate}
+            {"customDnsTemplate", m_settings.customDnsTemplate},
+            {"enableSurroundSound", m_settings.enableSurroundSound},
+            {"surroundSoundMode", m_settings.surroundSoundMode}
         };
 
         json rulesObj = json::object();

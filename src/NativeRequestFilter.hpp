@@ -39,6 +39,10 @@ public:
     static std::wstring GetBaseDomain(const std::wstring& host);
     static bool IsThirdParty(const std::wstring& reqHost, const std::wstring& topHost);
 
+    // Kernel-level DNS blocking rule generator for Chromium --host-resolver-rules
+    const std::unordered_set<std::wstring>& GetBlockedDomainSet() const { return m_blockedDomainSet; }
+    std::wstring BuildHostResolverRules() const;
+
 private:
     NativeRequestFilter();
     ~NativeRequestFilter() = default;
