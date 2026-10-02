@@ -1260,6 +1260,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;
         }
+        case IDM_AUDIO_DEESSER:
+        case IDM_AUDIO_NIGHT: {
+            auto& settings = Config::Instance().GetSettings();
+            if (id == IDM_AUDIO_DEESSER) settings.enableDeEsser = !settings.enableDeEsser;
+            else settings.enableNightMode = !settings.enableNightMode;
+            Config::Instance().Save();
+            if (m_webViewManager) m_webViewManager->UpdateAudioEnhancer();
+            break;
+        }
         case IDM_AUDIO_DIAGNOSTICS:
             if (m_webViewManager) m_webViewManager->ShowMediaDiagnostics();
             break;
@@ -1808,6 +1817,11 @@ void MainWindow::ShowSoundMenu() {
     // 4. Vocal Dialogue Boost (+4.5dB peaking filter)
     UINT vocalFlags = MF_STRING | (settings.enableVocalBoost ? MF_CHECKED : MF_UNCHECKED);
     AppendMenuW(hDspMenu, vocalFlags, IDM_SURROUND_VOCAL_BOOST, L"🗣️  人声对白清晰度增强 (+4.5dB @ 3kHz)");
+
+    AppendMenuW(hDspMenu, MF_STRING | (settings.enableDeEsser ? MF_CHECKED : 0),
+                IDM_AUDIO_DEESSER, L"🗣️ 齿音抑制 (高频动态控制)");
+    AppendMenuW(hDspMenu, MF_STRING | (settings.enableNightMode ? MF_CHECKED : 0),
+                IDM_AUDIO_NIGHT, L"🌙 夜间模式 (减小音量起伏)");
 
     // 5. Volume Boost Submenu (100% ~ 300%)
     HMENU hVolMenu = CreatePopupMenu();

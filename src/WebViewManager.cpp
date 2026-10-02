@@ -797,6 +797,8 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
         AudioEndpointType detected = GetDetectedAudioEndpoint();
         effectiveDevice = (detected == AudioEndpointType::Headphones) ? "headphones" : "speakers";
     }
+    std::string initDeEsser = settings.enableDeEsser ? "true" : "false";
+    std::string initNightMode = settings.enableNightMode ? "true" : "false";
     std::string initVocalBoost = settings.enableVocalBoost ? "true" : "false";
     std::string initVolumeBoost = std::to_string(settings.audioVolumeBoost);
     std::string initMonoDownmix = settings.enableMonoDownmix ? "true" : "false";
@@ -823,6 +825,12 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
         device: ")raw";
     jsCode += effectiveDevice;
     jsCode += R"raw(",
+        deEsser: )raw";
+    jsCode += initDeEsser;
+    jsCode += R"raw(,
+        nightMode: )raw";
+    jsCode += initNightMode;
+    jsCode += R"raw(,
         vocalBoost: )raw";
     jsCode += initVocalBoost;
     jsCode += R"raw(,
@@ -842,6 +850,16 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
         cinema: { width: 1.55, crossfeed: 0.25, reverbAmount: 0.16 }
     };
 
+    // Adapted from XQL-MUSIC: lowpass crossfeed with centre-image compensation.
+    const CROSSFEED_PARAMS = {
+        light: { cutoff: 800, level: 0.25, compFreq: 520, compDb: -2.35 },
+        standard: { cutoff: 700, level: 0.40, compFreq: 470, compDb: -3.65 },
+        cinema: { cutoff: 620, level: 0.55, compFreq: 430, compDb: -4.80 }
+    };
+    const DEESS_CROSSOVER_HZ = 5500;
+    // Web Audio low/highpass Q is in dB; peaking EQ Q remains linear.
+    const BUTTERWORTH_Q_DB = -3.01029995664;
+    const EQ_HEADROOM_DB = 0.5;
     const attachedElements = new WeakMap();
     const pageClaimedElements = new WeakSet();
     const pendingPlayElements = new WeakSet();
@@ -987,7 +1005,7 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
     }
 
     function needsProcessing() {
-        return !cfg.nativeOutput && (cfg.enabled || cfg.vocalBoost || cfg.monoDownmix || cfg.volumeBoost > 1.0);
+        return !cfg.nativeOutput && (cfg.enabled || cfg.vocalBoost || cfg.monoDownmix || cfg.deEsser || cfg.nightMode || cfg.volumeBoost > 1.0);
     }
 
     function trySetupSurround(el) {
@@ -1045,6 +1063,14 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
             for (const node of graphNodes) { try { node.disconnect(); } catch (e) {} }
             graphNodes = []; preamp = null; vocal = null;
         }
+        function voiceDb() {
+            return (cfg.vocalBoost || (cfg.enabled && cfg.mode === "dialogue")) ? 4.5 : 0;
+        }
+        function preampValue() {
+            const requested = Math.max(1, Math.min(3, Number(cfg.volumeBoost) || 1));
+            const trimDb = voiceDb() > 0 ? voiceDb() + EQ_HEADROOM_DB : 0;
+            return requested * Math.pow(10, -trimDb / 20);
+        }
         function build() {
             clearGraph();
             // This unity path retains the source channels; no EQ or compression.
@@ -1052,17 +1078,38 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
                 sourceNode.connect(output);
                 return;
             }
-            preamp = gain(Math.max(1, Math.min(3, Number(cfg.volumeBoost) || 1)));
+            preamp = gain(preampValue());
             preamp.channelCount = 2;
             preamp.channelCountMode = "explicit";
             preamp.channelInterpretation = "speakers";
             sourceNode.connect(preamp);
             vocal = make("createBiquadFilter");
             vocal.type = "peaking"; vocal.frequency.value = 3000;
-            vocal.Q.value = 1.2; vocal.gain.value = (cfg.vocalBoost || (cfg.enabled && cfg.mode === "dialogue")) ? 4.5 : 0;
+            vocal.Q.value = 1.2; vocal.gain.value = voiceDb();
             preamp.connect(vocal);
+            let toneOutput = vocal;
+            if (cfg.deEsser) {
+                const merge = gain(1);
+                function crossover(type) {
+                    const a = make("createBiquadFilter"), b = make("createBiquadFilter");
+                    a.type = b.type = type;
+                    a.frequency.value = b.frequency.value = DEESS_CROSSOVER_HZ;
+                    a.Q.value = b.Q.value = BUTTERWORTH_Q_DB;
+                    vocal.connect(a); a.connect(b); return b;
+                }
+                // Match DynamicsCompressorNode's specified 6ms lookahead delay.
+                const lowDelay = make("createDelay", 0.02);
+                lowDelay.delayTime.value = 0.006;
+                crossover("lowpass").connect(lowDelay); lowDelay.connect(merge);
+                const high = crossover("highpass");
+                const deEsser = make("createDynamicsCompressor");
+                deEsser.threshold.value = -32; deEsser.knee.value = 6;
+                deEsser.ratio.value = 4; deEsser.attack.value = 0.002;
+                deEsser.release.value = 0.06;
+                high.connect(deEsser); deEsser.connect(merge); toneOutput = merge;
+            }
             const splitter = make("createChannelSplitter", 2);
-            vocal.connect(splitter);
+            toneOutput.connect(splitter);
             const mid = gain(1), side = gain(1);
             const midL = gain(0.5), midR = gain(0.5);
             const sideL = gain(0.5), sideR = gain(-0.5);
@@ -1078,7 +1125,7 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
                 if (cfg.enabled && cfg.mode !== "dialogue") {
                     const highpass = make("createBiquadFilter");
                     highpass.type = "highpass"; highpass.frequency.value = 150;
-                    highpass.Q.value = 0.707; side.connect(highpass); sideInput = highpass;
+                    highpass.Q.value = BUTTERWORTH_Q_DB; side.connect(highpass); sideInput = highpass;
                 }
                 const widthL = gain(preset.width), widthR = gain(-preset.width);
                 sideInput.connect(widthL); sideInput.connect(widthR);
@@ -1088,22 +1135,29 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
             if (cfg.enabled && cfg.device !== "speakers" && cfg.mode !== "dialogue") {
                 const crossLeft = gain(1), crossRight = gain(1);
                 left.connect(crossLeft); right.connect(crossRight);
+                const cf = CROSSFEED_PARAMS[cfg.mode] || CROSSFEED_PARAMS.standard;
                 function crossfeed(from, to) {
-                    const delay = make("createDelay", 0.01); delay.delayTime.value = 0.0003;
                     const filter = make("createBiquadFilter");
-                    filter.type = "lowpass"; filter.frequency.value = 2500;
-                    const mix = gain(preset.crossfeed);
-                    from.connect(delay); delay.connect(filter); filter.connect(mix); mix.connect(to);
+                    filter.type = "lowpass"; filter.frequency.value = cf.cutoff;
+                    filter.Q.value = BUTTERWORTH_Q_DB;
+                    const mix = gain(cf.level);
+                    from.connect(filter); filter.connect(mix); mix.connect(to);
                 }
                 crossfeed(left, crossRight); crossfeed(right, crossLeft);
+                function compensate(from) {
+                    const shelf = make("createBiquadFilter");
+                    shelf.type = "lowshelf"; shelf.frequency.value = cf.compFreq;
+                    shelf.gain.value = cf.compDb;
+                    from.connect(shelf); return shelf;
+                }
                 function panner(from, x, z) {
                     const p = make("createPanner"); p.panningModel = "HRTF";
                     p.positionX.value = x; p.positionY.value = 0; p.positionZ.value = z;
                     from.connect(p); return p;
                 }
                 program = gain(1);
-                panner(crossLeft, -0.5, -0.866).connect(program);
-                panner(crossRight, 0.5, -0.866).connect(program);
+                panner(compensate(crossLeft), -0.5, -0.866).connect(program);
+                panner(compensate(crossRight), 0.5, -0.866).connect(program);
                 if (cfg.mode === "cinema" && !cfg.monoDownmix) {
                     const delay = make("createDelay", 0.05); delay.delayTime.value = 0.015;
                     const rear = gain(0.20); side.connect(delay); delay.connect(rear);
@@ -1125,6 +1179,13 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
 
     jsCode += R"raw(                convolver.connect(wet); wet.connect(mix); finalMix = mix;
             }
+            if (cfg.nightMode) {
+                const night = make("createDynamicsCompressor");
+                night.threshold.value = -24; night.knee.value = 18;
+                night.ratio.value = 3; night.attack.value = 0.015;
+                night.release.value = 0.24;
+                finalMix.connect(night); finalMix = night;
+            }
             const compressor = make("createDynamicsCompressor");
             // Soft protection, not a certified true-peak/brickwall limiter.
             const dialogue = cfg.enabled && cfg.mode === "dialogue";
@@ -1135,7 +1196,7 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
             finalMix.connect(compressor); compressor.connect(output);
         }
         function key() {
-            return JSON.stringify([needsProcessing(), cfg.enabled, cfg.mode, cfg.device, cfg.monoDownmix]);
+            return JSON.stringify([needsProcessing(), cfg.enabled, cfg.mode, cfg.device, cfg.monoDownmix, cfg.deEsser, cfg.nightMode]);
         }
         const controller = {
             update() {
@@ -1150,8 +1211,8 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
                         smooth(output.gain, 1);
                     }, 40);
                 } else {
-                    if (preamp) smooth(preamp.gain, Math.max(1, Math.min(3, Number(cfg.volumeBoost) || 1)));
-                    if (vocal) smooth(vocal.gain, (cfg.vocalBoost || (cfg.enabled && cfg.mode === "dialogue")) ? 4.5 : 0);
+                    if (preamp) smooth(preamp.gain, preampValue());
+                    if (vocal) smooth(vocal.gain, voiceDb());
                 }
             },
             release() {
@@ -1381,6 +1442,8 @@ void WebViewManager::UpdateAudioEnhancer(bool reloadPage) {
         {"enabled", settings.enableSurroundSound},
         {"mode", settings.surroundSoundMode.empty() ? "standard" : settings.surroundSoundMode},
         {"device", effectiveDevice},
+        {"deEsser", settings.enableDeEsser},
+        {"nightMode", settings.enableNightMode},
         {"vocalBoost", settings.enableVocalBoost},
         {"volumeBoost", settings.audioVolumeBoost},
         {"monoDownmix", settings.enableMonoDownmix}

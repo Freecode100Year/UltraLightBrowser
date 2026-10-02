@@ -61,3 +61,9 @@ browser channel-mixing/latency behavior. Native Windows checks are required.
 block extracted from WebViewManager.cpp. Deterministic callbacks exercise both
 completion orders, retained reload requests, stale-script removal, asynchronous
 failure and synchronous failure. It still does not emulate real COM ownership.
+
+## XQL-MUSIC-inspired response verification
+
+`node tests/verify_audio_response.mjs` checks 48kHz static crossfeed centre response,
+LR4 idle sum and vocal EQ headroom from shipped constants. Matching the 6ms
+compressor lookahead is checked too. This is not an end-to-end sound-quality test.

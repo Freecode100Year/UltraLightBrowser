@@ -20,6 +20,8 @@ struct AppSettings {
     bool enableSurroundSound = true;
     std::string surroundSoundMode = "standard"; // "light", "standard", "cinema"
     std::string audioDeviceMode = "auto";       // "auto", "headphones", "speakers"
+    bool enableDeEsser = false;
+    bool enableNightMode = false;
     bool enableVocalBoost = false;
     double audioVolumeBoost = 1.0;              // 1.0, 1.5, 2.0, 3.0
     bool enableMonoDownmix = false;

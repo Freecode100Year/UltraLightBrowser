@@ -1,4 +1,4 @@
-# UltraLightBrowser 整合修复版
+# UltraLightBrowser 1.6.2 整合修复版
 
 这是基于 v1.6.0 的完整源码版本，包含全屏、后台节能与音频处理修复。
 压缩包不含预编译 EXE；当前开发环境为 Linux，Windows 编译和实际播放仍需验证。
@@ -103,3 +103,26 @@ DSP 模式按需创建节点：音箱不创建 HRTF，非影院模式不创建�
 
 新增 CI 包含音频回归测试、窗口/节能测试和 Windows Debug/Release 构建。
 当前 GitHub 写 API 返回 403，Git 推送缺少凭据；源码未推送，新增 CI 尚未运行。
+
+## 1.6.2：借鉴 XQL-MUSIC 的音频改进
+
+借鉴来源：Freecode100Year/XQL-MUSIC，版本 2573ca3。
+本次移植算法与数值验证方法，没有引入 React、音乐搜索、Cloudflare API 或音乐资源代理。
+
+- 人声 EQ 提升时自动预衰减 5dB（4.5dB 提升 + 0.5dB 余量）；100% 用户增益时该 EQ 段峰值保留约 0.5dB 余量。高用户增益和空间效果仍可能过载。
+- 耳机交叉馈送改用低通与低架补偿，减少中置信号低频抬升。
+- 增强选项新增「齿音抑制」：5.5kHz LR4 分频，仅高频动态压缩；低频路径增加 6ms 延迟，对齐 Web Audio 压缩器的前瞻延迟。
+- 新增「夜间模式」：独立 -24dB 阈值、3:1 轻压缩；不是自动响度归一化。
+- 原声模式不启用以上 DSP；两个新开关默认关闭，可分别开启。
+- 关闭环绕但保留齿音/夜间模式时，相关处理仍然有效。真正回到原声请选择原声输出并刷新。
+
+运行 `node tests/verify_audio_response.mjs` 做 48kHz 下滤波器数值验证。
+检查的是交叉馈送子模块、静态分频合成和人声 EQ 电平余量，
+不包含 HRTF、混响、实际压缩过程、驱动或端到端延迟的保证。
+新增模块会增加处理延迟，实际音画同步需 Windows 播放验证。
+Web Audio 压缩器延迟参考：https://www.w3.org/TR/webaudio/#DynamicsCompressorNode
+
+移植审查修正了源项目数值检查中低通/高通 Q 单位的假设：
+Web Audio 的这两类滤波器 Q 使用 dB，因此 Butterworth 设置为约 -3.0103dB，
+而 peaking EQ 的 Q 仍使用线性值。数值验证采用相同的 Web Audio 单位转换。
+本版不是未经修改地照搬源项目的参数。

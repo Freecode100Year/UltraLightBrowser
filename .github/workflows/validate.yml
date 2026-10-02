@@ -36,6 +36,7 @@ jobs:
       - name: Test actual injected audio script
         run: |
           node tests/audio_enhancer_test.cjs
+          node tests/verify_audio_response.mjs
           python3 tests/audio_registration_test.py
 
   windows-build:

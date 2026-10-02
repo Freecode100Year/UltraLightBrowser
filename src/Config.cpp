@@ -82,6 +82,8 @@ void Config::Load() {
             if (s.contains("audioDeviceMode") && s["audioDeviceMode"].is_string()) {
                 m_settings.audioDeviceMode = s["audioDeviceMode"].get<std::string>();
             }
+            if (s.contains("enableDeEsser") && s["enableDeEsser"].is_boolean()) m_settings.enableDeEsser = s["enableDeEsser"].get<bool>();
+            if (s.contains("enableNightMode") && s["enableNightMode"].is_boolean()) m_settings.enableNightMode = s["enableNightMode"].get<bool>();
             if (s.contains("enableVocalBoost")) m_settings.enableVocalBoost = s["enableVocalBoost"];
             if (s.contains("audioVolumeBoost") && s["audioVolumeBoost"].is_number()) {
                 m_settings.audioVolumeBoost = s["audioVolumeBoost"].get<double>();
@@ -124,6 +126,8 @@ void Config::Save() {
             {"enableSurroundSound", m_settings.enableSurroundSound},
             {"surroundSoundMode", m_settings.surroundSoundMode},
             {"audioDeviceMode", m_settings.audioDeviceMode},
+            {"enableDeEsser", m_settings.enableDeEsser},
+            {"enableNightMode", m_settings.enableNightMode},
             {"enableVocalBoost", m_settings.enableVocalBoost},
             {"audioVolumeBoost", m_settings.audioVolumeBoost},
             {"enableMonoDownmix", m_settings.enableMonoDownmix}

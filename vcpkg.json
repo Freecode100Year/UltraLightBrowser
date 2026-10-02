@@ -1,6 +1,6 @@
 {
   "name": "ultra-light-browser",
-  "version-string": "1.6.3",
+  "version-string": "1.6.4",
   "description": "Ultra-lightweight Windows 11 WebView2 Browser Shell (macOS Safari UI Edition)",
   "dependencies": [
     "wil",

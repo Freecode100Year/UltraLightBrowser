@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const source = fs.readFileSync('src/WebViewManager.cpp', 'utf8');
 const section = source.slice(source.indexOf('void WebViewManager::InjectSurroundSoundScript'), source.indexOf('void WebViewManager::UpdateAudioEnhancer'));
 function script(nativeOutput = false) {
-  const values = { initEnabled:'true', initMode:'standard', effectiveDevice:'speakers', initVocalBoost:'false', initVolumeBoost:'1.000000', initMonoDownmix:'false', initNativeOutput:String(nativeOutput) };
+  const values = { initEnabled:'true', initMode:'standard', effectiveDevice:'speakers', initVocalBoost:'false', initVolumeBoost:'1.000000', initMonoDownmix:'false', initNativeOutput:String(nativeOutput), initDeEsser:'false', initNightMode:'false' };
   let js = '';
   for (const match of section.matchAll(/jsCode \+= (?:R"raw\(([\s\S]*?)\)raw"|([A-Za-z]+));/g)) {
     js += match[1] === undefined ? values[match[2]] : match[1];
@@ -64,6 +64,23 @@ test('dialogue creates no HRTF and uses mild compression',()=>{
 test('volume and EQ updates retain media source without rebuilding it',()=>{
   const e=run();e.window.__UltraLightSurround.updateConfig({volumeBoost:2,vocalBoost:true});e.flush();
   assert.equal(e.nodes.filter(n=>n.type==='source').length,1);
-  assert(e.nodes.some(n=>n.type==='gain'&&n.gain.value===2));
+  assert(e.nodes.some(n=>n.type==='gain'&&Math.abs(n.gain.value-2*Math.pow(10,-5/20))<1e-8));
+});
+test('vocal EQ automatically reserves headroom',()=>{
+  const e=run();e.window.__UltraLightSurround.updateConfig({vocalBoost:true});e.flush();
+  const source=e.nodes.find(n=>n.type==='source');
+  assert(source.outputs[0].to.gain.value<0.60);
+});
+test('de-esser uses LR4 split and high-band compression',()=>{
+  const e=run();e.window.__UltraLightSurround.updateConfig({deEsser:true});e.flush();
+  assert(e.nodes.some(n=>n.type==='delay'&&n.delayTime.value===0.006));
+  assert.equal(e.nodes.filter(n=>n.type==='lowpass'&&n.frequency.value===5500).length,2);
+  assert.equal(e.nodes.filter(n=>n.type==='highpass'&&n.frequency.value===5500).length,2);
+  assert(e.nodes.filter(n=>(n.type==='highpass'||n.type==='lowpass')&&n.frequency.value===5500).every(n=>Math.abs(n.Q.value+3.01029995664)<1e-9));
+  assert(e.nodes.some(n=>n.type==='compressor'&&n.threshold.value===-32&&n.ratio.value===4));
+});
+test('night mode creates separate gentle compression',()=>{
+  const e=run();e.window.__UltraLightSurround.updateConfig({nightMode:true});e.flush();
+  assert(e.nodes.some(n=>n.type==='compressor'&&n.ratio.value===3&&n.release.value===0.24));
 });
 if(failures)process.exitCode=1;
