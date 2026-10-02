@@ -218,13 +218,29 @@ void WebViewManager::RegisterEventHandlers() {
         nullptr
     );
 
-    // Navigation Starting (Element Blocker rule injection)
+    // Navigation Starting (Element Blocker rule injection and loading state)
     m_webView->add_NavigationStarting(
         Callback<ICoreWebView2NavigationStartingEventHandler>(
-            [](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+            [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
                 wil::unique_cotaskmem_string uri;
                 if (SUCCEEDED(args->get_Uri(&uri))) {
                     ElementBlocker::Instance().OnNavigationStarting(sender, uri.get());
+                }
+                if (m_navStateCb) {
+                    m_navStateCb(true);
+                }
+                return S_OK;
+            }
+        ).Get(),
+        nullptr
+    );
+
+    // Navigation Completed (loading state finished)
+    m_webView->add_NavigationCompleted(
+        Callback<ICoreWebView2NavigationCompletedEventHandler>(
+            [this](ICoreWebView2* /*sender*/, ICoreWebView2NavigationCompletedEventArgs* /*args*/) -> HRESULT {
+                if (m_navStateCb) {
+                    m_navStateCb(false);
                 }
                 return S_OK;
             }

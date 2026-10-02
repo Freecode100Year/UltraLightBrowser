@@ -18,6 +18,7 @@ public:
     using FullScreenCallback = std::function<void(bool)>;
     using ZoomFactorChangedCallback = std::function<void(double)>;
     using UserActivityCallback = std::function<void()>;
+    using NavigationStateCallback = std::function<void(bool isLoading)>;
 
     WebViewManager();
     ~WebViewManager() = default;
@@ -54,6 +55,7 @@ public:
     void SetZoomFactorChangedCallback(ZoomFactorChangedCallback cb) { m_zoomFactorChangedCb = cb; }
     void SetUserActivityCallback(UserActivityCallback cb) { m_userActivityCb = cb; }
     void SetAudioPlayingCallback(std::function<void(bool)> cb) { m_audioPlayingCb = cb; }
+    void SetNavigationStateCallback(NavigationStateCallback cb) { m_navStateCb = cb; }
 
     // Audio & Visibility status
     bool IsDocumentPlayingAudio() const { return m_isPlayingAudio; }
@@ -84,6 +86,7 @@ private:
     ZoomFactorChangedCallback m_zoomFactorChangedCb;
     UserActivityCallback m_userActivityCb;
     std::function<void(bool)> m_audioPlayingCb;
+    NavigationStateCallback m_navStateCb;
 };
 
 } // namespace UltraLight

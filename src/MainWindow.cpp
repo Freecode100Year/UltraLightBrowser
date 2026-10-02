@@ -47,11 +47,12 @@ static void CopyTextToClipboard(HWND hWndOwner, const std::wstring& text) {
 }
 
 MainWindow::MainWindow() : m_webViewManager(std::make_unique<WebViewManager>()) {
-    m_hBrTopBarBg = CreateSolidBrush(RGB(30, 30, 32));
-    m_hBrAddressBg = CreateSolidBrush(RGB(44, 44, 48));
-    m_hPenAddressBorder = CreatePen(PS_SOLID, 1, RGB(65, 65, 72));
+    // macOS Safari Dark Palette
+    m_hBrTopBarBg = CreateSolidBrush(RGB(36, 36, 39));
+    m_hBrAddressBg = CreateSolidBrush(RGB(48, 48, 52));
+    m_hPenAddressBorder = CreatePen(PS_SOLID, 1, RGB(62, 62, 68));
     m_hPenAddressBorderFocus = CreatePen(PS_SOLID, 1, RGB(10, 132, 255));
-    m_hPenSeparator = CreatePen(PS_SOLID, 1, RGB(48, 48, 52));
+    m_hPenSeparator = CreatePen(PS_SOLID, 1, RGB(24, 24, 26));
 }
 
 MainWindow::~MainWindow() {
@@ -111,6 +112,12 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
     }
 
     ApplyModernTheme();
+
+    // Extend frame into client area so DWM retains drop shadows and rounded corners
+    MARGINS margins{ 0, 0, 1, 0 };
+    DwmExtendFrameIntoClientArea(m_hWnd, &margins);
+    SetWindowPos(m_hWnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+
     DragAcceptFiles(m_hWnd, TRUE);
     ShowWindow(m_hWnd, nCmdShow);
     UpdateWindow(m_hWnd);
@@ -119,22 +126,19 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
 }
 
 void MainWindow::ApplyModernTheme() {
-    // Windows 11 Immersive Dark Mode
     BOOL darkMode = TRUE;
     DwmSetWindowAttribute(m_hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
 
-    // Windows 11 Rounded Corners Preference
     DWORD cornerPref = 2; // DWMWCP_ROUND
     DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &cornerPref, sizeof(cornerPref));
 
-    // Optional: Acrylic or Mica backdrop on Win11 22H2+
-    DWORD backdropType = 2; // 2 = Mica
+    DWORD backdropType = 2; // Mica
     DwmSetWindowAttribute(m_hWnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
 }
 
 void MainWindow::UpdateDpiScaling(UINT dpi) {
     m_dpi = dpi;
-    m_topbarHeight = MulDiv(46, dpi, 96);
+    m_topbarHeight = MulDiv(52, dpi, 96);
 
     if (m_hUiFont) DeleteObject(m_hUiFont);
     if (m_hNavFont) DeleteObject(m_hNavFont);
@@ -164,23 +168,22 @@ void MainWindow::UpdateDpiScaling(UINT dpi) {
         L"Segoe UI Variable Text"
     );
 
-    // Apply fonts to controls
+    // Apply fonts to child controls
+    if (m_hBtnSidebar) SendMessageW(m_hBtnSidebar, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnBack) SendMessageW(m_hBtnBack, WM_SETFONT, reinterpret_cast<WPARAM>(m_hNavFont), TRUE);
     if (m_hBtnForward) SendMessageW(m_hBtnForward, WM_SETFONT, reinterpret_cast<WPARAM>(m_hNavFont), TRUE);
-    if (m_hBtnReload) SendMessageW(m_hBtnReload, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hEditAddress) SendMessageW(m_hEditAddress, WM_SETFONT, reinterpret_cast<WPARAM>(m_hAddressFont), TRUE);
+    if (m_hBtnReload) SendMessageW(m_hBtnReload, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnShare) SendMessageW(m_hBtnShare, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnDns) SendMessageW(m_hBtnDns, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
     if (m_hBtnZoom) SendMessageW(m_hBtnZoom, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
-    if (m_hBtnBlocker) SendMessageW(m_hBtnBlocker, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
+    if (m_hBtnNewTab) SendMessageW(m_hBtnNewTab, WM_SETFONT, reinterpret_cast<WPARAM>(m_hUiFont), TRUE);
 }
 
 LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
     auto* self = reinterpret_cast<MainWindow*>(dwRefData);
-    static bool s_isHovered = false;
-    static bool s_isPressed = false;
 
-    // Use window props to store per-button state
     bool isHovered = GetPropW(hWnd, L"SafariBtnHover") != nullptr;
     bool isPressed = GetPropW(hWnd, L"SafariBtnPressed") != nullptr;
 
@@ -223,7 +226,7 @@ LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPAR
         HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
         HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
 
-        // Fill background with toolbar dark tone
+        // Fill background with toolbar color
         HBRUSH hBrBar = self ? self->m_hBrTopBarBg : nullptr;
         if (!hBrBar) hBrBar = GetSysColorBrush(COLOR_BTNFACE);
         FillRect(memDC, &rc, hBrBar);
@@ -231,10 +234,10 @@ LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPAR
         bool enabled = IsWindowEnabled(hWnd) != FALSE;
         int radius = self ? MulDiv(6, self->m_dpi, 96) : 6;
 
-        // Render rounded pill background for hover/pressed states
+        // Render rounded background on hover or press
         if (enabled && isPressed) {
-            HBRUSH hBrPress = CreateSolidBrush(RGB(68, 68, 74));
-            HPEN hPenPress = CreatePen(PS_SOLID, 1, RGB(80, 80, 88));
+            HBRUSH hBrPress = CreateSolidBrush(RGB(68, 68, 76));
+            HPEN hPenPress = CreatePen(PS_SOLID, 1, RGB(82, 82, 90));
             HGDIOBJ oldBrush = SelectObject(memDC, hBrPress);
             HGDIOBJ oldPen = SelectObject(memDC, hPenPress);
             RoundRect(memDC, rc.left, rc.top, rc.right, rc.bottom, radius * 2, radius * 2);
@@ -243,8 +246,8 @@ LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPAR
             DeleteObject(hBrPress);
             DeleteObject(hPenPress);
         } else if (enabled && isHovered) {
-            HBRUSH hBrHover = CreateSolidBrush(RGB(50, 50, 56));
-            HPEN hPenHover = CreatePen(PS_SOLID, 1, RGB(65, 65, 72));
+            HBRUSH hBrHover = CreateSolidBrush(RGB(52, 52, 58));
+            HPEN hPenHover = CreatePen(PS_SOLID, 1, RGB(66, 66, 72));
             HGDIOBJ oldBrush = SelectObject(memDC, hBrHover);
             HGDIOBJ oldPen = SelectObject(memDC, hPenHover);
             RoundRect(memDC, rc.left, rc.top, rc.right, rc.bottom, radius * 2, radius * 2);
@@ -259,7 +262,7 @@ LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPAR
         GetWindowTextW(hWnd, text, static_cast<int>(std::size(text)));
 
         COLORREF textColor = enabled
-            ? (isHovered ? RGB(255, 255, 255) : RGB(225, 225, 230))
+            ? (isHovered ? RGB(255, 255, 255) : RGB(232, 232, 237))
             : RGB(105, 105, 110);
 
         SetBkMode(memDC, TRANSPARENT);
@@ -293,6 +296,15 @@ LRESULT CALLBACK MainWindow::SafariButtonSubclassProc(HWND hWnd, UINT uMsg, WPAR
 }
 
 void MainWindow::CreateToolbarControls() {
+    // 1. Sidebar Toggle Button
+    m_hBtnSidebar = CreateWindowExW(
+        0, L"BUTTON", L"▥",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_SIDEBAR), m_hInstance, nullptr
+    );
+    SetWindowSubclass(m_hBtnSidebar, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+
+    // 2. Navigation Chevrons
     m_hBtnBack = CreateWindowExW(
         0, L"BUTTON", L"‹",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -307,6 +319,16 @@ void MainWindow::CreateToolbarControls() {
     );
     SetWindowSubclass(m_hBtnForward, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
+    // 3. Central Smart Search Field (Edit box & Reload button)
+    m_hEditAddress = CreateWindowExW(
+        0, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_LEFT,
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_EDIT_ADDRESS), m_hInstance, nullptr
+    );
+    SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
+    SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索或输入网站名称"));
+    SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+
     m_hBtnReload = CreateWindowExW(
         0, L"BUTTON", L"↻",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -314,23 +336,20 @@ void MainWindow::CreateToolbarControls() {
     );
     SetWindowSubclass(m_hBtnReload, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
-    // Address Bar - Sleek borderless edit embedded in Safari pill
-    m_hEditAddress = CreateWindowExW(
-        0, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_LEFT,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_EDIT_ADDRESS), m_hInstance, nullptr
-    );
-    SendMessageW(m_hEditAddress, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(8, 8));
-    SendMessageW(m_hEditAddress, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索或输入网站名称"));
-    SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    // Right-aligned Safari Toolbar Buttons
+    // 4. Right Safari Action Buttons
     m_hBtnShare = CreateWindowExW(
         0, L"BUTTON", L"↥",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_SHARE), m_hInstance, nullptr
     );
     SetWindowSubclass(m_hBtnShare, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+
+    m_hBtnBlocker = CreateWindowExW(
+        0, L"BUTTON", L"🛡️",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_BLOCKER), m_hInstance, nullptr
+    );
+    SetWindowSubclass(m_hBtnBlocker, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     m_hBtnDns = CreateWindowExW(
         0, L"BUTTON", L"🌐 DNS",
@@ -340,18 +359,18 @@ void MainWindow::CreateToolbarControls() {
     SetWindowSubclass(m_hBtnDns, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     m_hBtnZoom = CreateWindowExW(
-        0, L"BUTTON", L"🔍 100%",
+        0, L"BUTTON", L"100%",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_ZOOM), m_hInstance, nullptr
     );
     SetWindowSubclass(m_hBtnZoom, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
-    m_hBtnBlocker = CreateWindowExW(
-        0, L"BUTTON", L"🛡️ 隐私保护",
+    m_hBtnNewTab = CreateWindowExW(
+        0, L"BUTTON", L"+",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_BLOCKER), m_hInstance, nullptr
+        0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_BTN_NEWTAB), m_hInstance, nullptr
     );
-    SetWindowSubclass(m_hBtnBlocker, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+    SetWindowSubclass(m_hBtnNewTab, SafariButtonSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     UpdateDpiScaling(GetDpiForWindow(m_hWnd));
     UpdateDnsDisplay();
@@ -368,71 +387,103 @@ void MainWindow::UpdateLayout(int width, int height) {
         return;
     }
 
-    int pad = MulDiv(8, m_dpi, 96);
-    int navBtnW = MulDiv(32, m_dpi, 96);
-    int shareBtnW = MulDiv(34, m_dpi, 96);
-    int zoomBtnW = MulDiv(70, m_dpi, 96);
-    int dnsBtnW = MulDiv(86, m_dpi, 96);
-    int blockBtnW = MulDiv(88, m_dpi, 96);
-
     int topH = m_topbarHeight;
-    int ctrlH = MulDiv(30, m_dpi, 96);
+    int ctrlH = MulDiv(28, m_dpi, 96);
     int btnY = (topH - ctrlH) / 2;
 
-    int x = pad;
+    // 1. macOS Traffic Lights Bounds
+    int trafficCenterY = topH / 2;
+    int trafficR = MulDiv(6, m_dpi, 96);
+    int circleD = trafficR * 2;
+    int trafficGap = MulDiv(8, m_dpi, 96);
 
-    // Left Navigation: [ ‹ ] [ › ] [ ↻ ]
-    SetWindowPos(m_hBtnBack, nullptr, x, btnY, navBtnW, ctrlH, SWP_NOZORDER);
-    x += navBtnW + MulDiv(4, m_dpi, 96);
+    int closeX = MulDiv(20, m_dpi, 96);
+    int minX = closeX + circleD + trafficGap;
+    int maxX = minX + circleD + trafficGap;
 
-    SetWindowPos(m_hBtnForward, nullptr, x, btnY, navBtnW, ctrlH, SWP_NOZORDER);
-    x += navBtnW + MulDiv(4, m_dpi, 96);
+    m_rcTrafficClose = { closeX - trafficR, trafficCenterY - trafficR, closeX + trafficR, trafficCenterY + trafficR };
+    m_rcTrafficMin   = { minX - trafficR, trafficCenterY - trafficR, minX + trafficR, trafficCenterY + trafficR };
+    m_rcTrafficMax   = { maxX - trafficR, trafficCenterY - trafficR, maxX + trafficR, trafficCenterY + trafficR };
+    m_rcTrafficGroup = { m_rcTrafficClose.left - 4, m_rcTrafficClose.top - 4, m_rcTrafficMax.right + 4, m_rcTrafficMax.bottom + 4 };
 
-    SetWindowPos(m_hBtnReload, nullptr, x, btnY, navBtnW, ctrlH, SWP_NOZORDER);
-    x += navBtnW + pad;
+    // 2. Left Action Group (Sidebar, Back, Forward)
+    int navBtnW = MulDiv(28, m_dpi, 96);
+    int sidebarBtnW = MulDiv(30, m_dpi, 96);
+    int pad = MulDiv(6, m_dpi, 96);
 
-    int leftGroupEnd = x;
+    int leftX = m_rcTrafficMax.right + MulDiv(18, m_dpi, 96);
 
-    // Right Action Buttons: [ ↥ ] [ 🌐 DNS ] [ 🔍 100% ] [ 🛡️ 隐私保护 ]
-    int rightX = width - pad - blockBtnW;
-    SetWindowPos(m_hBtnBlocker, nullptr, rightX, btnY, blockBtnW, ctrlH, SWP_NOZORDER);
+    SetWindowPos(m_hBtnSidebar, nullptr, leftX, btnY, sidebarBtnW, ctrlH, SWP_NOZORDER);
+    leftX += sidebarBtnW + pad;
 
-    rightX -= (zoomBtnW + MulDiv(4, m_dpi, 96));
+    SetWindowPos(m_hBtnBack, nullptr, leftX, btnY, navBtnW, ctrlH, SWP_NOZORDER);
+    leftX += navBtnW + MulDiv(2, m_dpi, 96);
+
+    SetWindowPos(m_hBtnForward, nullptr, leftX, btnY, navBtnW, ctrlH, SWP_NOZORDER);
+    leftX += navBtnW + MulDiv(12, m_dpi, 96);
+
+    int leftGroupEnd = leftX;
+
+    // 3. Right Action Group (Share, Blocker, DNS, Zoom, New Tab)
+    int newTabBtnW = MulDiv(28, m_dpi, 96);
+    int zoomBtnW = MulDiv(58, m_dpi, 96);
+    int dnsBtnW = MulDiv(80, m_dpi, 96);
+    int blockerBtnW = MulDiv(32, m_dpi, 96);
+    int shareBtnW = MulDiv(30, m_dpi, 96);
+
+    int rightMargin = MulDiv(14, m_dpi, 96);
+    int rightX = width - rightMargin - newTabBtnW;
+
+    SetWindowPos(m_hBtnNewTab, nullptr, rightX, btnY, newTabBtnW, ctrlH, SWP_NOZORDER);
+
+    rightX -= (zoomBtnW + pad);
     SetWindowPos(m_hBtnZoom, nullptr, rightX, btnY, zoomBtnW, ctrlH, SWP_NOZORDER);
 
-    rightX -= (dnsBtnW + MulDiv(4, m_dpi, 96));
+    rightX -= (dnsBtnW + pad);
     SetWindowPos(m_hBtnDns, nullptr, rightX, btnY, dnsBtnW, ctrlH, SWP_NOZORDER);
 
-    rightX -= (shareBtnW + MulDiv(6, m_dpi, 96));
+    rightX -= (blockerBtnW + pad);
+    SetWindowPos(m_hBtnBlocker, nullptr, rightX, btnY, blockerBtnW, ctrlH, SWP_NOZORDER);
+
+    rightX -= (shareBtnW + pad);
     SetWindowPos(m_hBtnShare, nullptr, rightX, btnY, shareBtnW, ctrlH, SWP_NOZORDER);
 
-    int rightGroupStart = rightX;
+    int rightGroupStart = rightX - MulDiv(12, m_dpi, 96);
 
-    // Safari Centered Smart Search Capsule Layout
-    int availableW = (rightGroupStart - pad) - (leftGroupEnd + pad);
+    // 4. Centered Smart Search Capsule Layout
+    int availW = rightGroupStart - leftGroupEnd;
     int maxCapsuleW = MulDiv(680, m_dpi, 96);
-    int capsuleW = availableW;
-    int capsuleX = leftGroupEnd + pad;
+    int capsuleW = availW;
+    int capsuleX = leftGroupEnd;
 
-    if (availableW > maxCapsuleW) {
-        int idealCenteredX = (width - maxCapsuleW) / 2;
-        if (idealCenteredX >= leftGroupEnd + pad && (idealCenteredX + maxCapsuleW) <= rightGroupStart - pad) {
-            capsuleX = idealCenteredX;
+    if (availW > maxCapsuleW) {
+        int idealX = (width - maxCapsuleW) / 2;
+        if (idealX >= leftGroupEnd && (idealX + maxCapsuleW) <= rightGroupStart) {
+            capsuleX = idealX;
             capsuleW = maxCapsuleW;
         } else {
-            capsuleW = availableW;
+            capsuleW = availW;
         }
     }
 
-    if (capsuleW > MulDiv(100, m_dpi, 96)) {
-        m_rcAddressCapsule = { capsuleX, btnY, capsuleX + capsuleW, btnY + ctrlH };
+    if (capsuleW > MulDiv(120, m_dpi, 96)) {
+        int capsuleH = MulDiv(30, m_dpi, 96);
+        int capsuleY = (topH - capsuleH) / 2;
+        m_rcAddressCapsule = { capsuleX, capsuleY, capsuleX + capsuleW, capsuleY + capsuleH };
 
-        // Position edit control inside capsule, leaving room on the left for lock icon
+        // Integrated Reload/Stop Button at right edge of the capsule
+        int reloadBtnW = MulDiv(22, m_dpi, 96);
+        int reloadBtnH = MulDiv(22, m_dpi, 96);
+        int reloadX = capsuleX + capsuleW - reloadBtnW - MulDiv(4, m_dpi, 96);
+        int reloadY = capsuleY + (capsuleH - reloadBtnH) / 2;
+        SetWindowPos(m_hBtnReload, nullptr, reloadX, reloadY, reloadBtnW, reloadBtnH, SWP_NOZORDER);
+
+        // Edit control between SSL icon on left and Reload button on right
         int iconOffset = MulDiv(26, m_dpi, 96);
         int editX = capsuleX + iconOffset;
-        int editW = capsuleW - iconOffset - MulDiv(8, m_dpi, 96);
+        int editW = (reloadX - editX) - MulDiv(4, m_dpi, 96);
         int editH = MulDiv(20, m_dpi, 96);
-        int editY = btnY + (ctrlH - editH) / 2;
+        int editY = capsuleY + (capsuleH - editH) / 2;
 
         SetWindowPos(m_hEditAddress, nullptr, editX, editY, editW, editH, SWP_NOZORDER);
     }
@@ -458,14 +509,16 @@ void MainWindow::SetFullScreen(bool enable) {
         m_dwStylePrev = static_cast<DWORD>(GetWindowLongW(m_hWnd, GWL_STYLE));
 
         // Hide toolbar controls
+        if (m_hBtnSidebar) ShowWindow(m_hBtnSidebar, SW_HIDE);
         if (m_hBtnBack) ShowWindow(m_hBtnBack, SW_HIDE);
         if (m_hBtnForward) ShowWindow(m_hBtnForward, SW_HIDE);
-        if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, SW_HIDE);
+        if (m_hBtnReload) ShowWindow(m_hBtnReload, SW_HIDE);
         if (m_hBtnShare) ShowWindow(m_hBtnShare, SW_HIDE);
+        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
         if (m_hBtnDns) ShowWindow(m_hBtnDns, SW_HIDE);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, SW_HIDE);
-        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, SW_HIDE);
+        if (m_hBtnNewTab) ShowWindow(m_hBtnNewTab, SW_HIDE);
 
         HMONITOR hMon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi{ sizeof(MONITORINFO) };
@@ -494,14 +547,16 @@ void MainWindow::SetFullScreen(bool enable) {
         );
 
         int showCmd = m_isImmersiveMode ? SW_HIDE : SW_SHOW;
+        if (m_hBtnSidebar) ShowWindow(m_hBtnSidebar, showCmd);
         if (m_hBtnBack) ShowWindow(m_hBtnBack, showCmd);
         if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
-        if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
         if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
+        if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
         if (m_hBtnShare) ShowWindow(m_hBtnShare, showCmd);
+        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
         if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
         if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
-        if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
+        if (m_hBtnNewTab) ShowWindow(m_hBtnNewTab, showCmd);
 
         RECT client;
         GetClientRect(m_hWnd, &client);
@@ -518,14 +573,16 @@ void MainWindow::SetImmersiveMode(bool enable) {
     m_isImmersiveMode = enable;
 
     int showCmd = (enable || m_isFullScreen) ? SW_HIDE : SW_SHOW;
+    if (m_hBtnSidebar) ShowWindow(m_hBtnSidebar, showCmd);
     if (m_hBtnBack) ShowWindow(m_hBtnBack, showCmd);
     if (m_hBtnForward) ShowWindow(m_hBtnForward, showCmd);
-    if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
     if (m_hEditAddress) ShowWindow(m_hEditAddress, showCmd);
+    if (m_hBtnReload) ShowWindow(m_hBtnReload, showCmd);
     if (m_hBtnShare) ShowWindow(m_hBtnShare, showCmd);
+    if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
     if (m_hBtnDns) ShowWindow(m_hBtnDns, showCmd);
     if (m_hBtnZoom) ShowWindow(m_hBtnZoom, showCmd);
-    if (m_hBtnBlocker) ShowWindow(m_hBtnBlocker, showCmd);
+    if (m_hBtnNewTab) ShowWindow(m_hBtnNewTab, showCmd);
 
     RECT client;
     GetClientRect(m_hWnd, &client);
@@ -615,10 +672,67 @@ LRESULT CALLBACK MainWindow::AddressBarSubclassProc(HWND hWnd, UINT uMsg, WPARAM
 
 LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+    case WM_NCCALCSIZE: {
+        if (wParam == TRUE) {
+            if (IsZoomed(m_hWnd)) {
+                auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+                HMONITOR hMon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
+                MONITORINFO mi{ sizeof(MONITORINFO) };
+                if (GetMonitorInfoW(hMon, &mi)) {
+                    params->rgrc[0] = mi.rcWork;
+                }
+            }
+            return 0; // Remove standard Windows caption and frame
+        }
+        break;
+    }
+
+    case WM_NCHITTEST: {
+        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        RECT rcWin;
+        GetWindowRect(m_hWnd, &rcWin);
+
+        // Native resize borders
+        if (!IsZoomed(m_hWnd) && !m_isFullScreen) {
+            int b = MulDiv(6, m_dpi, 96);
+            bool left = (pt.x >= rcWin.left && pt.x < rcWin.left + b);
+            bool right = (pt.x < rcWin.right && pt.x >= rcWin.right - b);
+            bool top = (pt.y >= rcWin.top && pt.y < rcWin.top + b);
+            bool bottom = (pt.y < rcWin.bottom && pt.y >= rcWin.bottom - b);
+
+            if (top && left) return HTTOPLEFT;
+            if (top && right) return HTTOPRIGHT;
+            if (bottom && left) return HTBOTTOMLEFT;
+            if (bottom && right) return HTBOTTOMRIGHT;
+            if (left) return HTLEFT;
+            if (right) return HTRIGHT;
+            if (top) return HTTOP;
+            if (bottom) return HTBOTTOM;
+        }
+
+        POINT clientPt = pt;
+        ScreenToClient(m_hWnd, &clientPt);
+
+        if (clientPt.y >= 0 && clientPt.y < m_topbarHeight && !m_isFullScreen && !m_isImmersiveMode) {
+            // Check macOS Traffic Lights
+            if (PtInRect(&m_rcTrafficGroup, clientPt)) {
+                return HTCLIENT;
+            }
+            // Check child controls
+            HWND hChild = ChildWindowFromPointEx(m_hWnd, clientPt, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
+            if (hChild && hChild != m_hWnd) {
+                return HTCLIENT;
+            }
+            // Draggable empty toolbar area
+            return HTCAPTION;
+        }
+
+        return HTCLIENT;
+    }
+
     case WM_CREATE: {
         CreateToolbarControls();
 
-        // Bind callbacks to WebView
         m_webViewManager->SetTitleChangedCallback([this](const std::wstring& title) {
             if (title.empty()) {
                 SetWindowTextW(m_hWnd, L"Safari");
@@ -630,6 +744,13 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         m_webViewManager->SetSourceChangedCallback([this](const std::wstring& uri) {
             if (GetFocus() != m_hEditAddress) {
                 SetWindowTextW(m_hEditAddress, uri.c_str());
+            }
+        });
+
+        m_webViewManager->SetNavigationStateCallback([this](bool isLoading) {
+            m_isLoading = isLoading;
+            if (m_hBtnReload) {
+                SetWindowTextW(m_hBtnReload, isLoading ? L"✕" : L"↻");
             }
         });
 
@@ -655,7 +776,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         m_lastInteractionTick = GetTickCount64();
         SetTimer(m_hWnd, IDT_INACTIVITY_CHECK, 15000, nullptr);
 
-        // Initialize WebView2
         m_webViewManager->Initialize(m_hWnd, [this]() {
             RECT client;
             GetClientRect(m_hWnd, &client);
@@ -690,17 +810,99 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             MoveToEx(memDC, 0, topH - 1, nullptr);
             LineTo(memDC, w, topH - 1);
 
-            // Draw Safari Centered Address Bar Capsule
+            // 1. Render macOS Traffic Lights (Red, Yellow, Green)
+            int trafficR = MulDiv(6, m_dpi, 96);
+            int circleD = trafficR * 2;
+            int trafficCenterY = topH / 2;
+
+            int closeX = MulDiv(20, m_dpi, 96);
+            int minX = closeX + circleD + MulDiv(8, m_dpi, 96);
+            int maxX = minX + circleD + MulDiv(8, m_dpi, 96);
+
+            // Close (Red)
+            COLORREF colClose = (m_isWindowActive || m_isTrafficGroupHovered)
+                ? (m_trafficPressedBtn == 1 ? RGB(214, 69, 61) : RGB(255, 95, 86))
+                : RGB(72, 72, 76);
+            COLORREF penClose = (m_isWindowActive || m_isTrafficGroupHovered) ? RGB(224, 68, 62) : RGB(60, 60, 64);
+            HBRUSH hBrClose = CreateSolidBrush(colClose);
+            HPEN hPenClose = CreatePen(PS_SOLID, 1, penClose);
+            SelectObject(memDC, hBrClose);
+            SelectObject(memDC, hPenClose);
+            Ellipse(memDC, closeX - trafficR, trafficCenterY - trafficR, closeX + trafficR, trafficCenterY + trafficR);
+            DeleteObject(hBrClose);
+            DeleteObject(hPenClose);
+
+            // Minimize (Yellow)
+            COLORREF colMin = (m_isWindowActive || m_isTrafficGroupHovered)
+                ? (m_trafficPressedBtn == 2 ? RGB(214, 153, 30) : RGB(255, 189, 46))
+                : RGB(72, 72, 76);
+            COLORREF penMin = (m_isWindowActive || m_isTrafficGroupHovered) ? RGB(222, 161, 35) : RGB(60, 60, 64);
+            HBRUSH hBrMin = CreateSolidBrush(colMin);
+            HPEN hPenMin = CreatePen(PS_SOLID, 1, penMin);
+            SelectObject(memDC, hBrMin);
+            SelectObject(memDC, hPenMin);
+            Ellipse(memDC, minX - trafficR, trafficCenterY - trafficR, minX + trafficR, trafficCenterY + trafficR);
+            DeleteObject(hBrMin);
+            DeleteObject(hPenMin);
+
+            // Zoom / Maximize (Green)
+            COLORREF colMax = (m_isWindowActive || m_isTrafficGroupHovered)
+                ? (m_trafficPressedBtn == 3 ? RGB(30, 160, 48) : RGB(39, 201, 63))
+                : RGB(72, 72, 76);
+            COLORREF penMax = (m_isWindowActive || m_isTrafficGroupHovered) ? RGB(26, 171, 41) : RGB(60, 60, 64);
+            HBRUSH hBrMax = CreateSolidBrush(colMax);
+            HPEN hPenMax = CreatePen(PS_SOLID, 1, penMax);
+            SelectObject(memDC, hBrMax);
+            SelectObject(memDC, hPenMax);
+            Ellipse(memDC, maxX - trafficR, trafficCenterY - trafficR, maxX + trafficR, trafficCenterY + trafficR);
+            DeleteObject(hBrMax);
+            DeleteObject(hPenMax);
+
+            // Hover symbols inside Traffic Lights
+            if (m_isTrafficGroupHovered) {
+                int arm = MulDiv(3, m_dpi, 96);
+
+                // Red '✕'
+                HPEN hPenSymClose = CreatePen(PS_SOLID, 1, RGB(77, 0, 0));
+                SelectObject(memDC, hPenSymClose);
+                MoveToEx(memDC, closeX - arm, trafficCenterY - arm, nullptr);
+                LineTo(memDC, closeX + arm + 1, trafficCenterY + arm + 1);
+                MoveToEx(memDC, closeX - arm, trafficCenterY + arm, nullptr);
+                LineTo(memDC, closeX + arm + 1, trafficCenterY - arm - 1);
+                DeleteObject(hPenSymClose);
+
+                // Yellow '–'
+                HPEN hPenSymMin = CreatePen(PS_SOLID, 1, RGB(153, 87, 0));
+                SelectObject(memDC, hPenSymMin);
+                MoveToEx(memDC, minX - arm, trafficCenterY, nullptr);
+                LineTo(memDC, minX + arm + 1, trafficCenterY);
+                DeleteObject(hPenSymMin);
+
+                // Green '⤢'
+                HPEN hPenSymMax = CreatePen(PS_SOLID, 1, RGB(0, 100, 0));
+                SelectObject(memDC, hPenSymMax);
+                MoveToEx(memDC, maxX + arm, trafficCenterY - arm, nullptr);
+                LineTo(memDC, maxX + 1, trafficCenterY - arm);
+                MoveToEx(memDC, maxX + arm, trafficCenterY - arm, nullptr);
+                LineTo(memDC, maxX + arm, trafficCenterY);
+                MoveToEx(memDC, maxX - arm, trafficCenterY + arm, nullptr);
+                LineTo(memDC, maxX - 1, trafficCenterY + arm);
+                MoveToEx(memDC, maxX - arm, trafficCenterY + arm, nullptr);
+                LineTo(memDC, maxX - arm, trafficCenterY);
+                DeleteObject(hPenSymMax);
+            }
+
+            // 2. Render macOS Safari Centered Address Bar Capsule
             if (m_rcAddressCapsule.right > m_rcAddressCapsule.left) {
                 HPEN activePen = m_isAddressFocused ? m_hPenAddressBorderFocus : m_hPenAddressBorder;
                 SelectObject(memDC, activePen);
                 HGDIOBJ oldBrush = SelectObject(memDC, m_hBrAddressBg);
 
-                int radius = MulDiv(8, m_dpi, 96);
+                int radius = MulDiv(9, m_dpi, 96);
                 RoundRect(memDC, m_rcAddressCapsule.left, m_rcAddressCapsule.top, m_rcAddressCapsule.right, m_rcAddressCapsule.bottom, radius * 2, radius * 2);
                 SelectObject(memDC, oldBrush);
 
-                // Draw Safari Privacy / SSL Lock Icon
+                // Draw SSL Lock Icon on left inside capsule
                 RECT rcLock{
                     m_rcAddressCapsule.left + MulDiv(7, m_dpi, 96),
                     m_rcAddressCapsule.top,
@@ -726,6 +928,79 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_MOUSEMOVE: {
+        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        if (PtInRect(&m_rcTrafficGroup, pt)) {
+            if (!m_isTrafficGroupHovered) {
+                m_isTrafficGroupHovered = true;
+                TRACKMOUSEEVENT tme{ sizeof(TRACKMOUSEEVENT), TME_LEAVE, m_hWnd, 0 };
+                TrackMouseEvent(&tme);
+                InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
+            }
+
+            int prevHover = m_trafficHoveredBtn;
+            if (PtInRect(&m_rcTrafficClose, pt)) m_trafficHoveredBtn = 1;
+            else if (PtInRect(&m_rcTrafficMin, pt)) m_trafficHoveredBtn = 2;
+            else if (PtInRect(&m_rcTrafficMax, pt)) m_trafficHoveredBtn = 3;
+            else m_trafficHoveredBtn = 0;
+
+            if (prevHover != m_trafficHoveredBtn) {
+                InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
+            }
+        } else if (m_isTrafficGroupHovered) {
+            m_isTrafficGroupHovered = false;
+            m_trafficHoveredBtn = 0;
+            InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
+        }
+        break;
+    }
+
+    case WM_MOUSELEAVE: {
+        if (m_isTrafficGroupHovered) {
+            m_isTrafficGroupHovered = false;
+            m_trafficHoveredBtn = 0;
+            m_trafficPressedBtn = 0;
+            InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
+        }
+        break;
+    }
+
+    case WM_LBUTTONDOWN: {
+        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        if (PtInRect(&m_rcTrafficGroup, pt)) {
+            if (PtInRect(&m_rcTrafficClose, pt)) m_trafficPressedBtn = 1;
+            else if (PtInRect(&m_rcTrafficMin, pt)) m_trafficPressedBtn = 2;
+            else if (PtInRect(&m_rcTrafficMax, pt)) m_trafficPressedBtn = 3;
+
+            if (m_trafficPressedBtn != 0) {
+                SetCapture(m_hWnd);
+                InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
+                return 0;
+            }
+        }
+        break;
+    }
+
+    case WM_LBUTTONUP: {
+        if (m_trafficPressedBtn != 0) {
+            ReleaseCapture();
+            POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            int pressed = m_trafficPressedBtn;
+            m_trafficPressedBtn = 0;
+            InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
+
+            if (pressed == 1 && PtInRect(&m_rcTrafficClose, pt)) {
+                PostMessageW(m_hWnd, WM_CLOSE, 0, 0);
+            } else if (pressed == 2 && PtInRect(&m_rcTrafficMin, pt)) {
+                ShowWindow(m_hWnd, SW_MINIMIZE);
+            } else if (pressed == 3 && PtInRect(&m_rcTrafficMax, pt)) {
+                ShowWindow(m_hWnd, IsZoomed(m_hWnd) ? SW_RESTORE : SW_MAXIMIZE);
+            }
+            return 0;
+        }
+        break;
+    }
+
     case WM_ERASEBKGND:
         return 1;
 
@@ -734,8 +1009,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         HWND hTarget = reinterpret_cast<HWND>(lParam);
         if (hTarget == m_hEditAddress) {
             HDC hdcEdit = reinterpret_cast<HDC>(wParam);
-            SetTextColor(hdcEdit, RGB(245, 245, 247));
-            SetBkColor(hdcEdit, RGB(44, 44, 48));
+            SetTextColor(hdcEdit, RGB(255, 255, 255));
+            SetBkColor(hdcEdit, RGB(48, 48, 52));
             return reinterpret_cast<LRESULT>(m_hBrAddressBg);
         }
         break;
@@ -762,7 +1037,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     }
 
     case WM_ACTIVATE: {
-        if (LOWORD(wParam) != WA_INACTIVE) {
+        m_isWindowActive = (LOWORD(wParam) != WA_INACTIVE);
+        InvalidateRect(m_hWnd, &m_rcTrafficGroup, FALSE);
+
+        if (m_isWindowActive) {
             m_lastInteractionTick = GetTickCount64();
             if (m_webViewManager && m_webViewManager->GetWebView() &&
                 (PowerManager::Instance().IsSuspended() || PowerManager::Instance().IsAudioPlaybackBackgrounded())) {
@@ -861,6 +1139,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_COMMAND: {
         WORD id = LOWORD(wParam);
         switch (id) {
+        case IDC_BTN_SIDEBAR:
+            ToggleImmersiveMode();
+            break;
         case IDC_BTN_BACK:
             m_webViewManager->GoBack();
             break;
@@ -868,7 +1149,16 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             m_webViewManager->GoForward();
             break;
         case IDC_BTN_RELOAD:
-            m_webViewManager->Reload();
+            if (m_isLoading) {
+                m_webViewManager->Stop();
+            } else {
+                m_webViewManager->Reload();
+            }
+            break;
+        case IDC_BTN_NEWTAB:
+            m_webViewManager->Navigate(Config::Instance().GetSettings().startUrl);
+            SetFocus(m_hEditAddress);
+            SendMessageW(m_hEditAddress, EM_SETSEL, 0, -1);
             break;
         case IDM_FOCUS_ADDRESS_BAR:
             SetFocus(m_hEditAddress);
@@ -1077,7 +1367,7 @@ void MainWindow::UpdateZoomDisplay(double zoom) {
     if (!m_hBtnZoom) return;
     int percent = static_cast<int>(std::round(zoom * 100.0));
     wchar_t buf[32]{};
-    swprintf_s(buf, L"🔍 %d%%", percent);
+    swprintf_s(buf, L"%d%%", percent);
     SetWindowTextW(m_hBtnZoom, buf);
 }
 

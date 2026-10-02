@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.0/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.4.0%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.1/UltraLightBrowser.exe"><img src="https://img.shields.io/badge/Download-v1.4.1%20EXE-success?style=flat&logo=windows" alt="Download EXE"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/stargazers"><img src="https://img.shields.io/github/stars/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Stars"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/network/members"><img src="https://img.shields.io/github/forks/Freecode100Year/UltraLightBrowser?style=social" alt="GitHub Forks"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser/issues"><img src="https://img.shields.io/github/issues/Freecode100Year/UltraLightBrowser" alt="Issues"></a>
@@ -23,12 +23,12 @@
 
 ---
 
-## 📥 最新版便携下载 / Direct Download (v1.4.0 Safari Edition)
+## 📥 最新版便携下载 / Direct Download (v1.4.1 macOS Safari UI Edition)
 
 可在 GitHub Releases 页面直接下载最新构建的预编译二进制文件：
 
-* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.4.0)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.0/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
-* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.4.0-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.0/UltraLightBrowser-v1.4.0-windows-x64.zip)**
+* 🚀 **[下载最新版独立可执行程序 (UltraLightBrowser.exe v1.4.1)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.1/UltraLightBrowser.exe)**（推荐：单文件，双击即用，无需安装）
+* 📦 **[下载最新完整便携压缩包 (UltraLightBrowser-v1.4.1-windows-x64.zip)](https://github.com/Freecode100Year/UltraLightBrowser/releases/download/v1.4.1/UltraLightBrowser-v1.4.1-windows-x64.zip)**
 * 🌟 **[访问 GitHub Latest Release 最新发布页](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**
 * 🔗 **[查看所有历史版本与构建产物](https://github.com/Freecode100Year/UltraLightBrowser/releases)**
 
@@ -168,30 +168,37 @@ Through `WebViewManager`, the browser injects deep Chromium performance argument
 * **快速预设菜单**：点击缩放按钮即可唤出原生快捷菜单，支持一键切换预设比例（25%、33%、50%、67%、75%、80%、90%、100%、110%、125%、150%、175%、200%、250%、300%、400%、500%），并在当前比例项显示勾选标。
 * **双层全局按键拦截**：无论焦点在页面 DOM 内部还是在 Win32 地址栏/工具栏，快捷键均由底层直接拦截派发，实现无缝缩放体验。
 
-### 11. 🧭 Safari 风格现代化原生界面设计 (Safari Edition UI)
-基于原生 Win32 双缓冲自绘与 DWM 现代视觉合成，深度还原 macOS Safari 极简优雅、通透纯净的设计语言：
+### 11. 🧭 深度还原 macOS Safari 极简优雅界面 (macOS Safari UI Edition)
+基于原生 Win32 双缓冲自绘与 DWM 现代视觉合成，像素级还原 macOS Sonoma / Sequoia Safari 标志性设计语言：
+* **macOS 经典红黄绿三色红绿灯控制 (macOS Traffic Light Buttons)**：
+  * **左上角一体化控制**：关闭（🔴 `#FF5F56`）、最小化（🟡 `#FFBD2E`）、最大化/缩放（🟢 `#27C93F`）直接内嵌于顶栏左上角。
+  * **悬停微符号感应**：鼠标移入红绿灯区域时，动态显露深色内标——红灯显示 `✕`（关闭）、黄灯显示 `–`（最小化）、绿灯显示 `⤢`（缩放切换）。
+  * **多任务失焦灰阶**：当窗口失去焦点时，红绿灯自动呈现精致低调的 macOS 灰阶色彩，鼠标悬停时瞬间复苏激活。
+* **无边框一体化极简顶栏 (Unified Seamless Titlebar)**：
+  * 通过处理 `WM_NCCALCSIZE` 彻底消除了 Windows 传统的生硬标题栏，窗口顶部通透纯净。
+  * 深度调用 `DwmExtendFrameIntoClientArea`，完美保留 Windows 11 的高质感 DWM 柔和投影、DWM 窗口圆角与屏幕边缘 Aero Snap 拖拽吸附分屏。
+  * 工具栏空白区域原生支持鼠标拖拽移动窗口（`HTCAPTION`）与双击最大化/还原。
 * **居中智能搜索胶囊 (Centered Smart Search Capsule)**：
-  * **黄金比例对称布局**：地址栏不再生硬填满间隙，而是采用 Safari 标志性的居中圆角胶囊造型，自适应屏幕宽度（最大 680px），与左侧导航组及右侧操作组形成视觉对称平衡。
+  * **黄金比例对称布局**：地址栏采用 Safari 标志性的居中圆角胶囊造型，自适应屏幕宽度（最大 680px），与左侧导航组及右侧操作组形成视觉对称平衡。
+  * **胶囊内嵌式刷新/停止按钮**：刷新按钮 `↻` 直接内嵌在地址栏右侧；网页加载时自动变为 `✕`（停止加载），加载完毕还原为 `↻`。
   * **隐私与连接安全指示**：胶囊左侧常驻 SSL 安全锁标 `🔒`；聚焦输入时呈现 Apple Blue 灵动聚焦光环（`#0A84FF`）。
   * **输入体验优化**：原生单行无边框输入框与胶囊融为一体，背景无缝融合，提供 Safari 经典提示语“搜索或输入网站名称”，并支持一键全选、Esc 恢复原始网址。
-* **苹果风格微交互与 Ghost 按钮 (Safari Micro-interactions)**：
+* **苹果风格微交互与 Ghost 按钮 (macOS Ghost Buttons)**：
+  * **侧边栏按钮 `[ ▥ ]` 与新建标签 `[ + ]`**：还原 macOS Safari 侧边栏折叠按钮及极简加号新建页按钮。
   * **消除 Win32 生硬边框**：告别传统按钮灰色阴影，默认状态呈现通透极简的幽灵按钮（Ghost Style）。
-  * **柔和圆角悬停感应**：集成 `TrackMouseEvent` 状态机，鼠标滑过时呈现丝滑圆角柔光背景（`#323238`），按压时呈现下凹反馈（`#44444A`），文字与图标平滑变亮。
-  * **极简排版与精致字形**：集成 Segoe UI Variable / Apple SF Pro 风格微字号与精细字重，后退/前进采用纤细优雅的 Chevron 符号（`‹` 与 `›`）。
+  * **柔和圆角悬停感应**：集成 `TrackMouseEvent` 状态机，鼠标滑过时呈现丝滑圆角柔光背景（`#343439`），按压时呈现下凹反馈（`#424248`），文字与图标平滑变亮。
+  * **极简排版与精致字形**：后退/前进采用纤细优雅的 Apple SF 风格 Chevron 符号（`‹` 与 `›`）。
 * **Safari 分享与多维流转 (Safari Share & Actions)**：
   * 右侧工具栏新增专用 Safari 向上分享按钮 `[ ↥ ]`。
   * 支持一键拷贝当前网页 URL 到系统剪贴板。
   * 支持将当前网页一键移交（Handoff）到系统默认浏览器打开。
   * 整合一键全景沉浸视图（F9）与全屏视图（F11）。
-* **Windows 11 Mica / Acrylic 沉浸与 DWM 圆角**：
-  * 深度启用 `DWMWA_USE_IMMERSIVE_DARK_MODE` 与 `DWMWA_WINDOW_CORNER_PREFERENCE`。
-  * 顶部工具栏与网页视图之间具有极细 1px 微分界线（`#303034`），层次分明，通透轻盈。
 
 ---
 
 ## 🛡️ 架构精简与纯粹性 (Zero-Bloat Architecture)
 
-在 v1.4.0 Safari Edition 中，浏览器全面移除了冗余的 Chrome 扩展加载模块，回归纯粹极速的极简 Native 壳体验：
+在 v1.4.1 macOS Safari UI Edition 中，浏览器全面移除了冗余的 Chrome 扩展加载模块，回归纯粹极速的极简 Native 壳体验：
 * **零内存开销 (Zero Runtime Overhead)**：移除了 Chromium 扩展运行时（Background Worker、Content Script 注入流水线、Extension IPC），每标签页减少 50MB+ 内存占用，启动再提速 25%。
 * **零沙箱逃逸与零第三方挂载隐患**：彻底消除外部未验证 JS 扩展在浏览器内驻留窃取数据或破坏 DOM 的安全风险。
 * **极速无痕数据粉碎**：退出时执行全面、彻底的浏览数据粉碎（`ClearBrowsingDataAll`），不留任何冗余解压目录或持久化扩展配置。

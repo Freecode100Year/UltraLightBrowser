@@ -16,7 +16,9 @@ enum ControlID : WORD {
     IDC_BTN_DNS         = 1005,
     IDC_BTN_ZOOM        = 1006,
     IDC_BTN_BLOCKER     = 1007,
-    IDC_BTN_SHARE       = 1008
+    IDC_BTN_SHARE       = 1008,
+    IDC_BTN_SIDEBAR     = 1009,
+    IDC_BTN_NEWTAB      = 1010
 };
 
 enum AppCommandID : WORD {
@@ -75,14 +77,26 @@ private:
     UINT m_dpi = 96;
 
     // Controls
+    HWND m_hBtnSidebar = nullptr;
     HWND m_hBtnBack = nullptr;
     HWND m_hBtnForward = nullptr;
-    HWND m_hBtnReload = nullptr;
     HWND m_hEditAddress = nullptr;
+    HWND m_hBtnReload = nullptr;
     HWND m_hBtnShare = nullptr;
+    HWND m_hBtnBlocker = nullptr;
     HWND m_hBtnDns = nullptr;
     HWND m_hBtnZoom = nullptr;
-    HWND m_hBtnBlocker = nullptr;
+    HWND m_hBtnNewTab = nullptr;
+
+    // macOS Traffic Lights
+    RECT m_rcTrafficClose{};
+    RECT m_rcTrafficMin{};
+    RECT m_rcTrafficMax{};
+    RECT m_rcTrafficGroup{};
+    int m_trafficHoveredBtn = 0; // 0: none, 1: close, 2: min, 3: max
+    int m_trafficPressedBtn = 0;
+    bool m_isTrafficGroupHovered = false;
+    bool m_isWindowActive = true;
 
     // Safari Styling Resources
     HFONT m_hUiFont = nullptr;
@@ -96,7 +110,8 @@ private:
 
     RECT m_rcAddressCapsule{};
     bool m_isAddressFocused = false;
-    int m_topbarHeight = 48;
+    bool m_isLoading = false;
+    int m_topbarHeight = 52;
 
     bool m_isFullScreen = false;
     bool m_isImmersiveMode = false;
