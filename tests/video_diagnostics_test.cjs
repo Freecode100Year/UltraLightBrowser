@@ -3,7 +3,7 @@ const path=require('path');
 const source=fs.readFileSync(path.join(__dirname,'../src/VideoDiagnostics.hpp'),'utf8').match(/LR"video\(([\s\S]*?)\)video"/)[1];
 let now=0,total=100,dropped=2;
 const video={videoWidth:3840,videoHeight:2160,paused:false,seeking:false,currentTime:5,currentSrc:'movie',playbackRate:1,readyState:4,buffered:{length:1,start:()=>0,end:()=>30},getVideoPlaybackQuality:()=>({totalVideoFrames:total,droppedVideoFrames:dropped})};
-const ctx={window:{},document:{querySelectorAll:()=>[video]},performance:{now:()=>now},WeakMap};
+const ctx={window:{},Object,document:{querySelectorAll:()=>[video]},performance:{now:()=>now},WeakMap};
 function run(){return vm.runInNewContext(source,ctx);}
 assert(run().includes('再次打开'));
 now=10000;total=700;dropped=8;video.currentTime=15;

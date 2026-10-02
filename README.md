@@ -63,7 +63,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 **音频**
 - 默认原声输出：不接管网页音频，可配合 Windows 空间音效 / Dolby Access 使用
 - 可选浏览器音频增强：对白、轻柔、标准、影院四种模式；人声增强、齿音抑制、夜间模式、单声道合并、音量放大（最高 300%）
-- 播放诊断：显示增强状态、视频分辨率与丢帧统计
+- 播放诊断：显示音频增强状态、视频分辨率、缓冲余量；两次采样之间的区间丢帧率与显示帧/秒
 
 **节能**
 - 最小化时隐藏并挂起网页、降低内存目标、启用 Windows EcoQoS
@@ -154,7 +154,8 @@ tests/                       节能、窗口几何、音频、UA 回归测试
 
 ## 最近更新
 
-- **v1.6.9**：修复上次选择 macOS Edge 后再次启动闪退的问题；macOS 模式不再暴露 WebView2 品牌项。
+- **v1.6.9**：分享菜单新增“关于”（可点击项目链接）；播放诊断增加区间丢帧率、显示帧/秒与缓冲余量，附 [2160p 播放审计](docs/2160p-playback-audit.md)。
+- **v1.6.8**：修复上次选择 macOS Edge 后再次启动闪退的问题；macOS 模式不再暴露 WebView2 品牌项。
 - **v1.6.7**：macOS 伪装覆盖 Service Worker 并隐藏 SharedWorker；新增标识自检页；系统版本号可配置。
 - **v1.6.6**：macOS Edge 伪装改为内核层统一改写（请求头、Client Hints、WebGL、iframe、Worker）。
 
@@ -164,8 +165,3 @@ tests/                       节能、窗口几何、音频、UA 回归测试
 
 [MIT](LICENSE)。Dolby、Dolby Atmos 为其权利人的商标。
 
-## 1.6.9：关于与视频诊断
-
-分享菜单 → 关于 UltraLightBrowser，查看并打开项目 GitHub 链接。
-播放诊断增加区间丢帧率、平均显示帧/秒与缓冲余量；连续播放约 30 秒后再次打开查看。
-[2160p 播放审计](docs/2160p-playback-audit.md) 包含代码发现、风险和 Windows 实测步骤。当前尚无真实 2160p 实测结论。

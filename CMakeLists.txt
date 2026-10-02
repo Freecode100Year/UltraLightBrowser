@@ -18,6 +18,7 @@ add_compile_definitions(
     NOMINMAX
     _WIN32_WINNT=0x0A00 # Target Windows 10/11
     WINVER=0x0A00
+    "ULB_VERSION=\"${PROJECT_VERSION}\""
 )
 
 # Compiler & Linker optimizations for MSVC

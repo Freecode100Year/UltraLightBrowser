@@ -9,7 +9,7 @@
 | 代码路径 | 发现 | 对播放的意义 |
 |---|---|---|
 | WebViewManager 初始化 | 前台 NORMAL 内存预算；hardwareAcceleration=false 添加 --disable-gpu | 未发现前台主动降低预算；关闭 GPU 可能影响硬解，应在实机记录 |
-| MainWindow WM_ACTIVATE / WM_TIMER + PowerManager | 失焦 300000ms 后，仅按 IsDocumentPlayingAudio 判断保护；无音频时隐藏、启用 EcoQoS、LOW 预算并尝试挂起 | 可见但失焦的静音视频也会走节能路径，不是单纯解码慢；挂起可能被引擎拒绝，但隐藏/低预算仍已发生 |
+| MainWindow WM_ACTIVATE / WM_TIMER + PowerManager | 失焦 300000ms 后检查 `IsIconic`：只有最小化的窗口才会按 IsDocumentPlayingAudio 进入隐藏、EcoQoS、LOW 预算与挂起；可见但失焦的窗口不受影响 | 前台或副屏播放（含静音视频）不会被节能路径影响；最小化静音视频会被挂起，属预期 |
 | PowerManager 恢复 | 恢复可见、NORMAL 内存预算，并解除子进程 EcoQoS | 回归测试通过；不代表恢复时零丢帧 |
 | 音频路由 | 默认原声不创建 AudioContext；增强才分频、压缩、HRTF/混响 | 默认无这部分 DSP 负担；增强开销需测，不能据源码给出 CPU 百分比 |
 | NativeRequestFilter | 未注册 MEDIA 类型；注册 FETCH/XHR/OTHER 等并同步检查域名/路径 | 没有直接重写视频帧；MSE 分片仍可能走 fetch/XHR，请求拦截需按站点做开关对照 |
@@ -36,7 +36,7 @@
 2. 等初始缓冲稳定后打开一次播放诊断；关闭对话框，连续播放 30 秒，再开一次。重复 3 次；记录实际区间时长（含对话框关闭耗时）。
 3. 在 YouTube 使用“详细统计信息”记录 codec、dropped frames、buffer health；通过 Edge/WebView2 调试工具或任务管理器的 GPU Video Decode 核实硬解。GPU 利用率低不等于硬解失败。
 4. 与相同 Runtime 主版本的 Edge，用同素材/编码/清晰度/网络做对照。再分别测试关闭拦截、开启音频增强、macOS UA、F11 全屏，每次只改变一项。
-5. 失焦但窗口可见超过五分钟，分别测试有声与静音。静音进入节能是已确认策略；不得误记成正常前台解码卡顿。
+5. 最小化超过五分钟，分别测试有声与静音：有声应持续播放，静音会被挂起（预期）。可见但失焦的窗口不应受影响。
 6. 最小化/恢复后重新建立基线；不要把切换清晰度、seek 或暂停计入稳定播放区间。
 
 判读：持续增加的丢帧是解码/呈现压力的线索；缓冲耗尽更偏网络/供片问题，但快照不能单独确定根因。

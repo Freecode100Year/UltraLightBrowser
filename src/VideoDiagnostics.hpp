@@ -6,9 +6,14 @@ inline constexpr const wchar_t* kVideoDiagnosticsScript = LR"video((() => {
     const lines = [];
     if (api && api.getStatus) {
         const status = api.getStatus();
-        lines.push('音频输出：' + status.output + '，处理上下文：' + status.audioContext);
+        lines.push('音频输出：' + (status.output === 'native' ? '原声 / 系统处理' : '浏览器增强') +
+            '，处理上下文：' + (status.audioContext === 'not-created' ? '未创建' : status.audioContext));
     }
-    const samples = window.__UltraLightVideoSamples || (window.__UltraLightVideoSamples = new WeakMap());
+    // Non-enumerable so the sample store does not show up in page global scans.
+    if (!window.__UltraLightVideoSamples) {
+        Object.defineProperty(window, '__UltraLightVideoSamples', {value: new WeakMap()});
+    }
+    const samples = window.__UltraLightVideoSamples;
     const now = performance.now();
     const videos = Array.from(document.querySelectorAll('video'));
     if (!videos.length) lines.push('当前主文档未发现视频。');

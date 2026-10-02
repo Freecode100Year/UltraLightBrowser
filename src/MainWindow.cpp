@@ -23,6 +23,11 @@
 #define DWMWA_SYSTEMBACKDROP_TYPE 38
 #endif
 
+#ifndef ULB_VERSION
+#define ULB_VERSION "dev"
+#endif
+#define ULB_VERSION_STRING L"" ULB_VERSION
+
 namespace UltraLight {
 
 static const int kPresetZoomPercentages[] = {
@@ -1738,7 +1743,7 @@ void MainWindow::ShowAboutDialog() {
     dialog.dwFlags = TDF_ENABLE_HYPERLINKS | TDF_ALLOW_DIALOG_CANCELLATION;
     dialog.dwCommonButtons = TDCBF_CLOSE_BUTTON;
     dialog.pszWindowTitle = L"关于 UltraLightBrowser";
-    dialog.pszMainInstruction = L"UltraLightBrowser 1.6.9";
+    dialog.pszMainInstruction = L"UltraLightBrowser " ULB_VERSION_STRING;
     dialog.pszContent = L"Windows 原生浏览器 · Microsoft Edge WebView2\n\n项目源码与问题反馈：\n<a href=\"https://github.com/Freecode100Year/UltraLightBrowser\">https://github.com/Freecode100Year/UltraLightBrowser</a>";
     dialog.pfCallback = [](HWND owner, UINT notification, WPARAM, LPARAM link, LONG_PTR) -> HRESULT {
         if (notification == TDN_HYPERLINK_CLICKED && link &&
@@ -1748,7 +1753,7 @@ void MainWindow::ShowAboutDialog() {
         return S_OK;
     };
     if (FAILED(TaskDialogIndirect(&dialog, nullptr, nullptr, nullptr))) {
-        MessageBoxW(m_hWnd, L"UltraLightBrowser 1.6.9\n项目：https://github.com/Freecode100Year/UltraLightBrowser", L"关于", MB_OK);
+        MessageBoxW(m_hWnd, L"UltraLightBrowser " ULB_VERSION_STRING L"\n项目：https://github.com/Freecode100Year/UltraLightBrowser", L"关于", MB_OK);
     }
 }
 
