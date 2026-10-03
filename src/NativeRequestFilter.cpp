@@ -295,13 +295,9 @@ bool NativeRequestFilter::ShouldBlock(const std::wstring& uri) {
     return false;
 }
 
-void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment, bool isPrivate) {
+void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment) {
     if (!webView || !environment) return;
     m_environment = environment;
-    {
-        std::lock_guard<std::mutex> lock(m_navMutex);
-        m_nav[webView].isPrivate = isPrivate;
-    }
 
     // Only requests that can possibly be blocked are routed to the browser: every
     // intercepted request costs a round trip to the UI thread, so a catch-all "*"
@@ -381,13 +377,6 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, I
         if (SUCCEEDED(hr) && response) {
             args->put_Response(response.get());
             m_blockedCount.fetch_add(1);
-            bool isPrivate = false;
-            {
-                std::lock_guard<std::mutex> lock(m_navMutex);
-                const auto it = m_nav.find(sender);
-                isPrivate = it != m_nav.end() && it->second.isPrivate;
-            }
-            if (!isPrivate && m_onBlocked) m_onBlocked(reqHost, topHost);
         }
     }
 

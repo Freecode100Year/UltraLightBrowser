@@ -292,36 +292,15 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
     try {
         if (cmd == "getStart") {
             json favorites = json::array();
-            std::set<std::string> favHosts;
-            for (const auto& b : lib.BookmarksIn(kFavoritesFolder)) {
-                favorites.push_back(BookmarkJson(b));
-                favHosts.insert(Library::HostOf(b.url));
-            }
-            json frequent = json::array();
-            if (!m_private) {
-                for (const auto& h : lib.TopSites(16)) {
-                    if (favHosts.count(Library::HostOf(h.url))) continue;
-                    frequent.push_back({{"title", h.title.empty() ? Library::HostOf(h.url) : h.title}, {"url", h.url}});
-                    if (frequent.size() >= 8) break;
-                }
-            }
-            std::vector<std::string> days;
-            for (int i = 6; i >= 0; --i) days.push_back(AppShell::DayKey(i));
-            const auto report = lib.Report(days, 1000);
-            json top = json::array();
-            for (size_t i = 0; i < report.trackers.size() && i < 3; ++i) top.push_back({{"name", report.trackers[i].name}, {"count", report.trackers[i].count}});
+            for (const auto& b : lib.BookmarksIn(kFavoritesFolder)) favorites.push_back(BookmarkJson(b));
             json reading = json::array();
             for (const auto& r : lib.ReadingList()) {
                 if (r.read) continue;
                 reading.push_back({{"id", r.id}, {"title", r.title}, {"url", r.url}});
                 if (reading.size() >= 3) break;
             }
-            result = {{"favorites", favorites}, {"frequent", frequent},
-                      {"privacy", {{"total", report.total}, {"siteCount", report.sites.size()},
-                                   {"adblock", NativeRequestFilter::Instance().IsEnabled()}, {"top", top}}},
-                      {"reading", reading},
-                      {"show", {{"favorites", settings.startShowFavorites}, {"frequent", settings.startShowFrequent},
-                                {"privacy", settings.startShowPrivacy}, {"reading", settings.startShowReading}}},
+            result = {{"favorites", favorites}, {"reading", reading},
+                      {"show", {{"favorites", settings.startShowFavorites}, {"reading", settings.startShowReading}}},
                       {"background", settings.startBackground}};
         } else if (cmd == "getHistory") {
             const std::string q = Arg(args, "q");
@@ -380,7 +359,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
             ofn.lpstrFile = file;
             ofn.nMaxFile = MAX_PATH;
             ofn.lpstrTitle = L"导入书签（Chrome / Edge / Firefox / Safari 导出的 HTML）";
-            ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+            ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_DONTADDTORECENT;
             int count = -1;
             if (GetOpenFileNameW(&ofn)) {
                 std::ifstream in(file, std::ios::binary);
@@ -400,7 +379,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
             ofn.lpstrFile = file;
             ofn.nMaxFile = MAX_PATH;
             ofn.lpstrDefExt = L"html";
-            ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+            ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_DONTADDTORECENT;
             bool saved = false;
             if (GetSaveFileNameW(&ofn)) {
                 std::ofstream out(file, std::ios::binary | std::ios::trunc);
@@ -414,28 +393,12 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
         } else if (cmd == "markRead") {
             result = lib.SetRead(Arg(args, "id"), args.value("read", true));
             libraryChanged = true;
-        } else if (cmd == "getPrivacy") {
-            std::vector<std::string> days;
-            for (int i = 6; i >= 0; --i) days.push_back(AppShell::DayKey(i));
-            const auto report = lib.Report(days, 1000);
-            json perDay = json::array();
-            for (const auto& [day, n] : report.perDay) perDay.push_back(json::array({day, n}));
-            json trackers = json::array(), sites = json::array();
-            for (size_t i = 0; i < report.trackers.size() && i < 12; ++i) trackers.push_back({{"name", report.trackers[i].name}, {"count", report.trackers[i].count}});
-            for (size_t i = 0; i < report.sites.size() && i < 12; ++i) sites.push_back({{"name", report.sites[i].name}, {"count", report.sites[i].count}});
-            result = {{"total", report.total}, {"siteCount", report.sites.size()}, {"adblock", NativeRequestFilter::Instance().IsEnabled()},
-                      {"perDay", perDay}, {"trackers", trackers}, {"sites", sites}};
-        } else if (cmd == "clearPrivacy") {
-            lib.ClearPrivacy();
-            libraryChanged = true;
-            result = true;
         } else if (cmd == "getSettings") {
             result = {{"startupPage", settings.startupPage}, {"newTabPage", settings.newTabPage}, {"homeUrl", U8(settings.startUrl)},
                       {"searchEngine", settings.searchEngine}, {"tabSuspendMinutes", settings.tabSuspendMinutes},
-                      {"startShowFavorites", settings.startShowFavorites}, {"startShowFrequent", settings.startShowFrequent},
-                      {"startShowPrivacy", settings.startShowPrivacy}, {"startShowReading", settings.startShowReading},
+                      {"startShowFavorites", settings.startShowFavorites}, {"startShowReading", settings.startShowReading},
                       {"startBackground", settings.startBackground}, {"saveHistory", settings.saveHistory},
-                      {"clearHistoryOnExit", settings.clearHistoryOnExit}, {"keepCache", settings.keepCache}, {"enableAdBlock", NativeRequestFilter::Instance().IsEnabled()},
+                      {"enableAdBlock", NativeRequestFilter::Instance().IsEnabled()},
                       {"readerTheme", settings.readerTheme}, {"readerFont", settings.readerFont}, {"readerFontSize", settings.readerFontSize},
                       {"hardwareAcceleration", settings.hardwareAcceleration}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
         } else if (cmd == "setSetting") {
@@ -451,7 +414,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                 if (!value.is_boolean()) throw std::runtime_error("invalid value");
                 return value.get<bool>();
             };
-            if (key == "startupPage") settings.startupPage = str({"start", "home", "restore"});
+            if (key == "startupPage") settings.startupPage = str({"start", "home"});
             else if (key == "newTabPage") settings.newTabPage = str({"start", "blank", "home"});
             else if (key == "searchEngine") settings.searchEngine = str({"google", "bing", "duckduckgo", "startpage", "baidu"});
             else if (key == "homeUrl") {
@@ -463,13 +426,9 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                 if (!value.is_number_integer()) throw std::runtime_error("invalid value");
                 settings.tabSuspendMinutes = std::clamp(value.get<int>(), 0, 240);
             } else if (key == "startShowFavorites") settings.startShowFavorites = boolean();
-            else if (key == "startShowFrequent") settings.startShowFrequent = boolean();
-            else if (key == "startShowPrivacy") settings.startShowPrivacy = boolean();
             else if (key == "startShowReading") settings.startShowReading = boolean();
             else if (key == "startBackground") settings.startBackground = str({"aurora", "ocean", "sunset", "plain"});
             else if (key == "saveHistory") settings.saveHistory = boolean();
-            else if (key == "clearHistoryOnExit") settings.clearHistoryOnExit = boolean();
-            else if (key == "keepCache") settings.keepCache = boolean();
             else if (key == "enableAdBlock") NativeRequestFilter::Instance().SetEnabled(boolean());
             else if (key == "readerTheme") settings.readerTheme = str({"light", "sepia", "gray", "dark"});
             else if (key == "readerFont") settings.readerFont = str({"serif", "sans"});

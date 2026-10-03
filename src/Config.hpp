@@ -29,16 +29,12 @@ struct AppSettings {
     bool enableMonoDownmix = false;
 
     // Browser (v2.0)
-    std::string startupPage = "start";          // start / home / restore
+    std::string startupPage = "start";          // start / home
     std::string newTabPage = "start";           // start / blank / home
     std::string searchEngine = "google";        // google / bing / duckduckgo / startpage / baidu
     bool saveHistory = true;
-    bool clearHistoryOnExit = false;
-    bool keepCache = true;                      // keep the HTTP cache between sessions (cookies/storage still cleared)
     int tabSuspendMinutes = 10;                 // 0 = never
     bool startShowFavorites = true;
-    bool startShowFrequent = true;
-    bool startShowPrivacy = true;
     bool startShowReading = true;
     std::string startBackground = "aurora";     // aurora / ocean / sunset / plain
     std::string readerTheme = "sepia";          // light / sepia / gray / dark

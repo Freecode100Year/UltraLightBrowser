@@ -323,7 +323,7 @@ void WebViewManager::OnControllerCreated(ICoreWebView2Controller* controller) {
 
     // Initialize modules
     ElementBlocker::Instance().Initialize(m_webView.get());
-    NativeRequestFilter::Instance().Initialize(m_webView.get(), m_environment.get(), m_inPrivate);
+    NativeRequestFilter::Instance().Initialize(m_webView.get(), m_environment.get());
     InjectSurroundSoundScript();
 
     // Apply QoS optimizations
@@ -403,13 +403,8 @@ void WebViewManager::ClearProfileData(ICoreWebView2* webView) {
             SetEvent(hEvent);
             return S_OK;
         });
-    // Cookies, storage, service workers, history... always go; the HTTP cache may
-    // stay so revisited sites load from disk (Chromium partitions it per top site).
-    const bool keepCache = Config::Instance().GetSettings().keepCache;
-    int kindBits = static_cast<int>(COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE);
-    if (keepCache) kindBits &= ~static_cast<int>(COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE);
-    const auto kinds = static_cast<COREWEBVIEW2_BROWSING_DATA_KINDS>(kindBits);
-    if (SUCCEEDED(profile2->ClearBrowsingData(kinds, clearCb.Get()))) {
+    // Cookies, storage, cache, history, downloads list... everything in the profile.
+    if (SUCCEEDED(profile2->ClearBrowsingData(COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE, clearCb.Get()))) {
         const ULONGLONG start = GetTickCount64();
         while (WaitForSingleObject(hEvent, 10) != WAIT_OBJECT_0 && (GetTickCount64() - start) < 500) {
             MSG msg;
@@ -1226,115 +1221,50 @@ void WebViewManager::SetZoomFactor(double factor) {
     }
 }
 
-namespace {
-
-// Deletes every entry of `dir` whose name is not in `keep`; returns the kept ones.
-void RemoveAllExcept(const std::filesystem::path& dir, std::initializer_list<const wchar_t*> keep) {
-    std::error_code ec;
-    if (!std::filesystem::is_directory(dir, ec)) return;
-    std::vector<std::filesystem::path> doomed;
-    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-        const std::wstring name = entry.path().filename().wstring();
-        bool kept = false;
-        for (const wchar_t* k : keep) {
-            if (_wcsicmp(name.c_str(), k) == 0) { kept = true; break; }
-        }
-        if (!kept) doomed.push_back(entry.path());
-    }
-    for (const auto& path : doomed) {
-        for (int retry = 0; retry < 3; ++retry) {
-            std::filesystem::remove_all(path, ec);
-            if (!std::filesystem::exists(path, ec)) break;
-            Sleep(30);
-        }
-    }
-}
-
-} // namespace
-
 void WebViewManager::PurgeAllCacheAndTempFiles() {
-    std::filesystem::path userDataDir = Config::Instance().GetUserDataDirectory();
+    // Everything the browser engine writes goes: cookies, site storage, HTTP / code /
+    // GPU caches, history, the downloads list, autofill, crash reports, logs. This also
+    // runs at startup, so traces left by a crash or a forced kill are removed too.
+    // Only the encryption key and the encrypted-DNS choice from Local State are kept;
+    // without os_crypt WebView2 fails to start (0x8007139F) on some machines.
+    const std::filesystem::path userDataDir = Config::Instance().GetUserDataDirectory();
+    const std::filesystem::path appDataDir = Config::Instance().GetAppDataPath();
+    const std::filesystem::path localStatePath = userDataDir / "EBWebView" / "Local State";
     std::error_code ec;
 
-    if (Config::Instance().GetSettings().keepCache && std::filesystem::exists(userDataDir / "EBWebView" / "Local State", ec)) {
-        // Keep only Local State and the HTTP / code / GPU caches; cookies, storage,
-        // preferences and everything else are removed (also after a crash).
-        RemoveAllExcept(userDataDir, {L"EBWebView"});
-        RemoveAllExcept(userDataDir / "EBWebView", {L"Local State", L"Default", L"GrShaderCache", L"ShaderCache", L"GraphiteDawnCache"});
-        RemoveAllExcept(userDataDir / "EBWebView" / "Default", {L"Cache", L"Code Cache", L"GPUCache", L"DawnCache",
-                                                                 L"DawnGraphiteCache", L"DawnWebGPUCache"});
-        SanitizeLocalState(userDataDir);
-        const std::filesystem::path appDataDir = Config::Instance().GetAppDataPath();
-        std::filesystem::remove_all(appDataDir / "EBWebView", ec);
-        return;
-    }
-
-    if (std::filesystem::exists(userDataDir, ec)) {
-        std::filesystem::path ebWebViewDir = userDataDir / "EBWebView";
-        std::filesystem::path localStatePath = ebWebViewDir / "Local State";
-
-        bool hasValidLocalState = false;
-        std::string localStateContent;
-        if (std::filesystem::exists(localStatePath, ec)) {
-            try {
-                auto sz = std::filesystem::file_size(localStatePath, ec);
-                if (!ec && sz > 200) {
-                    std::ifstream inFile(localStatePath);
-                    if (inFile.is_open()) {
-                        std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
-                        if (content.find("\"os_crypt\"") != std::string::npos) {
+    std::string minimalLocalState;
 #if __has_include(<nlohmann/json.hpp>)
-                            if (json::accept(content)) {
-                                hasValidLocalState = true;
-                                localStateContent = std::move(content);
-                            }
-#else
-                            hasValidLocalState = true;
-                            localStateContent = std::move(content);
+    try {
+        std::ifstream in(localStatePath, std::ios::binary);
+        if (in.is_open()) {
+            const json root = json::parse(in, nullptr, false);
+            if (root.is_object() && root.contains("os_crypt")) {
+                json minimal = json::object();
+                minimal["os_crypt"] = root["os_crypt"];
+                if (root.contains("dns_over_https")) minimal["dns_over_https"] = root["dns_over_https"];
+                minimalLocalState = minimal.dump();
+            }
+        }
+    } catch (...) {
+        minimalLocalState.clear();
+    }
 #endif
-                        }
-                    }
-                }
-            } catch (...) {
-                hasValidLocalState = false;
-            }
-        }
 
-        for (int retry = 0; retry < 5; ++retry) {
-            std::filesystem::remove_all(userDataDir, ec);
-            if (!std::filesystem::exists(userDataDir, ec)) {
-                break;
-            }
-            Sleep(50);
+    auto removeTree = [&ec](const std::filesystem::path& path) {
+        for (int retry = 0; retry < 5 && std::filesystem::exists(path, ec); ++retry) {
+            std::filesystem::remove_all(path, ec);
+            if (std::filesystem::exists(path, ec)) Sleep(60);
         }
+    };
+    removeTree(userDataDir);
+    removeTree(appDataDir / "EBWebView");
+    removeTree(appDataDir / "UserData_Safe");
+    removeTree(appDataDir / "selftest");
 
-        // Restore healthy Local State so encryption keys and DoH settings survive cleanup
-        if (hasValidLocalState && !localStateContent.empty()) {
-            try {
-                std::filesystem::create_directories(ebWebViewDir, ec);
-                std::ofstream outFile(localStatePath);
-                if (outFile.is_open()) {
-                    outFile << localStateContent;
-                }
-            } catch (...) {}
-        }
-    }
-
-    std::filesystem::path appDataDir = Config::Instance().GetAppDataPath();
-    std::filesystem::path ebWebViewDir = appDataDir / "EBWebView";
-    if (std::filesystem::exists(ebWebViewDir, ec)) {
-        for (int retry = 0; retry < 5; ++retry) {
-            std::filesystem::remove_all(ebWebViewDir, ec);
-            if (!std::filesystem::exists(ebWebViewDir, ec)) {
-                break;
-            }
-            Sleep(50);
-        }
-    }
-
-    std::filesystem::path safeUserDataDir = appDataDir / "UserData_Safe";
-    if (std::filesystem::exists(safeUserDataDir, ec)) {
-        SanitizeLocalState(safeUserDataDir);
+    if (!minimalLocalState.empty()) {
+        std::filesystem::create_directories(localStatePath.parent_path(), ec);
+        std::ofstream out(localStatePath, std::ios::binary | std::ios::trunc);
+        out << minimalLocalState;
     }
 }
 

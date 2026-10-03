@@ -32,9 +32,10 @@ int WINAPI wWinMain(
     icex.dwICC = ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES | ICC_LISTVIEW_CLASSES;
     InitCommonControlsEx(&icex);
 
-    // 4. Initialize Configuration, purge any residual cache/temp files, and apply Public DNS
+    // 4. Initialize Configuration, remove anything a crash or forced kill left behind
+    // (unless another copy is running on the same profile), and apply Public DNS
     UltraLight::Config::Instance();
-    UltraLight::WebViewManager::PurgeAllCacheAndTempFiles();
+    if (!UltraLight::AppShell::AnotherInstanceRunning()) UltraLight::WebViewManager::PurgeAllCacheAndTempFiles();
     UltraLight::DnsManager::Instance().ApplySettings();
 
     // 5. Disable EcoQoS on Host Process for maximum responsiveness

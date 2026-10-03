@@ -33,8 +33,6 @@ constexpr UiFile kUiFiles[] = {
     {3009, "bookmarks.js"},
     {3010, "settings.html"},
     {3011, "settings.js"},
-    {3012, "privacy.html"},
-    {3013, "privacy.js"},
     {3014, "overview.html"},
     {3015, "overview.js"},
     {3016, "sidebar.html"},

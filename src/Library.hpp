@@ -1,8 +1,10 @@
 #pragma once
 
-// User library: bookmarks, reading list, history, tab groups, per-site settings,
-// privacy statistics and the saved session. Plain C++ and UTF-8 strings only so it
-// can be unit-tested off Windows; callers supply timestamps and day keys.
+// User library: bookmarks, reading list, history, tab groups and per-site settings.
+// Only bookmarks, the reading list and tab groups are written to disk; history and
+// site settings exist for the running session only, so closing the browser leaves no
+// record of visited sites. Plain C++ and UTF-8 strings only so it can be unit-tested
+// off Windows; callers supply timestamps.
 
 #include <cstdint>
 #include <filesystem>
@@ -68,31 +70,18 @@ struct Suggestion {
     bool bookmark = false;
 };
 
-struct PrivacyCount {
-    std::string name;
-    std::int64_t count = 0;
-};
-
-struct PrivacyReport {
-    std::int64_t total = 0;
-    std::vector<std::pair<std::string, std::int64_t>> perDay;  // oldest first
-    std::vector<PrivacyCount> trackers;                         // most blocked first
-    std::vector<PrivacyCount> sites;                            // sites with most blocked trackers
-};
-
 class Library {
 public:
     explicit Library(std::filesystem::path directory);
 
     void Load();
-    // Writes changed stores; history and privacy are batched, so call this from a
-    // periodic timer and once more on exit.
+    // Writes the library file when bookmarks, reading list or tab groups changed.
     void Save();
     // Serializes changed stores and clears their dirty flags; the caller may write
     // the files on another thread with WriteFileAtomic.
     std::vector<std::pair<std::filesystem::path, std::string>> TakeSnapshot();
     static void WriteFileAtomic(const std::filesystem::path& path, const std::string& data);
-    bool IsDirty() const { return m_dirtyLibrary || m_dirtyHistory || m_dirtyPrivacy || m_dirtySession; }
+    bool IsDirty() const { return m_dirtyLibrary; }
 
     // Bookmarks
     const std::vector<std::string>& Folders() const { return m_folders; }
@@ -120,7 +109,6 @@ public:
     void RecordVisit(const std::string& url, const std::string& title, std::int64_t now);
     void UpdateTitle(const std::string& url, const std::string& title);
     std::vector<HistoryEntry> QueryHistory(const std::string& query, std::size_t limit) const;
-    std::vector<HistoryEntry> TopSites(std::size_t limit) const;
     bool RemoveHistory(const std::string& url);
     void ClearHistory(std::int64_t since);  // removes visits at or after `since` (0 = all)
     std::size_t HistorySize() const { return m_history.size(); }
@@ -142,26 +130,13 @@ public:
     void ClearSites();
     std::size_t SiteCount() const { return m_sites.size(); }
 
-    // Privacy statistics (dayKey = local "YYYY-MM-DD")
-    void RecordBlocked(const std::string& trackerDomain, const std::string& siteHost, const std::string& dayKey);
-    PrivacyReport Report(const std::vector<std::string>& dayKeys, std::size_t topN) const;
-    void ClearPrivacy();
-
-    // Session restore (normal windows only)
-    void SetSession(const std::vector<std::vector<SavedTab>>& windows);
-    const std::vector<std::vector<SavedTab>>& Session() const { return m_session; }
-
     static std::string HostOf(const std::string& url);
     static bool IsWebUrl(const std::string& url);
 
 private:
     std::string NewId(std::int64_t now);
     void PruneHistory();
-    void PrunePrivacy();
     void LoadLibraryFile();
-    void LoadHistoryFile();
-    void LoadPrivacyFile();
-    void LoadSessionFile();
 
     std::filesystem::path m_dir;
     std::vector<std::string> m_folders;
@@ -171,16 +146,9 @@ private:
     std::map<std::string, SiteSettings> m_sites;
     std::vector<HistoryEntry> m_history;
     std::map<std::string, std::size_t> m_historyIndex;
-    // day -> (tracker -> count), day -> (site -> count)
-    std::map<std::string, std::map<std::string, std::int64_t>> m_trackersByDay;
-    std::map<std::string, std::map<std::string, std::int64_t>> m_sitesByDay;
-    std::vector<std::vector<SavedTab>> m_session;
     std::uint64_t m_idCounter = 0;
 
     bool m_dirtyLibrary = false;
-    bool m_dirtyHistory = false;
-    bool m_dirtyPrivacy = false;
-    bool m_dirtySession = false;
 };
 
 } // namespace UltraLight

@@ -71,7 +71,6 @@ enum AppCommandID : WORD {
     IDM_FIND_NEXT           = 2217,
     IDM_FIND_PREV           = 2218,
     IDM_FIND_CLOSE          = 2219,
-    IDM_PRIVACY_REPORT      = 2220,
     IDM_SETTINGS            = 2221,
     IDM_SIDEBAR             = 2222,
     IDM_OVERVIEW            = 2223,

@@ -92,7 +92,7 @@ Keys "^+\" 3000; Shot "09-overview"; Keys "{ESC}" 1000
 Keys "^h" 3000; Shot "10-history"
 Keys "^d" 1500; Keys "^+b" 3000; Shot "11-bookmarks"
 Keys "^," 3000; Shot "12-settings"
-Keys "^l" 500; Keys "ulb.internal/privacy.html{ENTER}" 3000; Shot "13-privacy-blocked-from-address?"
+Keys "^l" 500; Keys "ulb.internal/settings.html{ENTER}" 3000; Shot "13-settings-from-address"
 Keys "^t" 2500; Shot "14-new-start"
 Keys "^+n" 6000; Shot "15-private"
 Keys "^+w" 2500
@@ -103,7 +103,12 @@ Keys "^w" 1500; Shot "18-closed"; Keys "^+t" 4000; Shot "19-reopened"
 [U]::PostMessage((Win), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
 Start-Sleep 8
 "exited after close: " + $p.HasExited + " code=" + $(if ($p.HasExited) { $p.ExitCode } else { 'n/a' })
-Get-ChildItem "$env:LOCALAPPDATA\UltraLightBrowser" | Select-Object Name, Length | Format-Table | Out-String
+# Trace audit: everything left on disk after a normal exit (built-in page files excluded).
+$root = "$env:LOCALAPPDATA\UltraLightBrowser"
+"TRACE files left:"
+Get-ChildItem $root -Recurse -File -Force | Where-Object { $_.FullName -notmatch '\\ui\\[^\\]+\.(html|js|css)$' -and $_.FullName -notmatch '\\ui\\(vendor|\.stamp)' } |
+  ForEach-Object { "  " + $_.FullName.Substring($root.Length) + "  " + $_.Length }
+"TRACE Local State keys: " + ((Get-Content "$root\UserData\EBWebView\Local State" -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json).PSObject.Properties.Name -join ',')
 Get-Content "$env:LOCALAPPDATA\UltraLightBrowser\library.json" -ErrorAction SilentlyContinue
 $p = Start-Process $Exe -PassThru
 Start-Sleep 10

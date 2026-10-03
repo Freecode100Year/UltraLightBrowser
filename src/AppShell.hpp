@@ -48,7 +48,7 @@ public:
     std::string Article(const std::string& key) const;
 
     static std::int64_t NowMs();
-    static std::string DayKey(int daysAgo = 0);
+    static bool AnotherInstanceRunning();  // another UltraLightBrowser process has a window open
 
 private:
     AppShell() = default;

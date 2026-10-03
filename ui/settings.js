@@ -32,7 +32,7 @@ async function load() {
   s = await call("getSettings");
   document.getElementById("main").replaceChildren(
     section("general", "通用",
-      row("UltraLightBrowser 打开时：", select("startupPage", [["start", "一个新窗口"], ["home", "主页"], ["restore", "上次会话的所有窗口"]])),
+      row("UltraLightBrowser 打开时：", select("startupPage", [["start", "一个新窗口"], ["home", "主页"]])),
       row("新标签页打开方式：", select("newTabPage", [["start", "起始页"], ["home", "主页"], ["blank", "空白页"]])),
       row("主页：", text("homeUrl", "https://"))),
     section("tabs", "标签页",
@@ -42,13 +42,10 @@ async function load() {
       row("搜索引擎：", select("searchEngine", [["google", "Google"], ["bing", "Bing"], ["duckduckgo", "DuckDuckGo"], ["startpage", "Startpage"], ["baidu", "百度"]]))),
     section("start", "起始页",
       row("个人收藏", sw("startShowFavorites")),
-      row("常用网站", sw("startShowFrequent")),
-      row("隐私报告", sw("startShowPrivacy")),
       row("阅读列表", sw("startShowReading")),
       row("背景图像：", select("startBackground", [["aurora", "极光"], ["ocean", "海洋"], ["sunset", "日落"], ["plain", "无"]]))),
     section("privacy", "隐私",
-      row("保存浏览历史", sw("saveHistory"), "无痕浏览窗口从不保存历史记录。"),
-      row("退出时移除历史记录项目", sw("clearHistoryOnExit")),
+      row("记录浏览历史", sw("saveHistory"), "历史记录只保存在内存中，关闭 UltraLightBrowser 后即被移除。无痕浏览窗口从不记录。"),
       row("启用内容拦截器", sw("enableAdBlock"), "阻止广告和跨网站跟踪器。可在“此网站的设置”中对单个网站停用。"),
       action("历史记录：", "清除历史记录…", async () => {
         if (confirm("清除所有历史记录？此操作无法撤销。")) { await call("clearHistory", { range: "all" }); toast("已清除历史记录"); }
@@ -56,11 +53,8 @@ async function load() {
       action("网站设置：", `移除 ${s.siteCount} 个网站的设置…`, async () => {
         if (confirm("移除所有网站的设置（页面缩放、摄像头、麦克风、位置、弹出式窗口、阅读器）？")) { await call("clearSiteSettings"); toast("已移除网站设置"); load(); }
       }, true),
-      action("隐私报告：", "清除隐私报告…", async () => {
-        if (confirm("清除隐私报告中的数据？")) { await call("clearPrivacy"); toast("已清除隐私报告"); }
-      }, true),
-      row("保留网页缓存", sw("keepCache"), "再次访问的网站从本机缓存加载，明显更快。缓存会留在本机磁盘上；关闭后每次退出都会清空缓存。"),
-      row("Cookie 和网站数据：", el("span", { class: "muted", text: "每次退出时自动移除" }))),
+      row("关闭时移除：", el("span", { class: "muted", text: "历史记录、Cookie 和网站数据、网页缓存、下载列表、网站设置、网站图标、系统 DNS 缓存" }),
+        "关闭 UltraLightBrowser 时自动执行，意外退出后会在下次启动时补做。书签、阅读列表和标签组会保留。")),
     section("reader", "阅读器",
       row("主题：", select("readerTheme", [["light", "白色"], ["sepia", "米色"], ["gray", "灰色"], ["dark", "夜间"]])),
       row("字体：", select("readerFont", [["serif", "宋体（衬线）"], ["sans", "黑体（无衬线）"]])),

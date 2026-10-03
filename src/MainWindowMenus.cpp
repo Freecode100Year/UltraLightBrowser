@@ -235,7 +235,6 @@ void MainWindow::ShowMainMenu() {
     AppendSubmenu(m, BuildZoomMenu(), L"缩放\t" + Percent(zoom), Icon::Zoom);
     AppendItem(m, IDM_PRINT, L"打印…\tCtrl+P", Icon::Print, webPage ? 0 : MF_GRAYED);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendItem(m, IDM_PRIVACY_REPORT, L"隐私报告", Icon::Shield);
     AppendSubmenu(m, BuildSiteMenu(), L"此网站的设置", Icon::Gear);
     AppendSubmenu(m, BuildBlockerMenu(), L"内容拦截器", Icon::Block);
     AppendSubmenu(m, BuildSoundMenu(), std::wstring(L"声音\t") + (settings.systemAudioPassthrough ? L"原声" : L"增强"), Icon::Sound);

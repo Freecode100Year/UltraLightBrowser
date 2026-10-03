@@ -67,7 +67,6 @@ public:
     bool IsFullScreen() const { return m_isFullScreen; }
 
     // App-level hooks
-    std::vector<SavedTab> SavedTabs() const;
     ICoreWebView2* ActiveWebView() const;
     UINT32 BrowserProcessId() const;
     void OnLibraryChanged();

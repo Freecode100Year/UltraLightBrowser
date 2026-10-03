@@ -1,6 +1,8 @@
 #include "Library.hpp"
 #include <cassert>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <iostream>
 
 using namespace UltraLight;
@@ -8,9 +10,14 @@ using namespace UltraLight;
 int main() {
     const auto dir = std::filesystem::temp_directory_path() / "ulb-library-test";
     std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "history.json") << R"([{"url":"https://old.example/","title":"x","last":1,"visits":1}])";
+    std::ofstream(dir / "session.json") << "[]";
     {
         Library lib(dir);
         lib.Load();
+        // Stores written by earlier versions are deleted, not imported.
+        assert(lib.HistorySize() == 0 && !std::filesystem::exists(dir / "history.json") && !std::filesystem::exists(dir / "session.json"));
         assert(lib.Folders().size() == 2);
         const auto a = lib.AddBookmark("GitHub", "https://github.com/", kFavoritesFolder, 1000);
         const auto b = lib.AddBookmark("", "https://example.com/x", "missing", 1001);
@@ -34,8 +41,6 @@ int main() {
         auto h = lib.QueryHistory("", 10);
         assert(h.size() == 3 && h.front().url == "https://other.org/");
         assert(lib.QueryHistory("a2", 10).size() == 1);
-        auto top = lib.TopSites(5);
-        assert(top.front().visits == 3 && Library::HostOf(top.front().url) == "news.example.com");
         lib.ClearHistory(35);
         assert(lib.HistorySize() == 2);
 
@@ -62,25 +67,21 @@ int main() {
         lib.SetSite("default.com", SiteSettings{});
         assert(lib.SiteCount() == 1);
 
-        lib.RecordBlocked("doubleclick.net", "news.example.com", "2026-10-01");
-        lib.RecordBlocked("doubleclick.net", "other.org", "2026-10-02");
-        lib.RecordBlocked("hotjar.com", "other.org", "2026-10-02");
-        auto rep = lib.Report({"2026-10-01", "2026-10-02"}, 5);
-        assert(rep.total == 3 && rep.trackers.front().name == "doubleclick.net" && rep.trackers.front().count == 2);
-        assert(rep.sites.front().name == "other.org" && rep.perDay.back().second == 2);
-
-        lib.SetSession({{{"A", "https://a.com/"}, {"x", "ulb://bad"}}, {}});
-        assert(lib.Session().size() == 1 && lib.Session()[0].size() == 1);
         lib.Save();
         assert(!lib.IsDirty());
     }
     {
         Library lib(dir);
         lib.Load();
-        assert(lib.Bookmarks().size() == 2 && lib.HistorySize() == 2 && lib.Groups().size() == 1);
-        assert(lib.Site("example.com").zoom == 1.25);
-        assert(lib.Report({"2026-10-02"}, 5).total == 2);
-        assert(lib.Session().size() == 1);
+        // History and site settings never reach the disk.
+        assert(lib.Bookmarks().size() == 2 && lib.HistorySize() == 0 && lib.Groups().size() == 1);
+        assert(lib.Site("example.com").IsDefault());
+        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+            assert(entry.path().filename() == "library.json" || entry.is_directory());
+        }
+        std::ifstream in(dir / "library.json");
+        const std::string saved((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        assert(saved.find("news.example.com") == std::string::npos && saved.find("example.com\"") == std::string::npos);
 
         const std::string html = R"html(<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <DL><p>

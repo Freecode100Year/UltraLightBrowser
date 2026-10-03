@@ -117,16 +117,12 @@ void Config::Load() {
                     if (v >= lo && v <= hi) target = v;
                 }
             };
-            readChoice("startupPage", m_settings.startupPage, {"start", "home", "restore"});
+            readChoice("startupPage", m_settings.startupPage, {"start", "home"});
             readChoice("newTabPage", m_settings.newTabPage, {"start", "blank", "home"});
             readChoice("searchEngine", m_settings.searchEngine, {"google", "bing", "duckduckgo", "startpage", "baidu"});
             readBool("saveHistory", m_settings.saveHistory);
-            readBool("clearHistoryOnExit", m_settings.clearHistoryOnExit);
-            readBool("keepCache", m_settings.keepCache);
             readInt("tabSuspendMinutes", m_settings.tabSuspendMinutes, 0, 240);
             readBool("startShowFavorites", m_settings.startShowFavorites);
-            readBool("startShowFrequent", m_settings.startShowFrequent);
-            readBool("startShowPrivacy", m_settings.startShowPrivacy);
             readBool("startShowReading", m_settings.startShowReading);
             readChoice("startBackground", m_settings.startBackground, {"aurora", "ocean", "sunset", "plain"});
             readChoice("readerTheme", m_settings.readerTheme, {"light", "sepia", "gray", "dark"});
@@ -181,12 +177,8 @@ void Config::Save() {
             {"newTabPage", m_settings.newTabPage},
             {"searchEngine", m_settings.searchEngine},
             {"saveHistory", m_settings.saveHistory},
-            {"clearHistoryOnExit", m_settings.clearHistoryOnExit},
-            {"keepCache", m_settings.keepCache},
             {"tabSuspendMinutes", m_settings.tabSuspendMinutes},
             {"startShowFavorites", m_settings.startShowFavorites},
-            {"startShowFrequent", m_settings.startShowFrequent},
-            {"startShowPrivacy", m_settings.startShowPrivacy},
             {"startShowReading", m_settings.startShowReading},
             {"startBackground", m_settings.startBackground},
             {"readerTheme", m_settings.readerTheme},

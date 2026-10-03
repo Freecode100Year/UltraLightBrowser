@@ -12,6 +12,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <set>
+#include <shobjidl.h>
 #include <cstdio>
 #include <thread>
 #include "GdiPlus.hpp"
@@ -40,6 +43,48 @@ bool IsBrowserWindow(HWND hwnd) {
     return wcscmp(cls, L"UltraLightBrowserMainWindow") == 0;
 }
 
+std::string FaviconFileStem(const std::string& host) {
+    std::string safe;
+    for (char c : host) {
+        safe += ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-') ? c : '_';
+    }
+    return safe;
+}
+
+// Site icons are cached for the start page and bookmarks; icons of sites that are
+// not bookmarked, in the reading list or in a tab group would reveal visited sites.
+void PruneFavicons(const Library& lib) {
+    std::set<std::string> keep;
+    for (const auto& b : lib.Bookmarks()) keep.insert(FaviconFileStem(Library::HostOf(b.url)));
+    for (const auto& r : lib.ReadingList()) keep.insert(FaviconFileStem(Library::HostOf(r.url)));
+    for (const auto& g : lib.Groups()) {
+        for (const auto& t : g.tabs) keep.insert(FaviconFileStem(Library::HostOf(t.url)));
+    }
+    std::error_code ec;
+    std::vector<std::filesystem::path> doomed;
+    for (const auto& entry : std::filesystem::directory_iterator(InternalPages::FaviconCacheDir(), ec)) {
+        if (!keep.count(entry.path().stem().string())) doomed.push_back(entry.path());
+    }
+    for (const auto& path : doomed) std::filesystem::remove_all(path, ec);
+}
+
+// Windows keeps resolved host names in its DNS client cache (ipconfig /displaydns).
+void FlushSystemDnsCache() {
+    HMODULE dnsapi = LoadLibraryExW(L"dnsapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!dnsapi) return;
+    using FlushFn = BOOL(WINAPI*)();
+    if (auto flush = reinterpret_cast<FlushFn>(GetProcAddress(dnsapi, "DnsFlushResolverCache"))) flush();
+    FreeLibrary(dnsapi);
+}
+
+// Taskbar jump list entries ("最近") added by file dialogs.
+void ClearJumpList() {
+    wil::com_ptr<IApplicationDestinations> destinations;
+    if (SUCCEEDED(CoCreateInstance(CLSID_ApplicationDestinations, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&destinations)))) {
+        destinations->RemoveAllDestinations();
+    }
+}
+
 } // namespace
 
 AppShell& AppShell::Instance() {
@@ -52,24 +97,21 @@ std::int64_t AppShell::NowMs() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-std::string AppShell::DayKey(int daysAgo) {
-    SYSTEMTIME st{};
-    GetLocalTime(&st);
-    if (daysAgo != 0) {
-        FILETIME ft{};
-        SystemTimeToFileTime(&st, &ft);
-        ULARGE_INTEGER v{};
-        v.LowPart = ft.dwLowDateTime;
-        v.HighPart = ft.dwHighDateTime;
-        v.QuadPart -= static_cast<ULONGLONG>(daysAgo) * 24ULL * 3600ULL * 10000000ULL;
-        ft.dwLowDateTime = v.LowPart;
-        ft.dwHighDateTime = v.HighPart;
-        FileTimeToSystemTime(&ft, &st);
-    }
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%04u-%02u-%02u", st.wYear, st.wMonth, st.wDay);
-    return buf;
+bool AppShell::AnotherInstanceRunning() {
+    struct Search { DWORD self; bool found; } search{GetCurrentProcessId(), false};
+    EnumWindows([](HWND hwnd, LPARAM param) -> BOOL {
+        auto* s = reinterpret_cast<Search*>(param);
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (pid != s->self && IsBrowserWindow(hwnd)) {
+            s->found = true;
+            return FALSE;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&search));
+    return search.found;
 }
+
 
 int AppShell::Run(HINSTANCE hInstance, int nCmdShow) {
     m_hInstance = hInstance;
@@ -83,29 +125,15 @@ int AppShell::Run(HINSTANCE hInstance, int nCmdShow) {
     m_library->Load();
     InternalPages::Extract();
 
-    // Privacy report and per-site ad-block exceptions.
-    NativeRequestFilter::Instance().SetBlockedCallback([this](const std::wstring& requestHost, const std::wstring& topHost) {
-        const std::string tracker = StringUtils::WideToUtf8(NativeRequestFilter::GetBaseDomain(requestHost));
-        m_library->RecordBlocked(tracker, StringUtils::WideToUtf8(topHost), DayKey());
-    });
+    // Per-site ad-block exceptions ("此网站的设置").
     NativeRequestFilter::Instance().SetSiteAllowsAdsCallback([this](const std::wstring& topHost) {
         return !m_library->Site(StringUtils::WideToUtf8(topHost)).adblock;
     });
 
     const auto& settings = Config::Instance().GetSettings();
-    bool opened = false;
-    if (settings.startupPage == "restore") {
-        for (const auto& tabs : m_library->Session()) {
-            std::vector<std::wstring> urls;
-            for (const auto& t : tabs) urls.push_back(StringUtils::Utf8ToWide(t.url));
-            if (OpenWindow(false, urls)) opened = true;
-        }
-    }
-    if (!opened) {
-        std::vector<std::wstring> urls;
-        if (settings.startupPage == "home" && !settings.startUrl.empty()) urls.push_back(settings.startUrl);
-        if (!OpenWindow(false, urls)) return 1;
-    }
+    std::vector<std::wstring> urls;
+    if (settings.startupPage == "home" && !settings.startUrl.empty()) urls.push_back(settings.startUrl);
+    if (!OpenWindow(false, urls)) return 1;
 
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0)) {
@@ -171,16 +199,11 @@ bool AppShell::IsLastWindow(const MainWindow* window) const {
 
 void AppShell::PrepareExit(MainWindow* lastWindow) {
     m_exiting = true;
-    const auto& settings = Config::Instance().GetSettings();
-    std::vector<std::vector<SavedTab>> session;
-    if (settings.startupPage == "restore" && lastWindow && !lastWindow->IsPrivate()) {
-        session.push_back(lastWindow->SavedTabs());
-    }
-    m_library->SetSession(session);
-    if (settings.clearHistoryOnExit) m_library->ClearHistory(0);
     SaveLibraryNow();
 
-    // Same privacy guarantee as before: cookies, cache and site data never outlive the session.
+    // Nothing from the session outlives it: history and site settings were never
+    // written, and cookies, cache and site data are cleared here and deleted from
+    // disk in FinalCleanup.
     if (lastWindow) {
         m_browserPid = lastWindow->BrowserProcessId();
         WebViewManager::ClearProfileData(lastWindow->ActiveWebView());
@@ -196,6 +219,8 @@ void AppShell::FinalCleanup() {
     m_graveyard.clear();
     m_environment.reset();
 
+    // A second copy of the browser shares the profile; the last one to exit cleans up.
+    if (AnotherInstanceRunning()) return;
     if (m_browserPid != 0) {
         HANDLE hProc = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, m_browserPid);
         if (hProc) {
@@ -207,6 +232,9 @@ void AppShell::FinalCleanup() {
         }
     }
     WebViewManager::PurgeAllCacheAndTempFiles();
+    PruneFavicons(*m_library);
+    FlushSystemDnsCache();
+    ClearJumpList();
 }
 
 void AppShell::WhenEnvironmentReady(HWND errorOwner, std::function<void(ICoreWebView2Environment*)> callback) {

@@ -192,15 +192,6 @@ void MainWindow::EnsurePaintFonts(HDC hdc) {
 
 // ------------------------------------------------------------------ public hooks
 
-std::vector<SavedTab> MainWindow::SavedTabs() const {
-    std::vector<SavedTab> out;
-    for (const auto& t : m_tabs) {
-        const std::wstring url = DisplayUrl(*t);
-        if (!url.empty()) out.push_back({StringUtils::WideToUtf8(t->title), StringUtils::WideToUtf8(url)});
-    }
-    return out;
-}
-
 ICoreWebView2* MainWindow::ActiveWebView() const {
     const Tab* t = ActiveTab();
     if (t && t->view && t->view->GetWebView()) return t->view->GetWebView();
@@ -684,7 +675,6 @@ void MainWindow::OnCommand(WORD id) {
     case IDM_ZOOM_RESET: if (tab && tab->view) tab->view->ZoomReset(); return;
     case IDM_BOOKMARKS: OpenInternalPage(L"bookmarks.html", true); return;
     case IDM_HISTORY: OpenInternalPage(L"history.html", true); return;
-    case IDM_PRIVACY_REPORT: OpenInternalPage(L"privacy.html", true); return;
     case IDM_SETTINGS: OpenInternalPage(L"settings.html", true); return;
     case IDM_READING_LIST: ToggleSidebar(L"reading"); return;
     case IDM_SIDEBAR: ToggleSidebar(); return;

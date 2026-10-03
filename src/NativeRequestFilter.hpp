@@ -19,14 +19,12 @@ public:
     static NativeRequestFilter& Instance();
 
     // Attach native network request interceptor to a tab's WebView2
-    void Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment, bool isPrivate = false);
+    void Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment);
     void Unregister(ICoreWebView2* webView);
 
-    // Site exceptions and privacy statistics are owned by the browser library.
+    // Site exceptions are owned by the browser library.
     using SiteAllowsAdsCallback = std::function<bool(const std::wstring& topHost)>;
-    using BlockedCallback = std::function<void(const std::wstring& requestHost, const std::wstring& topHost)>;
     void SetSiteAllowsAdsCallback(SiteAllowsAdsCallback cb) { m_siteAllowsAds = std::move(cb); }
-    void SetBlockedCallback(BlockedCallback cb) { m_onBlocked = std::move(cb); }
 
     // Test whether an outgoing request URI should be intercepted and blocked
     bool ShouldBlock(const std::wstring& uri);
@@ -70,12 +68,10 @@ private:
     struct NavState {
         std::wstring pendingUri;
         std::wstring mainHost;
-        bool isPrivate = false;
     };
     mutable std::mutex m_navMutex;
     std::unordered_map<ICoreWebView2*, NavState> m_nav;
     SiteAllowsAdsCallback m_siteAllowsAds;
-    BlockedCallback m_onBlocked;
 
     std::unordered_set<std::wstring> m_blockedDomainSet;
     std::vector<std::wstring> m_blockedKeywords;

@@ -14,7 +14,6 @@ namespace {
 
 constexpr std::size_t kMaxHistory = 5000;
 constexpr std::int64_t kHistoryRetentionMs = 90LL * 24 * 3600 * 1000;
-constexpr std::size_t kMaxPrivacyDays = 30;
 constexpr std::size_t kMaxTitle = 512;
 constexpr std::size_t kMaxUrl = 8192;
 
@@ -60,10 +59,6 @@ bool Bool(const json& obj, const char* key, bool fallback) {
     if (!obj.is_object()) return fallback;
     const auto it = obj.find(key);
     return it != obj.end() && it->is_boolean() ? it->get<bool>() : fallback;
-}
-
-std::string Permission(const std::string& v, const char* fallback) {
-    return (v == "ask" || v == "allow" || v == "deny") ? v : std::string(fallback);
 }
 
 std::string HtmlEscape(const std::string& s) {
@@ -196,11 +191,15 @@ std::string Library::NewId(std::int64_t now) {
 // ---------------------------------------------------------------- persistence
 
 void Library::Load() {
+    m_dirtyLibrary = false;
     LoadLibraryFile();
-    LoadHistoryFile();
-    LoadPrivacyFile();
-    LoadSessionFile();
-    m_dirtyLibrary = m_dirtyHistory = m_dirtyPrivacy = m_dirtySession = false;
+    // History, site settings and the old session / privacy stores only ever live in
+    // memory; files left by earlier versions are removed.
+    std::error_code ec;
+    for (const char* name : {"history.json", "privacy.json", "session.json"}) {
+        std::filesystem::remove(m_dir / name, ec);
+        std::filesystem::remove(m_dir / (std::string(name) + ".tmp"), ec);
+    }
 }
 
 void Library::LoadLibraryFile() {
@@ -237,60 +236,8 @@ void Library::LoadLibraryFile() {
             if (!group.id.empty()) m_groups.push_back(std::move(group));
         }
     }
-    if (root.contains("sites") && root["sites"].is_object()) {
-        for (const auto& [host, s] : root["sites"].items()) {
-            SiteSettings site;
-            if (s.contains("zoom") && s["zoom"].is_number()) site.zoom = std::clamp(s["zoom"].get<double>(), 0.0, 5.0);
-            site.autoReader = Bool(s, "autoReader", false);
-            site.camera = Permission(Str(s, "camera"), "ask");
-            site.microphone = Permission(Str(s, "microphone"), "ask");
-            site.location = Permission(Str(s, "location"), "ask");
-            site.popups = Str(s, "popups") == "allow" ? "allow" : "block";
-            site.adblock = Bool(s, "adblock", true);
-            if (!host.empty() && !site.IsDefault()) m_sites[host] = site;
-        }
-    }
-}
-
-void Library::LoadHistoryFile() {
-    json root;
-    if (!ReadJson(m_dir / "history.json", root) || !root.is_array()) return;
-    for (const auto& h : root) {
-        HistoryEntry e{Clip(Str(h, "url"), kMaxUrl), Clip(Str(h, "title"), kMaxTitle), Int(h, "last"), static_cast<int>(Int(h, "visits"))};
-        if (e.url.empty() || m_historyIndex.count(e.url)) continue;
-        if (e.visits < 1) e.visits = 1;
-        m_historyIndex[e.url] = m_history.size();
-        m_history.push_back(std::move(e));
-    }
-}
-
-void Library::LoadPrivacyFile() {
-    json root;
-    if (!ReadJson(m_dir / "privacy.json", root) || !root.is_object()) return;
-    for (const auto& [day, d] : root.items()) {
-        if (!d.is_object()) continue;
-        if (d.contains("trackers") && d["trackers"].is_object()) {
-            for (const auto& [k, v] : d["trackers"].items()) if (v.is_number()) m_trackersByDay[day][k] = v.get<std::int64_t>();
-        }
-        if (d.contains("sites") && d["sites"].is_object()) {
-            for (const auto& [k, v] : d["sites"].items()) if (v.is_number()) m_sitesByDay[day][k] = v.get<std::int64_t>();
-        }
-    }
-    PrunePrivacy();
-}
-
-void Library::LoadSessionFile() {
-    json root;
-    if (!ReadJson(m_dir / "session.json", root) || !root.is_array()) return;
-    for (const auto& w : root) {
-        if (!w.is_array()) continue;
-        std::vector<SavedTab> tabs;
-        for (const auto& t : w) {
-            SavedTab tab{Clip(Str(t, "title"), kMaxTitle), Clip(Str(t, "url"), kMaxUrl)};
-            if (!tab.url.empty()) tabs.push_back(std::move(tab));
-        }
-        if (!tabs.empty()) m_session.push_back(std::move(tabs));
-    }
+    // Older versions saved per-site settings (a list of visited hosts); rewrite without them.
+    if (root.contains("sites")) m_dirtyLibrary = true;
 }
 
 void Library::WriteFileAtomic(const std::filesystem::path& path, const std::string& data) {
@@ -334,37 +281,8 @@ std::vector<std::pair<std::filesystem::path, std::string>> Library::TakeSnapshot
             groups.push_back({{"id", g.id}, {"name", g.name}, {"updated", g.updated}, {"tabs", std::move(tabs)}});
         }
         root["groups"] = std::move(groups);
-        json sites = json::object();
-        for (const auto& [host, st] : m_sites) {
-            sites[host] = {{"zoom", st.zoom}, {"autoReader", st.autoReader}, {"camera", st.camera},
-                           {"microphone", st.microphone}, {"location", st.location}, {"popups", st.popups}, {"adblock", st.adblock}};
-        }
-        root["sites"] = std::move(sites);
         out.emplace_back(m_dir / "library.json", root.dump(-1, ' ', false, json::error_handler_t::replace));
         m_dirtyLibrary = false;
-    }
-    if (m_dirtyHistory) {
-        json arr = json::array();
-        for (const auto& e : m_history) arr.push_back({{"url", e.url}, {"title", e.title}, {"last", e.last}, {"visits", e.visits}});
-        out.emplace_back(m_dir / "history.json", arr.dump(-1, ' ', false, json::error_handler_t::replace));
-        m_dirtyHistory = false;
-    }
-    if (m_dirtyPrivacy) {
-        json root = json::object();
-        for (const auto& [day, trackers] : m_trackersByDay) root[day]["trackers"] = trackers;
-        for (const auto& [day, sites] : m_sitesByDay) root[day]["sites"] = sites;
-        out.emplace_back(m_dir / "privacy.json", root.dump(-1, ' ', false, json::error_handler_t::replace));
-        m_dirtyPrivacy = false;
-    }
-    if (m_dirtySession) {
-        json arr = json::array();
-        for (const auto& w : m_session) {
-            json tabs = json::array();
-            for (const auto& t : w) tabs.push_back({{"title", t.title}, {"url", t.url}});
-            arr.push_back(std::move(tabs));
-        }
-        out.emplace_back(m_dir / "session.json", arr.dump(-1, ' ', false, json::error_handler_t::replace));
-        m_dirtySession = false;
     }
     return out;
 }
@@ -585,7 +503,6 @@ void Library::RecordVisit(const std::string& url, const std::string& title, std:
         m_history.push_back({url, Clip(title, kMaxTitle), now, 1});
         if (m_history.size() > kMaxHistory + kMaxHistory / 10) PruneHistory();
     }
-    m_dirtyHistory = true;
 }
 
 void Library::UpdateTitle(const std::string& url, const std::string& title) {
@@ -595,7 +512,6 @@ void Library::UpdateTitle(const std::string& url, const std::string& title) {
     const std::string clipped = Clip(title, kMaxTitle);
     if (e.title != clipped) {
         e.title = clipped;
-        m_dirtyHistory = true;
     }
 }
 
@@ -609,7 +525,6 @@ void Library::PruneHistory() {
     if (m_history.size() > kMaxHistory) m_history.resize(kMaxHistory);
     m_historyIndex.clear();
     for (std::size_t i = 0; i < m_history.size(); ++i) m_historyIndex[m_history[i].url] = i;
-    m_dirtyHistory = true;
 }
 
 std::vector<HistoryEntry> Library::QueryHistory(const std::string& query, std::size_t limit) const {
@@ -625,37 +540,12 @@ std::vector<HistoryEntry> Library::QueryHistory(const std::string& query, std::s
     return out;
 }
 
-std::vector<HistoryEntry> Library::TopSites(std::size_t limit) const {
-    // One entry per host: the most visited page stands in for its site.
-    std::map<std::string, HistoryEntry> byHost;
-    std::map<std::string, int> visitsByHost;
-    for (const auto& e : m_history) {
-        const std::string host = HostOf(e.url);
-        if (host.empty()) continue;
-        visitsByHost[host] += e.visits;
-        auto it = byHost.find(host);
-        if (it == byHost.end() || e.visits > it->second.visits) byHost[host] = e;
-    }
-    std::vector<HistoryEntry> out;
-    for (auto& [host, e] : byHost) {
-        HistoryEntry site = e;
-        site.visits = visitsByHost[host];
-        out.push_back(std::move(site));
-    }
-    std::sort(out.begin(), out.end(), [](const HistoryEntry& a, const HistoryEntry& b) {
-        return a.visits != b.visits ? a.visits > b.visits : a.last > b.last;
-    });
-    if (out.size() > limit) out.resize(limit);
-    return out;
-}
-
 bool Library::RemoveHistory(const std::string& url) {
     const auto it = m_historyIndex.find(url);
     if (it == m_historyIndex.end()) return false;
     m_history.erase(m_history.begin() + static_cast<std::ptrdiff_t>(it->second));
     m_historyIndex.clear();
     for (std::size_t i = 0; i < m_history.size(); ++i) m_historyIndex[m_history[i].url] = i;
-    m_dirtyHistory = true;
     return true;
 }
 
@@ -668,7 +558,6 @@ void Library::ClearHistory(std::int64_t since) {
     }
     m_historyIndex.clear();
     for (std::size_t i = 0; i < m_history.size(); ++i) m_historyIndex[m_history[i].url] = i;
-    m_dirtyHistory = true;
 }
 
 std::vector<Suggestion> Library::Suggest(const std::string& query, std::size_t limit) const {
@@ -762,78 +651,14 @@ void Library::SetSite(const std::string& host, const SiteSettings& settings) {
     if (host.empty()) return;
     if (settings.IsDefault()) m_sites.erase(host);
     else m_sites[host] = settings;
-    m_dirtyLibrary = true;
 }
 
 void Library::ClearSite(const std::string& host) {
-    if (m_sites.erase(host)) m_dirtyLibrary = true;
+    m_sites.erase(host);
 }
 
 void Library::ClearSites() {
     m_sites.clear();
-    m_dirtyLibrary = true;
-}
-
-// ---------------------------------------------------------------- privacy
-
-void Library::RecordBlocked(const std::string& trackerDomain, const std::string& siteHost, const std::string& dayKey) {
-    if (trackerDomain.empty() || dayKey.empty()) return;
-    const bool newDay = m_trackersByDay.find(dayKey) == m_trackersByDay.end();
-    ++m_trackersByDay[dayKey][trackerDomain];
-    if (!siteHost.empty()) ++m_sitesByDay[dayKey][siteHost];
-    if (newDay) PrunePrivacy();
-    m_dirtyPrivacy = true;
-}
-
-void Library::PrunePrivacy() {
-    while (m_trackersByDay.size() > kMaxPrivacyDays) m_trackersByDay.erase(m_trackersByDay.begin());
-    while (m_sitesByDay.size() > kMaxPrivacyDays) m_sitesByDay.erase(m_sitesByDay.begin());
-}
-
-PrivacyReport Library::Report(const std::vector<std::string>& dayKeys, std::size_t topN) const {
-    PrivacyReport report;
-    std::map<std::string, std::int64_t> trackers, sites;
-    for (const auto& day : dayKeys) {
-        std::int64_t dayTotal = 0;
-        const auto t = m_trackersByDay.find(day);
-        if (t != m_trackersByDay.end()) {
-            for (const auto& [k, v] : t->second) { trackers[k] += v; dayTotal += v; }
-        }
-        const auto s = m_sitesByDay.find(day);
-        if (s != m_sitesByDay.end()) {
-            for (const auto& [k, v] : s->second) sites[k] += v;
-        }
-        report.perDay.emplace_back(day, dayTotal);
-        report.total += dayTotal;
-    }
-    auto top = [topN](const std::map<std::string, std::int64_t>& m) {
-        std::vector<PrivacyCount> v;
-        for (const auto& [k, c] : m) v.push_back({k, c});
-        std::sort(v.begin(), v.end(), [](const PrivacyCount& a, const PrivacyCount& b) {
-            return a.count != b.count ? a.count > b.count : a.name < b.name;
-        });
-        if (v.size() > topN) v.resize(topN);
-        return v;
-    };
-    report.trackers = top(trackers);
-    report.sites = top(sites);
-    return report;
-}
-
-void Library::ClearPrivacy() {
-    m_trackersByDay.clear();
-    m_sitesByDay.clear();
-    m_dirtyPrivacy = true;
-}
-
-void Library::SetSession(const std::vector<std::vector<SavedTab>>& windows) {
-    m_session.clear();
-    for (const auto& w : windows) {
-        std::vector<SavedTab> tabs;
-        for (const auto& t : w) if (IsWebUrl(t.url)) tabs.push_back({Clip(t.title, kMaxTitle), Clip(t.url, kMaxUrl)});
-        if (!tabs.empty()) m_session.push_back(std::move(tabs));
-    }
-    m_dirtySession = true;
 }
 
 } // namespace UltraLight
