@@ -16,12 +16,23 @@ $env:NODE_PATH = Join-Path $env:RUNNER_TEMP 'node_modules'
 const WebSocket = require('ws');
 const sites = ['https://www.wikipedia.org/', 'https://github.com/', 'https://www.bbc.com/news', 'https://www.theguardian.com/international', 'https://www.reddit.com/', 'https://stackoverflow.com/questions'];
 (async () => {
+  // Pick the visible tab: v2 keeps a hidden pre-rendered start page as well.
+  const visible = async (t) => {
+    const ws = new WebSocket(t.webSocketDebuggerUrl);
+    await new Promise(r => ws.on('open', r));
+    const v = await new Promise(r => { ws.on('message', m => { const d = JSON.parse(m); if (d.id === 1) r(d.result && d.result.result && d.result.result.value); });
+      ws.send(JSON.stringify({id: 1, method: 'Runtime.evaluate', params: {expression: 'document.visibilityState', returnByValue: true}})); setTimeout(() => r(null), 2000); });
+    ws.close();
+    return v === 'visible';
+  };
   let target;
   for (let i = 0; i < 40 && !target; i++) {
-    try { target = (await (await fetch('http://127.0.0.1:9223/json/list')).json()).find(t => t.type === 'page' && t.url.includes('start.html')); } catch {}
+    try {
+      const pages = (await (await fetch('http://127.0.0.1:9223/json/list')).json()).filter(t => t.type === 'page' && !t.url.includes('ulb-probe'));
+      for (const p of pages) { if (await visible(p)) { target = p; break; } }
+    } catch {}
     if (!target) await new Promise(r => setTimeout(r, 500));
   }
-  if (!target) { console.log('no target'); process.exit(0); }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise(r => ws.on('open', r));
   let id = 0; const pend = {}; const waiters = [];

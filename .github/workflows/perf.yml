@@ -4,7 +4,7 @@ on:
     inputs:
       baseline:
         description: Release tag to compare against
-        default: v2.0.3
+        default: v1.6.9
 jobs:
   perf:
     runs-on: windows-2022
@@ -20,11 +20,11 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download ${{ inputs.baseline || 'v2.0.3' }} -R ${{ github.repository }} -p UltraLightBrowser.exe -D baseline
+        run: gh release download ${{ inputs.baseline || 'v1.6.9' }} -R ${{ github.repository }} -p UltraLightBrowser.exe -D baseline
       - name: Measure
         shell: pwsh
         run: |
-          ./tests/perf-load.ps1 -Exe baseline\UltraLightBrowser.exe -Label baseline
-          ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label current
-          ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label current-mac -Mac
-          ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label current-again
+          foreach ($i in 1..3) {
+            ./tests/perf-load.ps1 -Exe baseline\UltraLightBrowser.exe -Label "v1.6.9 #$i"
+            ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label "current #$i"
+          }

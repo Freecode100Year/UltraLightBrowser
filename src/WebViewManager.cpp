@@ -526,17 +526,9 @@ void WebViewManager::RegisterEventHandlers() {
         nullptr
     );
 
-    // Built-in pages must never be framed by web content.
-    m_webView->add_FrameNavigationStarting(
-        Callback<ICoreWebView2NavigationStartingEventHandler>(
-            [](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
-                wil::unique_cotaskmem_string uri;
-                if (SUCCEEDED(args->get_Uri(&uri)) && uri.get() && InternalPages::IsInternal(uri.get())) {
-                    args->put_Cancel(TRUE);
-                }
-                return S_OK;
-            }).Get(),
-        nullptr);
+    // Built-in pages refuse to render inside frames themselves (ui.js) and frames get
+    // no browser bridge, so no synchronous FrameNavigationStarting hook is needed here:
+    // it added a UI-thread round trip to every iframe load.
 
     // Navigation Completed (loading state finished)
     m_webView->add_NavigationCompleted(
