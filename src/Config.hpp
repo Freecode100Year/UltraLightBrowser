@@ -8,8 +8,12 @@
 
 namespace UltraLight {
 
+// Default home and new-tab page. The address bar shows it as the empty start page.
+inline constexpr const wchar_t* kDefaultHomeUrl = L"https://search.brave.com/?utm_source=freedom8964.com";
+inline bool IsDefaultHomeUrl(const std::wstring& url) { return url == kDefaultHomeUrl; }
+
 struct AppSettings {
-    std::wstring startUrl = L"https://www.google.com";
+    std::wstring startUrl = kDefaultHomeUrl;
     std::string userAgentProfile = "default"; // default / macos-edge
     std::string macPlatformVersion = "26.2.0"; // Sec-CH-UA-Platform-Version in macOS mode
     bool hardwareAcceleration = true;
@@ -29,9 +33,9 @@ struct AppSettings {
     bool enableMonoDownmix = false;
 
     // Browser (v2.0)
-    std::string startupPage = "start";          // start / home
-    std::string newTabPage = "start";           // start / blank / home
-    std::string searchEngine = "google";        // google / bing / duckduckgo / startpage / baidu
+    std::string startupPage = "home";           // home / start (favorites page)
+    std::string newTabPage = "home";            // home / start (favorites page) / blank
+    std::string searchEngine = "google";        // google / brave / bing / duckduckgo / startpage / baidu
     bool saveHistory = true;
     int tabSuspendMinutes = 10;                 // 0 = never
     bool startShowFavorites = true;

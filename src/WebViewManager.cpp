@@ -1118,6 +1118,7 @@ void WebViewManager::DisableMacSpoof() {
 std::wstring WebViewManager::SearchUrl(const std::wstring& query) {
     const std::string& engine = Config::Instance().GetSettings().searchEngine;
     const std::wstring q = StringUtils::UrlEncode(query);
+    if (engine == "brave") return L"https://search.brave.com/search?q=" + q;
     if (engine == "bing") return L"https://www.bing.com/search?q=" + q;
     if (engine == "duckduckgo") return L"https://duckduckgo.com/?q=" + q;
     if (engine == "startpage") return L"https://www.startpage.com/do/search?q=" + q;

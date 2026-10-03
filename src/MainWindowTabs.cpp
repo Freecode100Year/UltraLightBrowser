@@ -96,7 +96,7 @@ void MainWindow::PrepareSpareTab() {
     auto tab = std::make_unique<Tab>();
     tab->id = m_nextTabId++;
     tab->url = NewTabUrl();
-    tab->title = InternalPages::PageName(tab->url) == L"start.html" ? L"起始页" : L"";
+    tab->title = InternalPages::PageName(tab->url) == L"start.html" || IsDefaultHomeUrl(tab->url) ? L"起始页" : L"";
     const int id = tab->id;
     const std::wstring url = tab->url;
     m_spare = std::move(tab);
@@ -149,7 +149,7 @@ Tab* MainWindow::NewTab(const std::wstring& url, bool activate, int insertAfterI
     tab->id = m_nextTabId++;
     tab->url = url;
     tab->lastActive = GetTickCount64();
-    if (InternalPages::IsInternal(url) && InternalPages::PageName(url) == L"start.html") tab->title = L"起始页";
+    if ((InternalPages::IsInternal(url) && InternalPages::PageName(url) == L"start.html") || IsDefaultHomeUrl(url)) tab->title = L"起始页";
     Tab* raw = tab.get();
     int insertAt = static_cast<int>(m_tabs.size());
     if (insertAfterId) {
@@ -212,7 +212,7 @@ void MainWindow::WireTab(Tab& tab) {
         Tab* t = FindTab(id);
         if (!t) return;
         t->title = title;
-        if (InternalPages::PageName(t->url) == L"start.html") t->title = L"起始页";
+        if (InternalPages::PageName(t->url) == L"start.html" || IsDefaultHomeUrl(t->url)) t->title = L"起始页";
         if (!m_private && Config::Instance().GetSettings().saveHistory && !InternalPages::IsInternal(t->url)) {
             AppShell::Instance().Lib().UpdateTitle(StringUtils::WideToUtf8(t->url), StringUtils::WideToUtf8(title));
         }
@@ -504,7 +504,7 @@ void MainWindow::OnTabNavigationCompleted(Tab& tab, bool success, const std::wst
     if (!internal) {
         const std::string url = StringUtils::WideToUtf8(uri);
         auto& lib = AppShell::Instance().Lib();
-        if (!m_private && Config::Instance().GetSettings().saveHistory && Library::IsWebUrl(url)) {
+        if (!m_private && Config::Instance().GetSettings().saveHistory && Library::IsWebUrl(url) && !IsDefaultHomeUrl(uri)) {
             lib.RecordVisit(url, StringUtils::WideToUtf8(tab.title), AppShell::NowMs());
         }
         ApplySiteZoom(tab);

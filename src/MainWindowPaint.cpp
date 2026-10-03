@@ -3,6 +3,7 @@
 // address field), share, new tab, tab overview and the single "⋯" menu.
 
 #include "MainWindow.hpp"
+#include "Config.hpp"
 #include "InternalPages.hpp"
 #include "StringUtils.hpp"
 
@@ -254,7 +255,7 @@ void MainWindow::InvalidateToolbar() {
 
 std::wstring MainWindow::DisplayUrl(const Tab& tab) const {
     if (!tab.readerSource.empty()) return tab.readerSource;
-    if (InternalPages::IsInternal(tab.url)) return L"";
+    if (InternalPages::IsInternal(tab.url) || IsDefaultHomeUrl(tab.url)) return L"";
     return tab.url;
 }
 

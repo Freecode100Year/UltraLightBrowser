@@ -416,7 +416,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
             };
             if (key == "startupPage") settings.startupPage = str({"start", "home"});
             else if (key == "newTabPage") settings.newTabPage = str({"start", "blank", "home"});
-            else if (key == "searchEngine") settings.searchEngine = str({"google", "bing", "duckduckgo", "startpage", "baidu"});
+            else if (key == "searchEngine") settings.searchEngine = str({"google", "brave", "bing", "duckduckgo", "startpage", "baidu"});
             else if (key == "homeUrl") {
                 if (!value.is_string()) throw std::runtime_error("invalid value");
                 const std::wstring home = WebViewManager::ResolveInput(W(value.get<std::string>()));

@@ -119,7 +119,7 @@ void Config::Load() {
             };
             readChoice("startupPage", m_settings.startupPage, {"start", "home"});
             readChoice("newTabPage", m_settings.newTabPage, {"start", "blank", "home"});
-            readChoice("searchEngine", m_settings.searchEngine, {"google", "bing", "duckduckgo", "startpage", "baidu"});
+            readChoice("searchEngine", m_settings.searchEngine, {"google", "brave", "bing", "duckduckgo", "startpage", "baidu"});
             readBool("saveHistory", m_settings.saveHistory);
             readInt("tabSuspendMinutes", m_settings.tabSuspendMinutes, 0, 240);
             readBool("startShowFavorites", m_settings.startShowFavorites);
@@ -130,6 +130,13 @@ void Config::Load() {
             readInt("readerFontSize", m_settings.readerFontSize, 12, 40);
             readBool("sidebarVisible", m_settings.sidebarVisible);
             readBool("preloadLinks", m_settings.preloadLinks);
+            // v2.0.8: the start page became Brave Search. Move configs that still use
+            // the old defaults (Google home, favorites page on start and new tabs).
+            if (!s.contains("homeVersion")) {
+                if (m_settings.startUrl == L"https://www.google.com") m_settings.startUrl = kDefaultHomeUrl;
+                if (m_settings.startupPage == "start") m_settings.startupPage = "home";
+                if (m_settings.newTabPage == "start") m_settings.newTabPage = "home";
+            }
         }
 
         if (root.contains("blockRules") && root["blockRules"].is_object()) {
@@ -157,6 +164,7 @@ void Config::Save() {
         std::string startUrlNarrow = StringUtils::WideToUtf8(m_settings.startUrl);
         root["settings"] = {
             {"startUrl", startUrlNarrow},
+            {"homeVersion", 2},
             {"userAgentProfile", m_settings.userAgentProfile},
             {"macPlatformVersion", m_settings.macPlatformVersion},
             {"hardwareAcceleration", m_settings.hardwareAcceleration},

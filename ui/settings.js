@@ -32,14 +32,14 @@ async function load() {
   s = await call("getSettings");
   document.getElementById("main").replaceChildren(
     section("general", "通用",
-      row("UltraLightBrowser 打开时：", select("startupPage", [["start", "一个新窗口"], ["home", "主页"]])),
-      row("新标签页打开方式：", select("newTabPage", [["start", "起始页"], ["home", "主页"], ["blank", "空白页"]])),
+      row("UltraLightBrowser 打开时：", select("startupPage", [["home", "主页"], ["start", "个人收藏"]])),
+      row("新标签页打开方式：", select("newTabPage", [["home", "主页"], ["start", "个人收藏"], ["blank", "空白页"]])),
       row("主页：", text("homeUrl", "https://"))),
     section("tabs", "标签页",
       row("后台标签页自动挂起：", select("tabSuspendMinutes", [[0, "永不"], [5, "5 分钟后"], [10, "10 分钟后"], [30, "30 分钟后"], [60, "1 小时后"]]),
         "未播放声音的后台标签页会暂停运行以节省内存和电量，切换回来时自动恢复。")),
     section("search", "搜索",
-      row("搜索引擎：", select("searchEngine", [["google", "Google"], ["bing", "Bing"], ["duckduckgo", "DuckDuckGo"], ["startpage", "Startpage"], ["baidu", "百度"]]))),
+      row("搜索引擎：", select("searchEngine", [["google", "Google"], ["brave", "Brave"], ["bing", "Bing"], ["duckduckgo", "DuckDuckGo"], ["startpage", "Startpage"], ["baidu", "百度"]]))),
     section("start", "起始页",
       row("个人收藏", sw("startShowFavorites")),
       row("阅读列表", sw("startShowReading")),
