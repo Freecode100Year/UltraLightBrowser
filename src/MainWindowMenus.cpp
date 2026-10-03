@@ -72,9 +72,9 @@ HMENU MainWindow::BuildZoomMenu() {
     HMENU m = CreatePopupMenu();
     const Tab* t = ActiveTab();
     const double zoom = t && t->view ? t->view->GetZoomFactor() : 1.0;
+    AppendMenuW(m, MF_STRING, IDM_ZOOM_RESET, L"实际大小\tCtrl+0");
     AppendMenuW(m, MF_STRING, IDM_ZOOM_IN, L"放大\tCtrl+加号");
     AppendMenuW(m, MF_STRING, IDM_ZOOM_OUT, L"缩小\tCtrl+减号");
-    AppendMenuW(m, MF_STRING, IDM_ZOOM_RESET, L"实际大小\tCtrl+0");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     for (size_t i = 0; i < std::size(kZoomPresets); ++i) {
         const bool on = std::abs(kZoomPresets[i] - zoom * 100) < 1.5;
@@ -87,21 +87,21 @@ HMENU MainWindow::BuildSiteMenu() {
     HMENU m = CreatePopupMenu();
     const std::string host = ActiveHost();
     if (host.empty() || m_private) {
-        AppendMenuW(m, MF_STRING | MF_GRAYED, 0, m_private ? L"无痕窗口不保存网站设置" : L"当前页面不是网站");
+        AppendMenuW(m, MF_STRING | MF_GRAYED, 0, m_private ? L"无痕浏览窗口不保存网站设置" : L"此页面没有网站设置");
         return m;
     }
     const SiteSettings s = AppShell::Instance().Lib().Site(host);
     AppendMenuW(m, MF_STRING | MF_GRAYED, 0, StringUtils::Utf8ToWide(host).c_str());
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING | (s.autoReader ? MF_CHECKED : 0), IDM_SITE_AUTO_READER, L"自动使用阅读器");
-    AppendMenuW(m, MF_STRING | (s.adblock ? MF_CHECKED : 0), IDM_SITE_ADBLOCK, L"拦截广告与跟踪器");
+    AppendMenuW(m, MF_STRING | (s.autoReader ? MF_CHECKED : 0), IDM_SITE_AUTO_READER, L"可用时使用阅读器");
+    AppendMenuW(m, MF_STRING | (s.adblock ? MF_CHECKED : 0), IDM_SITE_ADBLOCK, L"启用内容拦截器");
     AppendMenuW(m, MF_STRING | (s.zoom > 0 ? 0 : MF_GRAYED), IDM_SITE_ZOOM_RESET,
-                (L"页面缩放：" + (s.zoom > 0 ? Percent(s.zoom) + L"（点按恢复默认）" : std::wstring(L"默认"))).c_str());
+                (L"页面缩放\t" + (s.zoom > 0 ? Percent(s.zoom) : std::wstring(L"100%"))).c_str());
     auto perm = [&](const wchar_t* label, const std::string& value, UINT ask, UINT allow, UINT deny) {
         HMENU sub = CreatePopupMenu();
         AppendMenuW(sub, MF_STRING | (value == "ask" ? MF_CHECKED : 0), ask, L"询问");
-        AppendMenuW(sub, MF_STRING | (value == "allow" ? MF_CHECKED : 0), allow, L"允许");
         AppendMenuW(sub, MF_STRING | (value == "deny" ? MF_CHECKED : 0), deny, L"拒绝");
+        AppendMenuW(sub, MF_STRING | (value == "allow" ? MF_CHECKED : 0), allow, L"允许");
         const std::wstring text = std::wstring(label) + L"\t" + (value == "allow" ? L"允许" : value == "deny" ? L"拒绝" : L"询问");
         AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(sub), text.c_str());
     };
@@ -109,28 +109,28 @@ HMENU MainWindow::BuildSiteMenu() {
     perm(L"麦克风", s.microphone, IDM_SITE_MIC_ASK, IDM_SITE_MIC_ALLOW, IDM_SITE_MIC_DENY);
     perm(L"位置", s.location, IDM_SITE_LOC_ASK, IDM_SITE_LOC_ALLOW, IDM_SITE_LOC_DENY);
     HMENU popups = CreatePopupMenu();
-    AppendMenuW(popups, MF_STRING | (s.popups != "allow" ? MF_CHECKED : 0), IDM_SITE_POPUP_BLOCK, L"拦截");
+    AppendMenuW(popups, MF_STRING | (s.popups != "allow" ? MF_CHECKED : 0), IDM_SITE_POPUP_BLOCK, L"拦截并通知");
     AppendMenuW(popups, MF_STRING | (s.popups == "allow" ? MF_CHECKED : 0), IDM_SITE_POPUP_ALLOW, L"允许");
-    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(popups), (std::wstring(L"弹出式窗口\t") + (s.popups == "allow" ? L"允许" : L"拦截")).c_str());
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(popups), (std::wstring(L"弹出式窗口\t") + (s.popups == "allow" ? L"允许" : L"拦截并通知")).c_str());
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING | (s.IsDefault() ? MF_GRAYED : 0), IDM_SITE_RESET, L"恢复此网站的默认设置");
+    AppendMenuW(m, MF_STRING | (s.IsDefault() ? MF_GRAYED : 0), IDM_SITE_RESET, L"移除此网站的设置");
     return m;
 }
 
 HMENU MainWindow::BuildBlockerMenu() {
     HMENU m = CreatePopupMenu();
     const bool enabled = NativeRequestFilter::Instance().IsEnabled();
-    AppendMenuW(m, MF_STRING | (enabled ? MF_CHECKED : 0), IDM_BLOCKER_TOGGLE_NATIVE, L"拦截广告与跟踪器（所有网站）");
+    AppendMenuW(m, MF_STRING | (enabled ? MF_CHECKED : 0), IDM_BLOCKER_TOGGLE_NATIVE, L"启用内容拦截器（所有网站）");
     const std::string host = ActiveHost();
     if (!host.empty() && !m_private) {
         const bool siteOn = AppShell::Instance().Lib().Site(host).adblock;
         AppendMenuW(m, MF_STRING | (siteOn ? MF_CHECKED : 0) | (enabled ? 0 : MF_GRAYED), IDM_SITE_ADBLOCK,
-                    (L"在 " + StringUtils::Utf8ToWide(host) + L" 上拦截").c_str());
+                    (L"在“" + StringUtils::Utf8ToWide(host) + L"”上启用").c_str());
     }
-    AppendMenuW(m, MF_STRING | MF_GRAYED, 0, (L"本次已拦截 " + std::to_wstring(NativeRequestFilter::Instance().GetBlockedCount()) + L" 个请求").c_str());
+    AppendMenuW(m, MF_STRING | MF_GRAYED, 0, (L"已阻止 " + std::to_wstring(NativeRequestFilter::Instance().GetBlockedCount()) + L" 个跟踪器和广告请求").c_str());
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, IDM_BLOCKER_PICKER, L"点选隐藏页面元素\tCtrl+Shift+H");
-    AppendMenuW(m, MF_STRING | (host.empty() ? MF_GRAYED : 0), IDM_BLOCKER_CLEAR_RULES, L"清除此网站的隐藏规则");
+    AppendMenuW(m, MF_STRING, IDM_BLOCKER_PICKER, L"隐藏干扰项目…\tCtrl+Shift+H");
+    AppendMenuW(m, MF_STRING | (host.empty() ? MF_GRAYED : 0), IDM_BLOCKER_CLEAR_RULES, L"显示隐藏的项目");
     return m;
 }
 
@@ -190,10 +190,10 @@ HMENU MainWindow::BuildDnsMenu() {
 HMENU MainWindow::BuildIdentityMenu() {
     HMENU m = CreatePopupMenu();
     const bool mac = Config::Instance().GetSettings().userAgentProfile == "macos-edge";
-    AppendMenuW(m, MF_STRING | (!mac ? MF_CHECKED : 0), IDM_UA_DEFAULT, L"Windows Edge（默认）");
-    AppendMenuW(m, MF_STRING | (mac ? MF_CHECKED : 0), IDM_UA_MACOS_EDGE, L"macOS Edge");
+    AppendMenuW(m, MF_STRING | (!mac ? MF_CHECKED : 0), IDM_UA_DEFAULT, L"默认（Microsoft Edge — Windows）");
+    AppendMenuW(m, MF_STRING | (mac ? MF_CHECKED : 0), IDM_UA_MACOS_EDGE, L"Microsoft Edge — macOS");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, IDM_UA_SELFTEST, L"标识自检页");
+    AppendMenuW(m, MF_STRING, IDM_UA_SELFTEST, L"检查当前用户代理…");
     return m;
 }
 
@@ -218,23 +218,26 @@ void MainWindow::ShowMainMenu() {
     HMENU m = CreatePopupMenu();
     AppendItem(m, IDM_NEW_TAB, L"新建标签页\tCtrl+T", Icon::Plus);
     AppendItem(m, IDM_NEW_WINDOW, L"新建窗口\tCtrl+N", Icon::Window);
-    AppendItem(m, IDM_NEW_PRIVATE_WINDOW, L"新建无痕窗口\tCtrl+Shift+N", Icon::Private);
+    AppendItem(m, IDM_NEW_PRIVATE_WINDOW, L"新建无痕浏览窗口\tCtrl+Shift+N", Icon::Private);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendItem(m, IDM_BOOKMARKS, L"书签\tCtrl+Shift+B", Icon::Bookmark);
-    AppendItem(m, IDM_HISTORY, L"历史记录\tCtrl+H", Icon::Clock);
-    AppendItem(m, IDM_DOWNLOADS, L"下载\tCtrl+J", Icon::Download);
-    AppendItem(m, IDM_READING_LIST, L"阅读列表", Icon::ReadingList);
+    AppendItem(m, IDM_BOOKMARKS, L"编辑书签\tCtrl+Shift+B", Icon::Bookmark);
+    AppendItem(m, IDM_HISTORY, L"显示所有历史记录\tCtrl+H", Icon::Clock);
+    AppendItem(m, IDM_DOWNLOADS, L"显示下载项\tCtrl+J", Icon::Download);
+    AppendItem(m, IDM_READING_LIST, L"显示阅读列表", Icon::ReadingList);
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendItem(m, IDM_SIDEBAR, m_sidebarVisible ? L"隐藏边栏\tCtrl+Shift+L" : L"显示边栏\tCtrl+Shift+L", Icon::Sidebar);
+    AppendItem(m, IDM_OVERVIEW, L"显示标签页概览\tCtrl+Shift+\\", Icon::Grid);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendItem(m, IDM_READER, tab && !tab->readerSource.empty() ? L"隐藏阅读器\tCtrl+Shift+R" : L"显示阅读器\tCtrl+Shift+R", Icon::Reader,
                webPage ? 0 : MF_GRAYED);
-    AppendItem(m, IDM_FIND, L"在页面中查找\tCtrl+F", Icon::Search);
+    AppendItem(m, IDM_FIND, L"查找…\tCtrl+F", Icon::Search);
     const double zoom = tab && tab->view ? tab->view->GetZoomFactor() : 1.0;
     AppendSubmenu(m, BuildZoomMenu(), L"缩放\t" + Percent(zoom), Icon::Zoom);
     AppendItem(m, IDM_PRINT, L"打印…\tCtrl+P", Icon::Print, webPage ? 0 : MF_GRAYED);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendItem(m, IDM_PRIVACY_REPORT, L"隐私报告", Icon::Shield);
     AppendSubmenu(m, BuildSiteMenu(), L"此网站的设置", Icon::Gear);
-    AppendSubmenu(m, BuildBlockerMenu(), L"广告拦截与元素隐藏", Icon::Block);
+    AppendSubmenu(m, BuildBlockerMenu(), L"内容拦截器", Icon::Block);
     AppendSubmenu(m, BuildSoundMenu(), std::wstring(L"声音\t") + (settings.systemAudioPassthrough ? L"原声" : L"增强"), Icon::Sound);
     std::wstring dnsLabel = L"系统";
     if (settings.enablePublicDns) {
@@ -243,11 +246,11 @@ void MainWindow::ShowMainMenu() {
         if (dnsLabel.size() > 14) dnsLabel = dnsLabel.substr(0, 14) + L"…";
     }
     AppendSubmenu(m, BuildDnsMenu(), L"DNS\t" + dnsLabel, Icon::Globe);
-    AppendSubmenu(m, BuildIdentityMenu(), std::wstring(L"浏览器标识\t") + (settings.userAgentProfile == "macos-edge" ? L"macOS Edge" : L"Windows Edge"), Icon::Monitor);
+    AppendSubmenu(m, BuildIdentityMenu(), std::wstring(L"用户代理\t") + (settings.userAgentProfile == "macos-edge" ? L"macOS" : L"默认"), Icon::Monitor);
     const int minutes = settings.tabSuspendMinutes;
     AppendSubmenu(m, BuildPowerMenu(), std::wstring(L"节能\t") + (minutes > 0 ? L"后台标签自动挂起" : L"关闭"), Icon::Bolt);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendItem(m, IDM_TOGGLE_FULLSCREEN, m_isFullScreen ? L"退出全屏\tF11" : L"全屏\tF11", Icon::Fullscreen);
+    AppendItem(m, IDM_TOGGLE_FULLSCREEN, m_isFullScreen ? L"退出全屏幕\tF11" : L"进入全屏幕\tF11", Icon::Fullscreen);
     AppendItem(m, IDM_SETTINGS, L"设置…\tCtrl+,", Icon::Gear);
     AppendItem(m, IDM_ABOUT, L"关于 UltraLightBrowser", Icon::Info);
     TrackMenu(m, m_rcMenuBtn, true);
@@ -260,11 +263,11 @@ void MainWindow::ShowShareMenu() {
     const bool bookmarked = AppShell::Instance().Lib().FindBookmarkByUrl(url) != nullptr;
     HMENU m = CreatePopupMenu();
     AppendItem(m, IDM_SHARE_COPY_URL, L"拷贝链接", Icon::Copy);
-    AppendItem(m, IDM_ADD_BOOKMARK, bookmarked ? L"已添加书签（再次添加）\tCtrl+D" : L"添加书签\tCtrl+D", Icon::Bookmark);
+    AppendItem(m, IDM_ADD_BOOKMARK, bookmarked ? L"添加书签…\tCtrl+D" : L"添加书签…\tCtrl+D", Icon::Bookmark);
     AppendItem(m, IDM_ADD_FAVORITE, L"添加到个人收藏", Icon::Star);
     AppendItem(m, IDM_ADD_READING, L"添加到阅读列表\tCtrl+Shift+D", Icon::ReadingList);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendItem(m, IDM_SHARE_OPEN_DEFAULT, L"在默认浏览器中打开", Icon::Open);
+    AppendItem(m, IDM_SHARE_OPEN_DEFAULT, L"在默认浏览器中打开页面", Icon::Open);
     TrackMenu(m, m_rcShare, false);
 }
 
@@ -275,13 +278,13 @@ void MainWindow::ShowTabMenu(int tabId, POINT screenPt) {
     AppendItem(m, IDM_TAB_RELOAD, L"重新载入", Icon::Reload);
     AppendItem(m, IDM_TAB_DUPLICATE, L"复制标签页", Icon::Copy);
     AppendItem(m, IDM_TAB_MUTE, tab->muted ? L"取消标签页静音" : L"将标签页静音", tab->muted ? Icon::Speaker : Icon::SpeakerMute);
-    AppendItem(m, IDM_TAB_BOOKMARK, L"为此标签页添加书签", Icon::Bookmark, DisplayUrl(*tab).empty() ? MF_GRAYED : 0);
+    AppendItem(m, IDM_TAB_BOOKMARK, L"为此标签页添加书签…", Icon::Bookmark, DisplayUrl(*tab).empty() ? MF_GRAYED : 0);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendItem(m, IDM_CLOSE_TAB, L"关闭标签页", Icon::Close);
     AppendMenuW(m, MF_STRING | (m_tabs.size() > 1 ? 0 : MF_GRAYED), IDM_TAB_CLOSE_OTHERS, L"关闭其他标签页");
     AppendMenuW(m, MF_STRING | (IndexOf(tabId) + 1 < static_cast<int>(m_tabs.size()) ? 0 : MF_GRAYED), IDM_TAB_CLOSE_RIGHT, L"关闭右侧的标签页");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendItem(m, IDM_REOPEN_TAB, L"重新打开关闭的标签页\tCtrl+Shift+T", Icon::Back, m_closedUrls.empty() ? MF_GRAYED : 0);
+    AppendItem(m, IDM_REOPEN_TAB, L"重新打开上次关闭的标签页\tCtrl+Shift+T", Icon::Back, m_closedUrls.empty() ? MF_GRAYED : 0);
     const UINT cmd = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD, screenPt.x, screenPt.y, 0, m_hWnd, nullptr);
     DestroyMenu(m);
     switch (cmd) {
@@ -405,7 +408,7 @@ bool MainWindow::HandleMenuCommand(WORD id) {
     case IDM_BLOCKER_TOGGLE_NATIVE: {
         const bool next = !NativeRequestFilter::Instance().IsEnabled();
         NativeRequestFilter::Instance().SetEnabled(next);
-        ShowToast(next ? L"已开启广告与跟踪拦截" : L"已关闭广告与跟踪拦截");
+        ShowToast(next ? L"已启用内容拦截器" : L"已停用内容拦截器");
         return true;
     }
     case IDM_BLOCKER_CLEAR_RULES: {
@@ -414,7 +417,7 @@ bool MainWindow::HandleMenuCommand(WORD id) {
             Config::Instance().ClearBlockRulesForHost(host);
             ElementBlocker::Instance().UpdateAllRulesScripts();
             if (tab && tab->view) tab->view->Reload();
-            ShowToast(L"已清除此网站的隐藏规则");
+            ShowToast(L"已显示此网站隐藏的项目");
         }
         return true;
     }

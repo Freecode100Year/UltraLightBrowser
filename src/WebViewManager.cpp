@@ -744,8 +744,8 @@ void WebViewManager::RegisterEventHandlers() {
                     const struct { const wchar_t* label; const wchar_t* action; } entries[] = {
                         {L"在新标签页中打开链接", L"tab"},
                         {L"在后台标签页中打开链接", L"background"},
-                        {L"在无痕窗口中打开链接", L"private"},
-                        {L"添加链接到阅读列表", L"reading"},
+                        {L"在无痕浏览窗口中打开链接", L"private"},
+                        {L"将链接添加到阅读列表", L"reading"},
                     };
                     for (const auto& e : entries) {
                         if (m_inPrivate && std::wstring(e.action) == L"private") continue;

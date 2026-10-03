@@ -12,16 +12,16 @@
 <div class="page">
   <h1>历史记录</h1>
   <div class="top">
-    <input type="search" id="q" placeholder="搜索历史记录" autofocus>
+    <input type="search" id="q" placeholder="搜索" autofocus>
     <select id="range">
       <option value="">清除历史记录…</option>
-      <option value="hour">最近一小时</option>
+      <option value="hour">上一小时</option>
       <option value="today">今天</option>
       <option value="twodays">今天和昨天</option>
       <option value="all">所有历史记录</option>
     </select>
   </div>
-  <div id="off" class="card muted" style="display:none;margin-bottom:10px">已在设置中关闭“记录浏览历史”，不会再记录新的访问。</div>
+  <div id="off" class="card muted" style="display:none;margin-bottom:10px">已在设置中关闭“保存浏览历史”，新的访问不会被记录。</div>
   <div class="list" id="list"></div>
 </div>
 <script src="ui.js"></script><script src="history.js"></script>

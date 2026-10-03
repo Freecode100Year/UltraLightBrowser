@@ -840,6 +840,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         SetWindowSubclass(m_hEditAddress, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
         m_hFindEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL | ES_LEFT,
                                       0, 0, 0, 0, m_hWnd, reinterpret_cast<HMENU>(IDC_EDIT_FIND), m_hInstance, nullptr);
+        SendMessageW(m_hFindEdit, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"在页面中查找"));
         SetWindowSubclass(m_hFindEdit, FindEditSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
         UpdateDpiScaling(m_dpi);
 

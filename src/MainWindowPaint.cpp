@@ -116,8 +116,8 @@ void MainWindow::LayoutToolbar(int width) {
     m_rcBack = {x, by, x + bw, by + bh}; x += bw + S(2);
     m_rcForward = {x, by, x + bw, by + bh}; x += bw + S(10);
     if (m_private) {
-        m_rcPrivateBadge = {x, cy - S(11), x + S(46), cy + S(11)};
-        x += S(54);
+        m_rcPrivateBadge = {x, cy - S(11), x + S(64), cy + S(11)};
+        x += S(72);
     } else {
         m_rcPrivateBadge = {};
     }
@@ -335,7 +335,7 @@ void MainWindow::PaintToolbar(HDC hdc, int width) {
 
     if (m_private) {
         FillRound(g, F(m_rcPrivateBadge), static_cast<REAL>(S(11)), C(92, 62, 150));
-        Text(g, L"无痕", smallFont, F(m_rcPrivateBadge), C(240, 236, 255), StringAlignmentCenter);
+        Text(g, L"无痕浏览", smallFont, F(m_rcPrivateBadge), C(240, 236, 255), StringAlignmentCenter);
     }
 
     // Tabs
@@ -497,12 +497,10 @@ void MainWindow::PaintFindBar(HDC hdc) {
         StrokeRound(g, field, static_cast<REAL>(S(7)), GetFocus() == m_hFindEdit ? C(61, 139, 253) : C(70, 73, 80));
         Icons::Draw(g, Icon::Search, RectF(field.X + S(7), field.Y + (field.Height - S(14)) / 2, static_cast<REAL>(S(14)), static_cast<REAL>(S(14))),
                     C(150, 152, 160));
-        Text(g, L"在页面中查找", uiFont, RectF(static_cast<REAL>(m_rcFindBar.left + S(14)), static_cast<REAL>(m_rcFindBar.top),
-             field.X - m_rcFindBar.left - S(20), static_cast<REAL>(m_rcFindBar.bottom - m_rcFindBar.top)), C(150, 152, 160));
     }
     std::wstring status;
     if (!m_findQuery.empty()) {
-        status = m_findCount == 0 ? L"未找到" : (std::to_wstring(m_findIndex) + L" / " + std::to_wstring(m_findCount));
+        status = m_findCount == 0 ? L"未找到" : (std::to_wstring(m_findCount) + L" 个匹配项");
     }
     Text(g, status, uiFont, F(m_rcFindStatus), m_findCount == 0 && !m_findQuery.empty() ? C(255, 140, 130) : C(170, 172, 180),
          StringAlignmentFar);

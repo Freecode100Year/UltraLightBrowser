@@ -16,7 +16,7 @@ function render() {
       el("div", { class: "tt" }, icon(t.url || "about:blank", 16, t.favicon), el("span", { class: "name", text: t.title || host(t.url) || "新标签页" }),
         t.audio ? el("span", { class: "badge audio", text: "播放中" }) : null,
         t.suspended ? el("span", { class: "badge sleep", text: "已挂起" }) : null),
-      el("button", { class: "close", title: "关闭标签页", onclick: (e) => { e.stopPropagation(); call("closeTab", { id: t.id }); } }, "✕"));
+      el("button", { class: "close", title: "关闭此标签页", onclick: (e) => { e.stopPropagation(); call("closeTab", { id: t.id }); } }, "✕"));
   }), el("div", { class: "th new", title: "新建标签页", onclick: () => call("newTab") }, "+"));
 }
 

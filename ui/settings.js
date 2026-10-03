@@ -32,41 +32,42 @@ async function load() {
   s = await call("getSettings");
   document.getElementById("main").replaceChildren(
     section("general", "通用",
-      row("启动时打开", select("startupPage", [["start", "起始页"], ["home", "主页"], ["restore", "上次打开的标签页"]])),
-      row("新标签页打开", select("newTabPage", [["start", "起始页"], ["blank", "空白页"], ["home", "主页"]])),
-      row("主页", text("homeUrl", "https://")),
-      row("搜索引擎", select("searchEngine", [["google", "Google"], ["bing", "Bing"], ["duckduckgo", "DuckDuckGo"], ["startpage", "Startpage"], ["baidu", "百度"]]))),
+      row("UltraLightBrowser 打开时：", select("startupPage", [["start", "一个新窗口"], ["home", "主页"], ["restore", "上次会话的所有窗口"]])),
+      row("新标签页打开方式：", select("newTabPage", [["start", "起始页"], ["home", "主页"], ["blank", "空白页"]])),
+      row("主页：", text("homeUrl", "https://"))),
     section("tabs", "标签页",
-      row("后台标签页自动挂起", select("tabSuspendMinutes", [[0, "从不"], [5, "5 分钟后"], [10, "10 分钟后"], [30, "30 分钟后"], [60, "1 小时后"]]),
+      row("后台标签页自动挂起：", select("tabSuspendMinutes", [[0, "永不"], [5, "5 分钟后"], [10, "10 分钟后"], [30, "30 分钟后"], [60, "1 小时后"]]),
         "未播放声音的后台标签页会暂停运行以节省内存和电量，切换回来时自动恢复。")),
+    section("search", "搜索",
+      row("搜索引擎：", select("searchEngine", [["google", "Google"], ["bing", "Bing"], ["duckduckgo", "DuckDuckGo"], ["startpage", "Startpage"], ["baidu", "百度"]]))),
     section("start", "起始页",
       row("个人收藏", sw("startShowFavorites")),
-      row("常去网站", sw("startShowFrequent")),
+      row("常用网站", sw("startShowFrequent")),
       row("隐私报告", sw("startShowPrivacy")),
       row("阅读列表", sw("startShowReading")),
-      row("背景", select("startBackground", [["aurora", "极光"], ["ocean", "海洋"], ["sunset", "日落"], ["plain", "纯色"]]))),
+      row("背景图像：", select("startBackground", [["aurora", "极光"], ["ocean", "海洋"], ["sunset", "日落"], ["plain", "无"]]))),
     section("privacy", "隐私",
-      row("记录浏览历史", sw("saveHistory"), "无痕窗口从不记录历史。"),
-      row("退出时清除历史记录", sw("clearHistoryOnExit")),
-      row("广告与跟踪拦截", sw("enableAdBlock"), "可在“此网站的设置”中对单个网站关闭。"),
-      action("历史记录", "清除所有历史记录…", async () => {
-        if (confirm("清除所有历史记录？")) { await call("clearHistory", { range: "all" }); toast("已清除历史记录"); }
+      row("保存浏览历史", sw("saveHistory"), "无痕浏览窗口从不保存历史记录。"),
+      row("退出时移除历史记录项目", sw("clearHistoryOnExit")),
+      row("启用内容拦截器", sw("enableAdBlock"), "阻止广告和跨网站跟踪器。可在“此网站的设置”中对单个网站停用。"),
+      action("历史记录：", "清除历史记录…", async () => {
+        if (confirm("清除所有历史记录？此操作无法撤销。")) { await call("clearHistory", { range: "all" }); toast("已清除历史记录"); }
       }, true),
-      action("网站设置", `清除 ${s.siteCount} 个网站的设置…`, async () => {
-        if (confirm("清除所有网站的单独设置（缩放、权限、阅读器等）？")) { await call("clearSiteSettings"); toast("已清除网站设置"); load(); }
+      action("网站设置：", `移除 ${s.siteCount} 个网站的设置…`, async () => {
+        if (confirm("移除所有网站的设置（页面缩放、摄像头、麦克风、位置、弹出式窗口、阅读器）？")) { await call("clearSiteSettings"); toast("已移除网站设置"); load(); }
       }, true),
-      action("隐私报告", "清除统计数据…", async () => {
-        if (confirm("清除隐私报告统计数据？")) { await call("clearPrivacy"); toast("已清除"); }
+      action("隐私报告：", "清除隐私报告…", async () => {
+        if (confirm("清除隐私报告中的数据？")) { await call("clearPrivacy"); toast("已清除隐私报告"); }
       }, true),
-      row("Cookie 与网站数据", el("span", { class: "muted", text: "每次退出时自动清除" }))),
+      row("Cookie 和网站数据：", el("span", { class: "muted", text: "每次退出时自动移除" }))),
     section("reader", "阅读器",
-      row("主题", select("readerTheme", [["sepia", "米黄"], ["light", "白色"], ["gray", "灰色"], ["dark", "深色"]])),
-      row("字体", select("readerFont", [["serif", "衬线（宋体）"], ["sans", "无衬线（黑体）"]])),
-      row("字号", select("readerFontSize", [15, 17, 19, 21, 24, 28].map((n) => [n, n + " px"])))),
+      row("主题：", select("readerTheme", [["light", "白色"], ["sepia", "米色"], ["gray", "灰色"], ["dark", "夜间"]])),
+      row("字体：", select("readerFont", [["serif", "宋体（衬线）"], ["sans", "黑体（无衬线）"]])),
+      row("文本大小：", select("readerFontSize", [15, 17, 19, 21, 24, 28].map((n) => [n, n + " 像素"])))),
     section("advanced", "高级",
-      row("硬件加速", sw("hardwareAcceleration"), "更改后重新启动浏览器生效。"),
-      row("版本", el("span", { class: "muted", text: "UltraLightBrowser " + s.version })),
-      row("项目主页", el("a", { href: "https://github.com/Freecode100Year/UltraLightBrowser", style: { color: "var(--accent)" }, text: "github.com/Freecode100Year/UltraLightBrowser" }))));
+      row("使用硬件加速", sw("hardwareAcceleration"), "更改后需重新启动 UltraLightBrowser。"),
+      row("版本：", el("span", { class: "muted", text: "UltraLightBrowser " + s.version })),
+      row("项目主页：", el("a", { href: "https://github.com/Freecode100Year/UltraLightBrowser", style: { color: "var(--accent)" }, text: "github.com/Freecode100Year/UltraLightBrowser" }))));
   if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
 }
 load();

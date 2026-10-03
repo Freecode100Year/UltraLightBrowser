@@ -6,7 +6,7 @@ function siteTile(item, removable) {
     icon(item.url, 62),
     el("span", { class: "name", text: item.title || host(item.url) }));
   if (removable) {
-    a.append(el("button", { class: "rm", title: "移除", onclick: async (e) => {
+    a.append(el("button", { class: "rm", title: "从个人收藏中移除", onclick: async (e) => {
       e.preventDefault(); e.stopPropagation();
       await call("removeBookmark", { id: item.id });
       load();
@@ -46,11 +46,11 @@ async function load() {
       el("div", { class: "shield" }, shieldSvg()),
       el("div", {}, el("div", { class: "big", text: p.total.toLocaleString("zh-CN") }),
         el("div", { class: "muted", style: { fontSize: "12px" }, text: p.adblock
-          ? `过去 7 天拦截的跟踪器 · 涉及 ${p.siteCount} 个网站`
-          : "广告与跟踪拦截已关闭" }))),
+          ? `在过去七天中，已阻止 ${p.total} 个跟踪器为你建立档案`
+          : "内容拦截器已停用" }))),
     el("div", { class: "card rl" }, p.top.length
       ? p.top.slice(0, 3).map((t) => el("div", {}, el("span", { text: t.name }), el("span", { class: "muted", text: t.count + " 次" })))
-      : el("div", { class: "muted" }, "暂无拦截记录")));
+      : el("div", { class: "muted" }, "尚未阻止任何跟踪器")));
   document.getElementById("privacy").classList.toggle("hidden", show.privacy === false);
 
   const rr = document.getElementById("reading-row");

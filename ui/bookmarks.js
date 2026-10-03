@@ -13,9 +13,9 @@ function renderFolders() {
       el("span", { text: f === "个人收藏" ? "★" : "▸", class: "faint" }), el("span", { text: f }),
       el("span", { class: "n", text: String(count) }));
     if (!fixed.has(f)) {
-      row.append(el("button", { class: "icon fx", title: "重命名", onclick: async (e) => {
+      row.append(el("button", { class: "icon fx", title: "重新命名", onclick: async (e) => {
         e.stopPropagation();
-        const r = await modal("重命名文件夹", [{ name: "name", label: "名称", value: f, required: true }]);
+        const r = await modal("重新命名文件夹", [{ name: "name", label: "名称", value: f, required: true }]);
         if (r && r.name) { await call("renameFolder", { from: f, to: r.name }); if (current === f) current = r.name; load(); }
       } }, "✎"), el("button", { class: "icon fx", title: "删除文件夹（书签移到“书签”）", onclick: async (e) => {
         e.stopPropagation();
@@ -39,7 +39,7 @@ function renderList() {
     ? data.bookmarks.filter((b) => (b.title + " " + b.url).toLowerCase().includes(term))
     : data.bookmarks.filter((b) => b.folder === current);
   const list = document.getElementById("list");
-  if (!items.length) { list.replaceChildren(el("div", { class: "empty", text: term ? "没有匹配的书签" : "此文件夹为空" })); return; }
+  if (!items.length) { list.replaceChildren(el("div", { class: "empty", text: term ? "没有匹配的书签" : "此文件夹中没有书签" })); return; }
   list.replaceChildren(...items.map((b) => {
     const row = el("a", { class: "item", href: b.url, draggable: "true" },
       icon(b.url, 16),

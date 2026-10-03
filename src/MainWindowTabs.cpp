@@ -563,7 +563,7 @@ void MainWindow::HandleNewWindowRequest(int openerId, ICoreWebView2NewWindowRequ
     const std::string openerHost = HostUtf8(opener->url);
     if (!userInitiated && AppShell::Instance().Lib().Site(openerHost).popups != "allow") {
         args->put_Handled(TRUE);
-        ShowToast(L"已拦截弹出式窗口（可在“此网站的设置”中允许）");
+        ShowToast(L"已拦截弹出式窗口");
         return;
     }
     // Ctrl/middle click opens in the background, like Safari's Cmd-click.
@@ -689,7 +689,7 @@ void MainWindow::ToggleReader() {
         return;
     }
     if (InternalPages::IsInternal(tab->url) || !Library::IsWebUrl(StringUtils::WideToUtf8(tab->url))) {
-        ShowToast(L"此页面不支持阅读器");
+        ShowToast(L"此页面没有阅读器视图");
         return;
     }
     const int tabId = tab->id;
@@ -706,7 +706,7 @@ void MainWindow::ToggleReader() {
                 } catch (...) {}
             }
             if (article.empty()) {
-                ShowToast(L"此页面没有可供阅读器显示的文章");
+                ShowToast(L"此页面没有阅读器视图");
                 return S_OK;
             }
             const std::string key = AppShell::Instance().StoreArticle(article);

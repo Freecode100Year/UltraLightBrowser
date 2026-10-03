@@ -40,7 +40,7 @@ function sanitize(html, baseUrl) {
   prefs = Object.assign(prefs, data.prefs || {});
   applyPrefs();
   document.title = data.title || "阅读器";
-  const meta = [data.siteName, data.byline, data.length ? `约 ${Math.max(1, Math.round(data.length / 500))} 分钟阅读` : null].filter(Boolean).join(" · ");
+  const meta = [data.siteName, data.byline, data.length ? `${Math.max(1, Math.round(data.length / 500))} 分钟` : null].filter(Boolean).join(" · ");
   art.replaceChildren(el("h1", { class: "title", text: data.title || "" }), el("div", { class: "meta", text: meta }), ...sanitize(data.content, data.url));
   if (data.dir) art.dir = data.dir;
   if (data.lang) document.documentElement.lang = data.lang;

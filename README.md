@@ -21,7 +21,7 @@
 
 ## 简介
 
-UltraLightBrowser 是一个约 1MB 的单文件浏览器，界面仿照 macOS Safari：紧凑式标签栏（当前标签就是地址栏）、起始页、侧边栏、阅读器、标签页总览，所有选项集中在右上角一个“⋯”菜单里。界面用原生 Win32 + GDI+ 绘制，网页由系统自带的 Microsoft Edge WebView2 内核（Chromium / Blink）渲染，因此：
+UltraLightBrowser 是一个约 1MB 的单文件浏览器，界面仿照 macOS Safari：紧凑式标签栏（当前标签就是地址栏）、起始页、边栏、阅读器、标签页概览，所有选项集中在右上角一个“⋯”菜单里。界面用原生 Win32 + GDI+ 绘制，网页由系统自带的 Microsoft Edge WebView2 内核（Chromium / Blink）渲染，因此：
 
 - 不捆绑浏览器内核，程序本体约 1MB；
 - 内核随 Windows 自动更新，及时获得 Chromium 安全补丁；
@@ -51,29 +51,29 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 <p align="center">
   <img src="docs/screenshot-start.jpg" width="400" alt="起始页">
   <img src="docs/screenshot-reader.jpg" width="400" alt="阅读器">
-  <img src="docs/screenshot-overview.jpg" width="400" alt="标签页总览">
-  <img src="docs/screenshot-sidebar.jpg" width="400" alt="侧边栏与地址栏建议">
+  <img src="docs/screenshot-overview.jpg" width="400" alt="标签页概览">
+  <img src="docs/screenshot-sidebar.jpg" width="400" alt="边栏与地址栏建议">
 </p>
 
 **标签页与窗口**
 - 紧凑式标签栏：当前标签即地址栏（网站域名 + 锁），其他标签显示图标和标题；悬停可关闭，可拖动排序，标签太多时显示“+N”
-- 标签页总览（Ctrl+Shift+\）：缩略图网格，可搜索、关闭、新建
+- 标签页概览（Ctrl+Shift+\）：缩略图网格，可搜索、关闭、新建
 - 后台标签页自动挂起（默认 10 分钟，可设置），正在播放声音的标签不挂起；标签显示播放图标，点击即可静音
-- 多窗口、无痕窗口（独立的 InPrivate 数据，不记录历史）；重新打开关闭的标签页；启动时可恢复上次的标签页
-- 链接右键菜单：在新标签 / 后台标签 / 无痕窗口中打开，添加到阅读列表
+- 多窗口、无痕浏览窗口（独立的 InPrivate 数据，不记录历史）；重新打开关闭的标签页；启动时可恢复上次的标签页
+- 链接右键菜单：在新标签 / 后台标签 / 无痕浏览窗口中打开，添加到阅读列表
 
 **统一菜单（右上角 ⋯）**
-- 新建标签页 / 窗口 / 无痕窗口；书签、历史记录、下载、阅读列表
+- 新建标签页 / 窗口 / 无痕浏览窗口；书签、历史记录、下载、阅读列表
 - 显示阅读器、页内查找、缩放、打印
-- 隐私报告、此网站的设置、广告拦截与元素隐藏、声音、DNS、浏览器标识、节能
+- 隐私报告、此网站的设置、内容拦截器、声音、DNS、用户代理、节能
 - 全屏、设置、关于
 
 **起始页、书签与历史**
-- 起始页：个人收藏、常去网站、隐私报告、阅读列表，可选背景与显示的板块
+- 起始页：个人收藏、常用网站、隐私报告、阅读列表，可选背景与显示的板块
 - 书签：文件夹、拖动排序、搜索；可导入 / 导出 HTML 书签（Chrome、Edge、Firefox、Safari 通用格式）
 - 历史记录：按天分组、搜索、删除单条或按时间段清除；可在设置中关闭记录，或退出时清除
 - 地址栏建议：输入时从书签和历史记录中匹配，↑↓ 选择
-- 标签组（侧边栏）：把当前标签页存为一组，随时重新打开
+- 标签页组（边栏）：把当前标签页存为一组，随时重新打开
 
 **阅读器与查找**
 - 阅读器（Ctrl+Shift+R）：基于 Mozilla Readability 提取正文，四种主题、两种字体、可调字号；可设为对某网站自动启用；文章内容在严格的内容安全策略下显示，不执行任何网页脚本
@@ -81,7 +81,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 
 **隐私与拦截**
 - 内置广告 / 跟踪域名拦截（含常见国内外广告与统计服务），第三方子框架和跟踪像素同样过滤；可对单个网站关闭
-- 隐私报告：过去 7 天拦截的跟踪器数量、最常见的跟踪器与网站（只保存在本机，无痕窗口不统计）
+- 隐私报告：过去 7 天拦截的跟踪器数量、最常见的跟踪器与网站（只保存在本机，无痕浏览窗口不统计）
 - 此网站的设置：摄像头、麦克风、位置（询问 / 允许 / 拒绝），弹出式窗口，页面缩放（按网站记忆），自动阅读器
 - 开启 WebView2 严格防跟踪；Cookie、缓存和网站数据每次退出时自动清除
 - 元素隐藏：Ctrl+Shift+H 点选页面元素永久隐藏
@@ -96,7 +96,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 - 最小化时隐藏并挂起网页、降低内存目标、启用 Windows EcoQoS；后台播放音频时不挂起
 - 后台标签页按设置的时间自动挂起，切换回来时自动恢复
 
-**浏览器标识**
+**用户代理**
 - Windows Edge（默认）/ macOS Edge 两种身份，对所有标签页生效，详见下文 [macOS Edge 伪装](#macos-edge-伪装)
 
 ## macOS Edge 伪装
@@ -130,7 +130,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 | Ctrl+Shift+T | 重新打开关闭的标签页 |
 | Ctrl+Tab / Ctrl+Shift+Tab | 下一个 / 上一个标签页 |
 | Ctrl+1…8 / Ctrl+9 | 切换到第 N 个 / 最后一个标签页 |
-| Ctrl+N / Ctrl+Shift+N | 新建窗口 / 无痕窗口 |
+| Ctrl+N / Ctrl+Shift+N | 新建窗口 / 无痕浏览窗口 |
 | Ctrl+L / Alt+D / F6 | 聚焦地址栏 |
 | Ctrl+R / F5 | 刷新 |
 | Alt+← / Alt+→ | 后退 / 前进 |
@@ -138,8 +138,8 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 | Ctrl+Shift+R | 阅读器 |
 | Ctrl+D / Ctrl+Shift+D | 添加书签 / 添加到阅读列表 |
 | Ctrl+Shift+B / Ctrl+H / Ctrl+J | 书签 / 历史记录 / 下载 |
-| Ctrl+Shift+L | 侧边栏 |
-| Ctrl+Shift+\ | 标签页总览 |
+| Ctrl+Shift+L | 边栏 |
+| Ctrl+Shift+\ | 标签页概览 |
 | Ctrl+, | 设置 |
 | Ctrl+加号 / 减号 / 0 | 放大 / 缩小 / 实际大小 |
 | F11 / Esc | 进入 / 退出全屏 |
@@ -147,7 +147,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 
 ## 已知限制
 
-- 界面没有动画效果（GDI+ 绘制）；标签组为“保存并重新打开”的简化方式，不会像 Safari 那样整组切换窗口。
+- 界面没有动画效果（GDI+ 绘制）；标签页组为“保存并重新打开”的简化方式，不会像 Safari 那样整组切换窗口。
 - 内置页面（起始页、历史、书签等）在 `https://ulb.internal/` 下显示，网页无法跳转或嵌入这些页面。
 - 浏览器音频增强基于 Web Audio：跨域且未开放 CORS 的媒体、DRM 加密视频（如 Netflix）不会被处理；切换原声 / 增强模式会刷新页面。
 - 不包含 Dolby 解码器或任何 Dolby 授权技术，不保证 Atmos 输出或比特流直通。
@@ -180,8 +180,8 @@ src/
 ├── MainWindowTabs.cpp       标签页生命周期、挂起、缩略图、阅读器、网站设置
 ├── MainWindowPaint.cpp      标题栏 / 标签栏布局与绘制、鼠标交互
 ├── MainWindowMenus.cpp      “⋯”菜单、分享菜单、标签右键菜单
-├── MainWindowPages.cpp      侧边栏 / 总览面板，内置页面的消息接口
-├── Library.*                书签、阅读列表、历史、标签组、网站设置、隐私统计
+├── MainWindowPages.cpp      边栏 / 总览面板，内置页面的消息接口
+├── Library.*                书签、阅读列表、历史、标签页组、网站设置、隐私统计
 ├── InternalPages.*          内置页面资源、阅读器与查找脚本
 ├── Icons.*                  线条图标（标题栏与菜单）
 ├── WebViewManager.*         单个标签页的 WebView2、音频增强、标识切换
@@ -191,14 +191,16 @@ src/
 ├── PowerManager.*           后台节能与 EcoQoS
 ├── UserAgent.hpp / MacStealth.hpp / SelfTestPage.hpp   macOS 标识
 └── Config.*                 设置读写
-ui/                          内置页面（起始页、历史、书签、设置、隐私报告、总览、侧边栏、阅读器）
+ui/                          内置页面（起始页、历史、书签、设置、隐私报告、总览、边栏、阅读器）
 ui/vendor/                   Mozilla Readability（Apache-2.0）
 tests/                       单元测试、页面资源检查、Windows 界面冒烟测试
 ```
 
 ## 最近更新
 
-- **v2.0.0**：Safari 风格大改版——多标签与标签页总览、统一“⋯”菜单、起始页、书签 / 历史 / 阅读列表、阅读器、页内查找、侧边栏与标签组、无痕窗口、网站设置、隐私报告、地址栏建议、后台标签自动挂起。
+- **v2.0.2**：菜单、设置和内置页面的用语与 macOS Safari 简体中文版统一（边栏、标签页组、标签页概览、内容拦截器、用户代理、隐藏干扰项目等）。
+- **v2.0.1**：操作流畅度优化：Ctrl+T 秒开、拖动窗口只重排当前标签、缩略图与存盘移到后台线程。
+- **v2.0.0**：Safari 风格大改版——多标签与标签页概览、统一“⋯”菜单、起始页、书签 / 历史 / 阅读列表、阅读器、页内查找、边栏与标签页组、无痕浏览窗口、网站设置、隐私报告、地址栏建议、后台标签自动挂起。
 - **v1.6.9**：分享菜单新增“关于”（可点击项目链接）；播放诊断增加区间丢帧率、显示帧/秒与缓冲余量，附 [2160p 播放审计](docs/2160p-playback-audit.md)。
 - **v1.6.8**：修复上次选择 macOS Edge 后再次启动闪退的问题；macOS 模式不再暴露 WebView2 品牌项。
 - **v1.6.7**：macOS 伪装覆盖 Service Worker 并隐藏 SharedWorker；新增标识自检页；系统版本号可配置。
