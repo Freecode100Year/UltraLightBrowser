@@ -1,0 +1,30 @@
+name: Page load benchmark
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Release tag to compare against
+        default: v2.0.3
+jobs:
+  perf:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: nuget/setup-nuget@17d6beb0142f0371858976c178033f915525e692
+      - run: nuget restore packages.config -PackagesDirectory packages
+      - run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64
+      - run: cmake --build build --config Release --parallel
+      - name: Download baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download ${{ inputs.baseline || 'v2.0.3' }} -R ${{ github.repository }} -p UltraLightBrowser.exe -D baseline
+      - name: Measure
+        shell: pwsh
+        run: |
+          ./tests/perf-load.ps1 -Exe baseline\UltraLightBrowser.exe -Label baseline
+          ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label current
+          ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label current-mac -Mac
+          ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label current-again

@@ -303,14 +303,16 @@ void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Enviro
         m_nav[webView].isPrivate = isPrivate;
     }
 
-    // Register request filters (scripts, documents/iframes, images, XHR, fetch, ping, other)
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT);
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT);
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE);
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST);
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH);
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING);
-    webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_OTHER);
+    // Only requests that can possibly be blocked are routed to the browser: every
+    // intercepted request costs a round trip to the UI thread, so a catch-all "*"
+    // filter slowed down every page load. The handler still applies the exact rules.
+    for (const auto& domain : m_blockedDomainSet) {
+        webView->AddWebResourceRequestedFilter((L"*://" + domain + L"/*").c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+        webView->AddWebResourceRequestedFilter((L"*://*." + domain + L"/*").c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+    }
+    for (const auto& keyword : m_blockedKeywords) {
+        webView->AddWebResourceRequestedFilter((L"*" + keyword + L"*").c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+    }
 
     webView->add_WebResourceRequested(
         Microsoft::WRL::Callback<ICoreWebView2WebResourceRequestedEventHandler>(

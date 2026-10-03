@@ -34,6 +34,7 @@ struct AppSettings {
     std::string searchEngine = "google";        // google / bing / duckduckgo / startpage / baidu
     bool saveHistory = true;
     bool clearHistoryOnExit = false;
+    bool keepCache = true;                      // keep the HTTP cache between sessions (cookies/storage still cleared)
     int tabSuspendMinutes = 10;                 // 0 = never
     bool startShowFavorites = true;
     bool startShowFrequent = true;

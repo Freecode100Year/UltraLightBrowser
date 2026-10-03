@@ -122,6 +122,7 @@ void Config::Load() {
             readChoice("searchEngine", m_settings.searchEngine, {"google", "bing", "duckduckgo", "startpage", "baidu"});
             readBool("saveHistory", m_settings.saveHistory);
             readBool("clearHistoryOnExit", m_settings.clearHistoryOnExit);
+            readBool("keepCache", m_settings.keepCache);
             readInt("tabSuspendMinutes", m_settings.tabSuspendMinutes, 0, 240);
             readBool("startShowFavorites", m_settings.startShowFavorites);
             readBool("startShowFrequent", m_settings.startShowFrequent);
@@ -181,6 +182,7 @@ void Config::Save() {
             {"searchEngine", m_settings.searchEngine},
             {"saveHistory", m_settings.saveHistory},
             {"clearHistoryOnExit", m_settings.clearHistoryOnExit},
+            {"keepCache", m_settings.keepCache},
             {"tabSuspendMinutes", m_settings.tabSuspendMinutes},
             {"startShowFavorites", m_settings.startShowFavorites},
             {"startShowFrequent", m_settings.startShowFrequent},

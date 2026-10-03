@@ -435,7 +435,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                       {"startShowFavorites", settings.startShowFavorites}, {"startShowFrequent", settings.startShowFrequent},
                       {"startShowPrivacy", settings.startShowPrivacy}, {"startShowReading", settings.startShowReading},
                       {"startBackground", settings.startBackground}, {"saveHistory", settings.saveHistory},
-                      {"clearHistoryOnExit", settings.clearHistoryOnExit}, {"enableAdBlock", NativeRequestFilter::Instance().IsEnabled()},
+                      {"clearHistoryOnExit", settings.clearHistoryOnExit}, {"keepCache", settings.keepCache}, {"enableAdBlock", NativeRequestFilter::Instance().IsEnabled()},
                       {"readerTheme", settings.readerTheme}, {"readerFont", settings.readerFont}, {"readerFontSize", settings.readerFontSize},
                       {"hardwareAcceleration", settings.hardwareAcceleration}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
         } else if (cmd == "setSetting") {
@@ -469,6 +469,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
             else if (key == "startBackground") settings.startBackground = str({"aurora", "ocean", "sunset", "plain"});
             else if (key == "saveHistory") settings.saveHistory = boolean();
             else if (key == "clearHistoryOnExit") settings.clearHistoryOnExit = boolean();
+            else if (key == "keepCache") settings.keepCache = boolean();
             else if (key == "enableAdBlock") NativeRequestFilter::Instance().SetEnabled(boolean());
             else if (key == "readerTheme") settings.readerTheme = str({"light", "sepia", "gray", "dark"});
             else if (key == "readerFont") settings.readerFont = str({"serif", "sans"});

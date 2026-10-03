@@ -403,7 +403,13 @@ void WebViewManager::ClearProfileData(ICoreWebView2* webView) {
             SetEvent(hEvent);
             return S_OK;
         });
-    if (SUCCEEDED(profile2->ClearBrowsingDataAll(clearCb.Get()))) {
+    // Cookies, storage, service workers, history... always go; the HTTP cache may
+    // stay so revisited sites load from disk (Chromium partitions it per top site).
+    const bool keepCache = Config::Instance().GetSettings().keepCache;
+    int kindBits = static_cast<int>(COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE);
+    if (keepCache) kindBits &= ~static_cast<int>(COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE);
+    const auto kinds = static_cast<COREWEBVIEW2_BROWSING_DATA_KINDS>(kindBits);
+    if (SUCCEEDED(profile2->ClearBrowsingData(kinds, clearCb.Get()))) {
         const ULONGLONG start = GetTickCount64();
         while (WaitForSingleObject(hEvent, 10) != WAIT_OBJECT_0 && (GetTickCount64() - start) < 500) {
             MSG msg;
@@ -1228,9 +1234,48 @@ void WebViewManager::SetZoomFactor(double factor) {
     }
 }
 
+namespace {
+
+// Deletes every entry of `dir` whose name is not in `keep`; returns the kept ones.
+void RemoveAllExcept(const std::filesystem::path& dir, std::initializer_list<const wchar_t*> keep) {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec)) return;
+    std::vector<std::filesystem::path> doomed;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        const std::wstring name = entry.path().filename().wstring();
+        bool kept = false;
+        for (const wchar_t* k : keep) {
+            if (_wcsicmp(name.c_str(), k) == 0) { kept = true; break; }
+        }
+        if (!kept) doomed.push_back(entry.path());
+    }
+    for (const auto& path : doomed) {
+        for (int retry = 0; retry < 3; ++retry) {
+            std::filesystem::remove_all(path, ec);
+            if (!std::filesystem::exists(path, ec)) break;
+            Sleep(30);
+        }
+    }
+}
+
+} // namespace
+
 void WebViewManager::PurgeAllCacheAndTempFiles() {
     std::filesystem::path userDataDir = Config::Instance().GetUserDataDirectory();
     std::error_code ec;
+
+    if (Config::Instance().GetSettings().keepCache && std::filesystem::exists(userDataDir / "EBWebView" / "Local State", ec)) {
+        // Keep only Local State and the HTTP / code / GPU caches; cookies, storage,
+        // preferences and everything else are removed (also after a crash).
+        RemoveAllExcept(userDataDir, {L"EBWebView"});
+        RemoveAllExcept(userDataDir / "EBWebView", {L"Local State", L"Default", L"GrShaderCache", L"ShaderCache", L"GraphiteDawnCache"});
+        RemoveAllExcept(userDataDir / "EBWebView" / "Default", {L"Cache", L"Code Cache", L"GPUCache", L"DawnCache",
+                                                                 L"DawnGraphiteCache", L"DawnWebGPUCache"});
+        SanitizeLocalState(userDataDir);
+        const std::filesystem::path appDataDir = Config::Instance().GetAppDataPath();
+        std::filesystem::remove_all(appDataDir / "EBWebView", ec);
+        return;
+    }
 
     if (std::filesystem::exists(userDataDir, ec)) {
         std::filesystem::path ebWebViewDir = userDataDir / "EBWebView";

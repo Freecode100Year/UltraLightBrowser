@@ -59,6 +59,7 @@ async function load() {
       action("隐私报告：", "清除隐私报告…", async () => {
         if (confirm("清除隐私报告中的数据？")) { await call("clearPrivacy"); toast("已清除隐私报告"); }
       }, true),
+      row("保留网页缓存", sw("keepCache"), "再次访问的网站从本机缓存加载，明显更快。缓存会留在本机磁盘上；关闭后每次退出都会清空缓存。"),
       row("Cookie 和网站数据：", el("span", { class: "muted", text: "每次退出时自动移除" }))),
     section("reader", "阅读器",
       row("主题：", select("readerTheme", [["light", "白色"], ["sepia", "米色"], ["gray", "灰色"], ["dark", "夜间"]])),
