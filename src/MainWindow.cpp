@@ -1025,12 +1025,17 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         if (timer == IDT_SPARE) {
             KillTimer(m_hWnd, IDT_SPARE);
-            PrepareSpareTab();
+            // Building the pre-rendered new tab waits until the visible page is loaded.
+            if (active && active->loading) SetTimer(m_hWnd, IDT_SPARE, 1000, nullptr);
+            else PrepareSpareTab();
             return 0;
         }
-        if (timer == IDT_THUMB) {
-            KillTimer(m_hWnd, IDT_THUMB);
-            if (!IsIconic(m_hWnd) && !m_overviewVisible) CaptureThumbnail(m_activeId, nullptr);
+        if (timer == IDT_IDLE_WORK) {
+            RunIdleWork();
+            return 0;
+        }
+        if (timer == IDT_PREFETCH) {
+            UpdateAddressPrefetch();
             return 0;
         }
         if (timer >= 6000 && timer < 6000 + 100000) {
@@ -1093,7 +1098,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         const WORD id = LOWORD(wParam);
         const WORD notify = HIWORD(wParam);
         if (id == IDC_EDIT_ADDRESS) {
-            if (notify == EN_CHANGE) UpdateSuggestions();
+            if (notify == EN_CHANGE) {
+                UpdateSuggestions();
+                SetTimer(m_hWnd, IDT_PREFETCH, 250, nullptr);
+            }
             return 0;
         }
         if (id == IDC_EDIT_FIND) {

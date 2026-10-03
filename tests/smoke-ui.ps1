@@ -125,7 +125,7 @@ $cfg | ConvertTo-Json -Depth 8 | Set-Content $cfgPath -Encoding utf8NoBOM
 $p = Start-Process $Exe -PassThru
 Start-Sleep 10
 Keys "^t" 1500; Keys "example.com{ENTER}" 5000
-Keys "^t" 1500; Keys "example.org{ENTER}" 5000; Shot "22-mac-tabs"
+Keys "^t" 1500; Keys "example.org" 1500; Keys "{ENTER}" 5000; Shot "22-mac-tabs"
 @'
 const WebSocket = require('ws');
 (async () => {
@@ -134,7 +134,7 @@ const WebSocket = require('ws');
     const ws = new WebSocket(t.webSocketDebuggerUrl);
     await new Promise(r => ws.on('open', r));
     ws.send(JSON.stringify({id: 1, method: 'Runtime.evaluate', params: {returnByValue: true, awaitPromise: true, expression:
-      `navigator.userAgentData.getHighEntropyValues(['platformVersion']).then(h => [location.host, navigator.platform, navigator.userAgentData.platform, h.platformVersion, navigator.userAgent.includes('Macintosh')].join(' '))`}}));
+      `navigator.userAgentData.getHighEntropyValues(['platformVersion']).then(h => [location.host, navigator.platform, navigator.userAgentData.platform, h.platformVersion, navigator.userAgent.includes('Macintosh'), 'delivery=' + (performance.getEntriesByType('navigation')[0].deliveryType || 'network')].join(' '))`}}));
     await new Promise(r => ws.on('message', m => { const d = JSON.parse(m); if (d.id === 1) { console.log('MAC', JSON.stringify(d.result.result.value)); r(); } }));
     ws.close();
   }

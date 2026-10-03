@@ -26,6 +26,9 @@ struct Tab {
     bool canGoBack = false;
     bool canGoForward = false;
     bool readerAvailable = false;
+    bool readerPending = false;         // readability check waits for an idle moment
+    bool thumbPending = false;          // overview thumbnail waits for an idle moment
+    std::wstring prefetchUrl;           // address prefetched from the start page while typing
     std::wstring readerSource;          // article URL while the reader page is shown
     std::unique_ptr<Gdiplus::Bitmap> favicon;
     std::string faviconDataUrl;
@@ -111,6 +114,9 @@ private:
     void ApplySiteZoom(Tab& tab);
     void ToggleReader();
     void CheckReaderAvailability(int tabId);
+    void ScheduleIdleWork();
+    void UpdateAddressPrefetch();
+    void RunIdleWork();
     void NavigateActive(const std::wstring& input);
     std::wstring NewTabUrl() const;
     void UpdateWindowTitle();
@@ -279,10 +285,11 @@ private:
     static constexpr UINT_PTR IDT_PROGRESS = 5004;
     static constexpr UINT_PTR IDT_FIND_DEBOUNCE = 5005;
     static constexpr UINT_PTR IDT_TOAST = 5006;
-    static constexpr UINT_PTR IDT_THUMB = 5007;
     static constexpr UINT_PTR IDT_LIBRARY_SAVE = 5008;
     static constexpr UINT_PTR IDT_PANELS = 5009;
     static constexpr UINT_PTR IDT_SPARE = 5010;
+    static constexpr UINT_PTR IDT_IDLE_WORK = 5011;
+    static constexpr UINT_PTR IDT_PREFETCH = 5012;
     static constexpr UINT WM_APP_THUMBNAIL = WM_APP + 1;
 
     // Toolbar paint cache

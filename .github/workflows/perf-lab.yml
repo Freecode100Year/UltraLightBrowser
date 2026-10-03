@@ -1,8 +1,6 @@
 name: Loading experiments
 on:
-  push:
-    branches: [render-perf]
-    paths: [tests/perf-lab.ps1, .github/workflows/perf-lab.yml]
+  workflow_dispatch:
 jobs:
   lab:
     runs-on: windows-2022

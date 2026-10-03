@@ -79,6 +79,27 @@ WebViewManager::~WebViewManager() {
 
 std::wstring WebViewManager::s_capturedUaMetadata;
 
+// Prefetches a same-site link once the pointer rests on it (~200 ms) or it is pressed,
+// so the click finds the page already downloaded. Links that may change state
+// (sign-out, delete, unsubscribe...), downloads and new-window links are skipped.
+const wchar_t* const kHoverPrefetchScript = LR"JS((() => {
+  if (window.top !== window || location.hostname === 'ulb.internal') return;
+  if (!(HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules'))) return;
+  const add = () => {
+    if (!document.head) return;
+    const s = document.createElement('script');
+    s.type = 'speculationrules';
+    s.textContent = JSON.stringify({prefetch: [{source: 'document', eagerness: 'moderate',
+      where: {and: [{href_matches: '/*'}, {not: {selector_matches:
+        '[href*="logout" i],[href*="log-out" i],[href*="signout" i],[href*="sign-out" i],[href*="sign_out" i],' +
+        '[href*="delete" i],[href*="remove" i],[href*="unsubscribe" i],[href*="cart" i],[href*="checkout" i],' +
+        '[rel~="nofollow"],[download],[target="_blank"]'}}]}}]});
+    document.head.append(s);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add, {once: true});
+  else add();
+})();)JS";
+
 void WebViewManager::SanitizeLocalState(const std::filesystem::path& userDataDir) {
     std::filesystem::path localStatePath = userDataDir / "EBWebView" / "Local State";
     std::error_code ec;
@@ -325,6 +346,9 @@ void WebViewManager::OnControllerCreated(ICoreWebView2Controller* controller) {
     ElementBlocker::Instance().Initialize(m_webView.get());
     NativeRequestFilter::Instance().Initialize(m_webView.get(), m_environment.get());
     InjectSurroundSoundScript();
+    if (Config::Instance().GetSettings().preloadLinks) {
+        m_webView->AddScriptToExecuteOnDocumentCreated(kHoverPrefetchScript, nullptr);
+    }
 
     // Apply QoS optimizations
     PowerManager::Instance().DisableEcoQoS();

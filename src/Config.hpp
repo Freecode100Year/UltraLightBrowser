@@ -41,6 +41,7 @@ struct AppSettings {
     std::string readerFont = "serif";           // serif / sans
     int readerFontSize = 19;
     bool sidebarVisible = false;
+    bool preloadLinks = true;                   // prefetch same-site links on hover
 };
 
 class Config {

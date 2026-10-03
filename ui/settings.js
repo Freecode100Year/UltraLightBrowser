@@ -61,6 +61,7 @@ async function load() {
       row("文本大小：", select("readerFontSize", [15, 17, 19, 21, 24, 28].map((n) => [n, n + " 像素"])))),
     section("advanced", "高级",
       row("使用硬件加速", sw("hardwareAcceleration"), "更改后需重新启动 UltraLightBrowser。"),
+      row("预先载入链接", sw("preloadLinks"), "指针停在同一网站的链接上时提前下载该网页，点按后打开更快。对新标签页生效。"),
       row("版本：", el("span", { class: "muted", text: "UltraLightBrowser " + s.version })),
       row("项目主页：", el("a", { href: "https://github.com/Freecode100Year/UltraLightBrowser", style: { color: "var(--accent)" }, text: "github.com/Freecode100Year/UltraLightBrowser" }))));
   if (location.hash) document.querySelector(location.hash)?.scrollIntoView();

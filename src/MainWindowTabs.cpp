@@ -13,6 +13,7 @@
 #include <wincrypt.h>
 #include <cmath>
 #include <fstream>
+#include <set>
 #include <thread>
 #include <nlohmann/json.hpp>
 
@@ -223,6 +224,7 @@ void MainWindow::WireTab(Tab& tab) {
         if (!t) return;
         const std::wstring previousHost = StringUtils::Utf8ToWide(HostUtf8(t->url));
         t->url = uri;
+        t->prefetchUrl.clear();
         if (InternalPages::PageName(uri) != L"reader.html") t->readerSource.clear();
         if (StringUtils::Utf8ToWide(HostUtf8(uri)) != previousHost) {
             t->favicon.reset();
@@ -364,8 +366,9 @@ void MainWindow::ActivateTab(int id) {
     UpdateLayout();
     UpdateWindowTitle();
     TabsChanged();
-    // A freshly shown page gets a thumbnail for the overview shortly after.
-    SetTimer(m_hWnd, IDT_THUMB, 1200, nullptr);
+    // A freshly shown page gets its reader check and overview thumbnail once idle.
+    next->thumbPending = true;
+    ScheduleIdleWork();
 }
 
 void MainWindow::CloseTab(int id) {
@@ -505,17 +508,37 @@ void MainWindow::OnTabNavigationCompleted(Tab& tab, bool success, const std::wst
             lib.RecordVisit(url, StringUtils::WideToUtf8(tab.title), AppShell::NowMs());
         }
         ApplySiteZoom(tab);
-        if (Library::IsWebUrl(url)) {
-            CheckReaderAvailability(tab.id);
-            if (!m_private && lib.Site(Library::HostOf(url)).autoReader && tab.id == m_activeId && tab.readerSource.empty()) {
-                // Auto reader runs after the readability check; ToggleReader itself verifies the article.
-                SetTimer(m_hWnd, 6000 + static_cast<UINT_PTR>(tab.id), 400, nullptr);
-            }
-        }
+        tab.readerPending = Library::IsWebUrl(url);
     } else {
         tab.zoomHost.clear();
     }
-    if (tab.id == m_activeId) SetTimer(m_hWnd, IDT_THUMB, 1200, nullptr);
+    tab.thumbPending = true;
+    if (tab.id == m_activeId) ScheduleIdleWork();
+}
+
+// The browser's own follow-up work (reader check, overview thumbnail, the pre-rendered
+// new tab) waits until the visible page has finished loading, so it never competes
+// with the page for CPU, GPU or bandwidth while the first screen is being drawn.
+void MainWindow::ScheduleIdleWork() {
+    SetTimer(m_hWnd, IDT_IDLE_WORK, 700, nullptr);
+}
+
+void MainWindow::RunIdleWork() {
+    KillTimer(m_hWnd, IDT_IDLE_WORK);
+    Tab* tab = ActiveTab();
+    if (!tab || !tab->view || !tab->view->GetWebView()) return;
+    if (tab->loading) {
+        ScheduleIdleWork();
+        return;
+    }
+    if (tab->readerPending) {
+        tab->readerPending = false;
+        CheckReaderAvailability(tab->id);
+    }
+    if (tab->thumbPending && !IsIconic(m_hWnd) && !m_overviewVisible) {
+        tab->thumbPending = false;
+        CaptureThumbnail(tab->id, nullptr);
+    }
 }
 
 void MainWindow::ApplySiteZoom(Tab& tab) {
@@ -675,6 +698,10 @@ void MainWindow::CheckReaderAvailability(int tabId) {
             if (!t) return S_OK;
             t->readerAvailable = SUCCEEDED(hr) && result && std::wstring(result) == L"true";
             if (tabId == m_activeId) InvalidateToolbar();
+            if (t->readerAvailable && tabId == m_activeId && t->readerSource.empty() && !m_private &&
+                AppShell::Instance().Lib().Site(HostUtf8(t->url)).autoReader) {
+                SetTimer(m_hWnd, 6000 + static_cast<UINT_PTR>(tabId), 100, nullptr);  // auto reader
+            }
             return S_OK;
         }).Get());
 }
@@ -723,7 +750,63 @@ void MainWindow::NavigateActive(const std::wstring& input) {
         NewTab(WebViewManager::ResolveInput(input), true);
         return;
     }
-    if (tab->view) tab->view->Navigate(input);
+    if (!tab->view) return;
+    KillTimer(m_hWnd, IDT_PREFETCH);
+    const std::wstring target = WebViewManager::ResolveInput(input);
+    if (!tab->prefetchUrl.empty() && target == tab->prefetchUrl && tab->view->GetWebView()) {
+        // Only a navigation started by the page itself may use the page's prefetch.
+        tab->prefetchUrl.clear();
+        const std::wstring script = L"location.href = " + StringUtils::Utf8ToWide(json(StringUtils::WideToUtf8(target)).dump()) + L";";
+        tab->view->GetWebView()->ExecuteScript(script.c_str(), nullptr);
+        return;
+    }
+    tab->view->Navigate(input);
+}
+
+namespace {
+
+// Only text that is clearly a web address is fetched ahead: a full URL, or a host
+// name ending in a common top-level domain. Searches and half-typed words are not.
+bool LooksLikeAddress(const std::wstring& text, const std::wstring& resolved) {
+    if (resolved.rfind(L"https://", 0) != 0 && resolved.rfind(L"http://", 0) != 0) return false;
+    if (text.find(L"://") != std::wstring::npos) return true;
+    std::wstring host = StringUtils::Utf8ToWide(Library::HostOf(StringUtils::WideToUtf8(resolved)));
+    const size_t dot = host.rfind(L'.');
+    if (dot == std::wstring::npos || dot == 0) return false;
+    static const std::set<std::wstring> kTlds = {
+        L"com", L"org", L"net", L"edu", L"gov", L"io", L"co", L"info", L"app", L"dev", L"me", L"tv", L"ai",
+        L"cn", L"hk", L"tw", L"jp", L"kr", L"sg", L"uk", L"de", L"fr", L"ca", L"au", L"us", L"eu", L"ru", L"in"};
+    return kTlds.count(host.substr(dot + 1)) > 0;
+}
+
+} // namespace
+
+// While an address is typed on the start page, the page itself prefetches it with
+// speculation rules (no referrer, no cookies for other sites), so pressing Enter
+// finds the document already downloaded.
+void MainWindow::UpdateAddressPrefetch() {
+    KillTimer(m_hWnd, IDT_PREFETCH);
+    Tab* tab = ActiveTab();
+    if (!tab || !tab->view || !tab->view->GetWebView() || tab->loading || !m_isAddressFocused) return;
+    if (InternalPages::PageName(tab->url) != L"start.html") return;
+    const int len = GetWindowTextLengthW(m_hEditAddress);
+    std::wstring text(static_cast<size_t>(len) + 1, L'\0');
+    GetWindowTextW(m_hEditAddress, text.data(), len + 1);
+    text.resize(static_cast<size_t>(len));
+    const std::wstring resolved = WebViewManager::ResolveInput(text);
+    const std::wstring url = LooksLikeAddress(text, resolved) ? resolved : std::wstring();
+    if (url == tab->prefetchUrl) return;
+    tab->prefetchUrl = url;
+    json rules = nullptr;
+    if (!url.empty()) {
+        rules = {{"prefetch", json::array({{{"source", "list"}, {"urls", json::array({StringUtils::WideToUtf8(url)})},
+                                            {"referrer_policy", "no-referrer"}}})}};
+    }
+    const std::string script =
+        "(() => { const old = document.getElementById('ulb-prefetch'); if (old) old.remove(); const rules = " + rules.dump() +
+        "; if (!rules) return; const s = document.createElement('script'); s.type = 'speculationrules'; s.id = 'ulb-prefetch';"
+        " s.textContent = JSON.stringify(rules); document.head.append(s); })()";
+    tab->view->GetWebView()->ExecuteScript(StringUtils::Utf8ToWide(script).c_str(), nullptr);
 }
 
 void MainWindow::UpdateWindowTitle() {

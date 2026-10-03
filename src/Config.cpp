@@ -129,6 +129,7 @@ void Config::Load() {
             readChoice("readerFont", m_settings.readerFont, {"serif", "sans"});
             readInt("readerFontSize", m_settings.readerFontSize, 12, 40);
             readBool("sidebarVisible", m_settings.sidebarVisible);
+            readBool("preloadLinks", m_settings.preloadLinks);
         }
 
         if (root.contains("blockRules") && root["blockRules"].is_object()) {
@@ -184,7 +185,8 @@ void Config::Save() {
             {"readerTheme", m_settings.readerTheme},
             {"readerFont", m_settings.readerFont},
             {"readerFontSize", m_settings.readerFontSize},
-            {"sidebarVisible", m_settings.sidebarVisible}
+            {"sidebarVisible", m_settings.sidebarVisible},
+            {"preloadLinks", m_settings.preloadLinks}
         };
 
         json rulesObj = json::object();
