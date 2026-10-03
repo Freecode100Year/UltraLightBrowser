@@ -83,6 +83,9 @@ public:
 
     // Cache and temporary files purge
     static void PurgeAllCacheAndTempFiles();
+    static bool PrefetchAllowed();  // false in macOS mode: prefetches bypass the UA override
+    // Removes HostUrl / ReferrerUrl from a downloaded file's Zone.Identifier stream.
+    static void StripDownloadSourceUrls(const std::wstring& filePath);
 
     // Callbacks
     void SetTitleChangedCallback(TitleChangedCallback cb) { m_titleChangedCb = std::move(cb); }
@@ -126,6 +129,7 @@ private:
     void CaptureUaMetadata(std::function<void(const std::string&)> done);
     void EnableMacSpoof(const std::string& capturedJson);
     void DisableMacSpoof();
+    void UpdateHoverPrefetch();
     void FinishProbe(const std::string& result);
     void OnTargetAttached(const std::wstring& paramsJson);
     void CallCdp(const wchar_t* method, const std::string& params, const wchar_t* sessionId = nullptr);
@@ -158,6 +162,8 @@ private:
     std::wstring m_pendingNavigation;
     std::string m_macOverrideParams;
     std::wstring m_stealthScriptId;
+    std::wstring m_hoverScriptId;
+    bool m_hoverWanted = false;
     std::wstring m_stealthSource;
     bool m_targetEventsHooked = false;
     wil::com_ptr<ICoreWebView2Controller> m_probeController;

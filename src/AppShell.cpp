@@ -124,6 +124,11 @@ int AppShell::Run(HINSTANCE hInstance, int nCmdShow) {
     m_library = std::make_unique<Library>(Config::Instance().GetAppDataPath());
     m_library->Load();
     InternalPages::Extract();
+    // After a crash or a forced kill the exit cleanup never ran; finish it now.
+    if (!AnotherInstanceRunning()) {
+        PruneFavicons(*m_library);
+        FlushSystemDnsCache();
+    }
 
     // Per-site ad-block exceptions ("此网站的设置").
     NativeRequestFilter::Instance().SetSiteAllowsAdsCallback([this](const std::wstring& topHost) {

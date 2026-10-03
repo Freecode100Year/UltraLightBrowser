@@ -35,6 +35,7 @@ const WebSocket = require('ws');
   await send('Page.navigate', {url: 'https://httpbin.org/anything?normal'});
   await sleep(4000);
   await show('normal navigation');
+  console.log('HOVER-PREFETCH-RULES ' + await ev(`!!document.getElementById('ulb-hover-prefetch')`));
   process.exit(0);
 })().catch(e => { console.log('ERR', e.message); process.exit(0); });
 '@ | Set-Content "$env:RUNNER_TEMP\ua.js"

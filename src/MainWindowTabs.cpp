@@ -789,12 +789,13 @@ void MainWindow::UpdateAddressPrefetch() {
     Tab* tab = ActiveTab();
     if (!tab || !tab->view || !tab->view->GetWebView() || tab->loading || !m_isAddressFocused) return;
     if (InternalPages::PageName(tab->url) != L"start.html") return;
+    if (!WebViewManager::PrefetchAllowed() && tab->prefetchUrl.empty()) return;
     const int len = GetWindowTextLengthW(m_hEditAddress);
     std::wstring text(static_cast<size_t>(len) + 1, L'\0');
     GetWindowTextW(m_hEditAddress, text.data(), len + 1);
     text.resize(static_cast<size_t>(len));
     const std::wstring resolved = WebViewManager::ResolveInput(text);
-    const std::wstring url = LooksLikeAddress(text, resolved) ? resolved : std::wstring();
+    const std::wstring url = WebViewManager::PrefetchAllowed() && LooksLikeAddress(text, resolved) ? resolved : std::wstring();
     if (url == tab->prefetchUrl) return;
     tab->prefetchUrl = url;
     json rules = nullptr;

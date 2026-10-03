@@ -89,6 +89,7 @@ const wchar_t* const kHoverPrefetchScript = LR"JS((() => {
     if (!document.head) return;
     const s = document.createElement('script');
     s.type = 'speculationrules';
+    s.id = 'ulb-hover-prefetch';
     s.textContent = JSON.stringify({prefetch: [{source: 'document', eagerness: 'moderate',
       where: {and: [{href_matches: '/*'}, {not: {selector_matches:
         '[href*="logout" i],[href*="log-out" i],[href*="signout" i],[href*="sign-out" i],[href*="sign_out" i],' +
@@ -99,6 +100,28 @@ const wchar_t* const kHoverPrefetchScript = LR"JS((() => {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add, {once: true});
   else add();
 })();)JS";
+
+void WebViewManager::StripDownloadSourceUrls(const std::wstring& filePath) {
+    const std::wstring stream = filePath + L":Zone.Identifier";
+    std::string kept;
+    {
+        std::ifstream in(stream, std::ios::binary);
+        if (!in.is_open()) return;
+        std::string line;
+        bool changed = false;
+        while (std::getline(in, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.rfind("HostUrl=", 0) == 0 || line.rfind("ReferrerUrl=", 0) == 0) {
+                changed = true;
+                continue;
+            }
+            kept += line + "\r\n";
+        }
+        if (!changed) return;
+    }
+    std::ofstream out(stream, std::ios::binary | std::ios::trunc);
+    out << kept;
+}
 
 void WebViewManager::SanitizeLocalState(const std::filesystem::path& userDataDir) {
     std::filesystem::path localStatePath = userDataDir / "EBWebView" / "Local State";
@@ -346,9 +369,7 @@ void WebViewManager::OnControllerCreated(ICoreWebView2Controller* controller) {
     ElementBlocker::Instance().Initialize(m_webView.get());
     NativeRequestFilter::Instance().Initialize(m_webView.get(), m_environment.get());
     InjectSurroundSoundScript();
-    if (Config::Instance().GetSettings().preloadLinks) {
-        m_webView->AddScriptToExecuteOnDocumentCreated(kHoverPrefetchScript, nullptr);
-    }
+    UpdateHoverPrefetch();
 
     // Apply QoS optimizations
     PowerManager::Instance().DisableEcoQoS();
@@ -691,6 +712,28 @@ void WebViewManager::RegisterEventHandlers() {
             ).Get(),
             &m_audioPlayingToken
         );
+    }
+
+    // Downloaded files keep Windows' "from the internet" mark (ZoneId) but not the
+    // page and file addresses Chromium writes next to it.
+    wil::com_ptr<ICoreWebView2_4> webView4;
+    if (SUCCEEDED(m_webView->QueryInterface(IID_PPV_ARGS(&webView4))) && webView4) {
+        webView4->add_DownloadStarting(
+            Callback<ICoreWebView2DownloadStartingEventHandler>(
+                [](ICoreWebView2*, ICoreWebView2DownloadStartingEventArgs* args) -> HRESULT {
+                    wil::com_ptr<ICoreWebView2DownloadOperation> download;
+                    if (FAILED(args->get_DownloadOperation(&download)) || !download) return S_OK;
+                    download->add_StateChanged(
+                        Callback<ICoreWebView2StateChangedEventHandler>(
+                            [](ICoreWebView2DownloadOperation* sender, IUnknown*) -> HRESULT {
+                                COREWEBVIEW2_DOWNLOAD_STATE state{};
+                                if (FAILED(sender->get_State(&state)) || state != COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED) return S_OK;
+                                wil::unique_cotaskmem_string path;
+                                if (SUCCEEDED(sender->get_ResultFilePath(&path)) && path.get()) StripDownloadSourceUrls(path.get());
+                                return S_OK;
+                            }).Get(), nullptr);
+                    return S_OK;
+                }).Get(), nullptr);
     }
 
     // Site icons for the tab bar, sidebar and start page.
@@ -1071,6 +1114,7 @@ void WebViewManager::EnableMacSpoof(const std::string& capturedJson) {
         CallCdp(L"Target.setAutoAttach", R"({"autoAttach":true,"waitForDebuggerOnStart":true,"flatten":true})");
     }
     m_macSpoofActive = true;
+    UpdateHoverPrefetch();
 }
 
 void WebViewManager::OnTargetAttached(const std::wstring& paramsJson) {
@@ -1111,6 +1155,39 @@ void WebViewManager::DisableMacSpoof() {
     if (!m_stealthScriptId.empty()) {
         m_webView->RemoveScriptToExecuteOnDocumentCreated(m_stealthScriptId.c_str());
         m_stealthScriptId.clear();
+    }
+    UpdateHoverPrefetch();
+}
+
+// Prefetch requests are made by the browser process without the DevTools user-agent
+// override, so in macOS mode they would carry the real Windows identity (and the
+// WebView2 brand). Link prefetching is therefore off whenever macOS mode is wanted.
+bool WebViewManager::PrefetchAllowed() {
+    const auto& s = Config::Instance().GetSettings();
+    return s.userAgentProfile != "macos-edge";
+}
+
+void WebViewManager::UpdateHoverPrefetch() {
+    if (!m_webView) return;
+    const bool want = Config::Instance().GetSettings().preloadLinks && PrefetchAllowed() && !m_macSpoofActive;
+    if (want == m_hoverWanted) return;
+    m_hoverWanted = want;
+    if (want) {
+        m_webView->AddScriptToExecuteOnDocumentCreated(kHoverPrefetchScript,
+            Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+                [this](HRESULT hr, LPCWSTR id) -> HRESULT {
+                    if (FAILED(hr) || !id || !m_webView) return S_OK;
+                    if (m_hoverWanted) m_hoverScriptId = id;
+                    else m_webView->RemoveScriptToExecuteOnDocumentCreated(id);
+                    return S_OK;
+                }).Get());
+    } else {
+        if (!m_hoverScriptId.empty()) {
+            m_webView->RemoveScriptToExecuteOnDocumentCreated(m_hoverScriptId.c_str());
+            m_hoverScriptId.clear();
+        }
+        // Rules already in the current page stop with it.
+        m_webView->ExecuteScript(L"document.getElementById('ulb-hover-prefetch')?.remove()", nullptr);
     }
 }
 #endif
