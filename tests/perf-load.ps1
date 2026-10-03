@@ -39,7 +39,7 @@ const sites = ['https://www.wikipedia.org/', 'https://github.com/', 'https://www
   ws.on('message', m => { const d = JSON.parse(m); if (d.id && pend[d.id]) { pend[d.id](d); delete pend[d.id]; } if (d.method === 'Page.loadEventFired') waiters.splice(0).forEach(f => f()); });
   const send = (method, params = {}) => new Promise(r => { const i = ++id; pend[i] = r; ws.send(JSON.stringify({id: i, method, params})); });
   await send('Page.enable');
-  const results = [];
+  const results = [], frames = [], slows = [];
   for (const url of sites) {
     const loaded = new Promise(r => { waiters.push(r); setTimeout(r, 30000); });
     const t0 = Date.now();
@@ -49,9 +49,15 @@ const sites = ['https://www.wikipedia.org/', 'https://github.com/', 'https://www
     const r = await send('Runtime.evaluate', {returnByValue: true, expression: 'JSON.stringify((()=>{const n=performance.getEntriesByType("navigation")[0]||{};const fcp=performance.getEntriesByName("first-contentful-paint")[0];return {dcl:Math.round(n.domContentLoadedEventEnd||0),fcp:fcp?Math.round(fcp.startTime):0,res:performance.getEntriesByType("resource").length}})())'});
     const v = JSON.parse(r.result.result.value || '{}');
     results.push(ms);
-    console.log(`  ${url.padEnd(46)} load ${String(ms).padStart(6)} ms  fcp ${String(v.fcp).padStart(5)}  dcl ${String(v.dcl).padStart(5)}  resources ${v.res}`);
+    // Rendering: scroll for 3 s right after load (when the browser's own post-load work
+    // runs too) and count frames and frames slower than 34 ms.
+    const sc = await send('Runtime.evaluate', {returnByValue: true, awaitPromise: true, expression:
+      'new Promise(res => { let n = 0, slow = 0, start = 0, last = 0; const f = (t) => { if (!start) start = last = t; else { n++; if (t - last > 34) slow++; last = t; } window.scrollBy(0, 40); if (t - start < 3000) requestAnimationFrame(f); else res(JSON.stringify({fps: Math.round(n * 1000 / (t - start)), slow})); }; requestAnimationFrame(f); setTimeout(() => res("{}"), 6000); })'});
+    const s = JSON.parse((sc.result && sc.result.result && sc.result.result.value) || '{}');
+    frames.push(s.fps || 0); slows.push(s.slow || 0);
+    console.log(`  ${url.padEnd(46)} load ${String(ms).padStart(6)} ms  fcp ${String(v.fcp).padStart(5)}  dcl ${String(v.dcl).padStart(5)}  resources ${String(v.res).padStart(4)}  scroll ${s.fps} fps, ${s.slow} slow frames`);
   }
-  console.log('  TOTAL', results.reduce((a, b) => a + b, 0), 'ms');
+  console.log('  TOTAL', results.reduce((a, b) => a + b, 0), 'ms', ' FPS-AVG', Math.round(frames.reduce((a, b) => a + b, 0) / frames.length), ' SLOW', slows.reduce((a, b) => a + b, 0));
   process.exit(0);
 })().catch(e => { console.log('ERR', e.message); process.exit(0); });
 '@ | Set-Content "$env:RUNNER_TEMP\perf.js"

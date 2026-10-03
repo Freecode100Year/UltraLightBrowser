@@ -24,7 +24,9 @@ jobs:
       - name: Measure
         shell: pwsh
         run: |
-          foreach ($i in 1..3) {
-            ./tests/perf-load.ps1 -Exe baseline\UltraLightBrowser.exe -Label "v1.6.9 #$i"
-            ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label "current #$i"
+          foreach ($mac in $false, $true) {
+            foreach ($i in 1..3) {
+              ./tests/perf-load.ps1 -Exe baseline\UltraLightBrowser.exe -Label "baseline mac=$mac #$i" -Mac:$mac
+              ./tests/perf-load.ps1 -Exe build\Release\UltraLightBrowser.exe -Label "current mac=$mac #$i" -Mac:$mac
+            }
           }
