@@ -73,6 +73,12 @@ Add-Type -Name W -Namespace N -MemberDefinition '[DllImport("user32.dll")] publi
 [N.W]::ShowWindow($h, 3) | Out-Null
 Start-Sleep 2
 Shot "01-start"
+# Hover the empty title-bar gap where Windows keeps its hidden caption buttons.
+$r = New-Object U+RECT; [U]::GetClientRect((Win), [ref]$r) | Out-Null
+$pt = New-Object U+POINT; $pt.X = $r.R - 45; $pt.Y = 6; [U]::ClientToScreen((Win), [ref]$pt) | Out-Null
+[U]::SetCursorPos($pt.X, $pt.Y) | Out-Null; Start-Sleep -Milliseconds 300
+[U]::SetCursorPos($pt.X + 2, $pt.Y + 1) | Out-Null; Start-Sleep 3
+Shot "00-caption-hover"
 node cdp.js
 Keys "^l" 500; Keys "example.com{ENTER}" 5000; Shot "02-example"
 Keys "^t" 1500; Keys "en.wikipedia.org/wiki/Web_browser{ENTER}" 7000; Shot "03-two-tabs"

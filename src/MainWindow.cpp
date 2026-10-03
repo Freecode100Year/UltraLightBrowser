@@ -831,6 +831,21 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return HTCLIENT;
     }
 
+    // The title bar is custom drawn, but DefWindowProc still hot-tracks the invisible
+    // system caption buttons at the top-right corner and shows their tooltips
+    // ("向上还原", "向下还原", ...), which then stick. Non-client mouse moves carry
+    // no behaviour we need (dragging uses WM_NCLBUTTONDOWN), so swallow them.
+    case WM_NCMOUSEMOVE:
+    case WM_NCMOUSEHOVER:
+    case WM_NCMOUSELEAVE:
+        if (m_hover.kind != Hit::None || m_isTrafficGroupHovered) {
+            m_hover = {};
+            m_isTrafficGroupHovered = false;
+            m_trafficHoveredBtn = 0;
+            InvalidateToolbar();
+        }
+        return 0;
+
     case WM_CREATE: {
         UpdateDpiScaling(GetDpiForWindow(m_hWnd));
         m_hEditAddress = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL | ES_LEFT,
