@@ -36,10 +36,15 @@ const WebSocket = require('ws');
   await sleep(4000);
   await show('normal navigation');
   console.log('HOVER-PREFETCH-RULES ' + await ev(`!!document.getElementById('ulb-hover-prefetch')`));
+  await send('Page.navigate', {url: 'https://httpbin.org/response-headers?Content-Disposition=attachment%3B%20filename%3Dulb-motw-test.txt'});
+  await sleep(6000);
   process.exit(0);
 })().catch(e => { console.log('ERR', e.message); process.exit(0); });
 '@ | Set-Content "$env:RUNNER_TEMP\ua.js"
 $p = Start-Process $Exe -PassThru
 Start-Sleep 10
 node "$env:RUNNER_TEMP\ua.js"
+$f = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads\ulb-motw-test.txt'
+"DOWNLOAD exists: " + (Test-Path $f)
+"ZONE:"; Get-Content -Path $f -Stream Zone.Identifier -ErrorAction SilentlyContinue
 Stop-Process $p -Force -ErrorAction SilentlyContinue
