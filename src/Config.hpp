@@ -18,7 +18,6 @@ struct AppSettings {
     std::string macPlatformVersion = "26.2.0"; // Sec-CH-UA-Platform-Version in macOS mode
     bool hardwareAcceleration = true;
     bool enableAdBlock = true;
-    bool ecoMode = false;
     bool systemAudioPassthrough = true;       // Keep original output for Windows spatial audio.
     bool enableSurroundSound = true;
     std::string surroundSoundMode = "standard"; // "light", "standard", "cinema"

@@ -75,7 +75,6 @@ void Config::Load() {
             }
             if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
             if (s.contains("enableAdBlock")) m_settings.enableAdBlock = s["enableAdBlock"];
-            if (s.contains("ecoMode")) m_settings.ecoMode = s["ecoMode"];
             if (s.contains("systemAudioPassthrough") && s["systemAudioPassthrough"].is_boolean()) {
                 m_settings.systemAudioPassthrough = s["systemAudioPassthrough"].get<bool>();
             }
@@ -164,7 +163,6 @@ void Config::Save() {
             {"macPlatformVersion", m_settings.macPlatformVersion},
             {"hardwareAcceleration", m_settings.hardwareAcceleration},
             {"enableAdBlock", m_settings.enableAdBlock},
-            {"ecoMode", m_settings.ecoMode},
             {"systemAudioPassthrough", m_settings.systemAudioPassthrough},
             {"enableSurroundSound", m_settings.enableSurroundSound},
             {"surroundSoundMode", m_settings.surroundSoundMode},

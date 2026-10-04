@@ -243,6 +243,7 @@ void MainWindow::ShowMainMenu() {
     AppendSubmenu(m, BuildSoundMenu(), std::wstring(L"声音\t") + (settings.systemAudioPassthrough ? L"原声" : L"增强"), Icon::Sound);
     const auto warpState = WarpManager::Instance().GetState();
     const wchar_t* warpLabel = warpState == WarpManager::State::Up ? L"已连接"
+        : warpState == WarpManager::State::Shared ? L"已开启"
         : warpState == WarpManager::State::Off ? L"关闭" : L"未连接";
     AppendSubmenu(m, BuildWarpMenu(), std::wstring(L"Cloudflare WARP\t") + warpLabel, Icon::Shield);
     AppendSubmenu(m, BuildIdentityMenu(), std::wstring(L"用户代理\t") + (settings.userAgentProfile == "macos-edge" ? L"macOS" : L"默认"), Icon::Monitor);

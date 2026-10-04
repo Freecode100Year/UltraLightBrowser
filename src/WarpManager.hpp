@@ -13,7 +13,7 @@ namespace UltraLight {
 
 class WarpManager {
 public:
-    enum class State { Off, Starting, Up, Down, Unavailable };
+    enum class State { Off, Starting, Up, Down, Unavailable, Shared };  // Shared: helper run by another browser process
 
     static WarpManager& Instance();
 

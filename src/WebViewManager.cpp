@@ -190,10 +190,9 @@ void WebViewManager::CreateEnvironment(HWND errorOwner, EnvironmentCallback done
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
-        L"--enable-features=DnsOverHttps,HighEfficiencyModeAvailable,PageDiscarding,Freezer,BatterySaverModeAvailable "
+        L"--enable-features=PageDiscarding,Freezer "
         L"--enable-hardware-overlays=\"single-fullscreen,single-on-top,underlay\" "
         L"--enable-native-gpu-memory-buffers "
-        L"--media-cache-size=134217728 "
         L"--disk-cache-size=209715200 "
         L"--disable-features=Translate,OptimizationHints,MediaRouter "
         L"--disable-sync "
@@ -1178,8 +1177,10 @@ void WebViewManager::DisableMacSpoof() {
 // override, so in macOS mode they would carry the real Windows identity (and the
 // WebView2 brand). Link prefetching is therefore off whenever macOS mode is wanted.
 bool WebViewManager::PrefetchAllowed() {
+    // Chromium does not prefetch while a proxy is configured
+    // (PrefetchNotEligibleExistingProxy), and WARP is a proxy.
     const auto& s = Config::Instance().GetSettings();
-    return s.userAgentProfile != "macos-edge";
+    return s.userAgentProfile != "macos-edge" && WarpManager::Instance().BrowserArguments().empty();
 }
 
 void WebViewManager::UpdateHoverPrefetch() {

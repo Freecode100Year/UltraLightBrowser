@@ -74,7 +74,7 @@ const sites = ['https://www.wikipedia.org/', 'https://github.com/', 'https://www
 })().catch(e => { console.log('ERR', e.message); process.exit(0); });
 '@ | Set-Content "$env:RUNNER_TEMP\lab.js"
 
-$base = 'DnsOverHttps,HighEfficiencyModeAvailable,PageDiscarding,Freezer,BatterySaverModeAvailable'
+$base = 'PageDiscarding,Freezer'
 $lcpFirst = $base + ',DelayAsyncScriptExecution:delay_async_exec_delay_type/till_first_lcp_candidate/cross_site_only/true/delay_async_exec_delay_limit/2s,ThrottleUnimportantFrameTimers,SpeculativeImageDecodes,ThreadedPreloadScanner'
 $runs = @(
   @{Name = 'direct';            Mode = 'direct';     Features = $base},

@@ -92,7 +92,7 @@ void WarpManager::Start() {
         int port = 0;
         if (in >> port && port > 0 && port < 65536) {
             m_port = port;
-            m_state = State::Up;
+            m_state = State::Shared;
             // If the first copy exits, its helper goes with it: take over the port.
             std::thread([this, port]() {
                 while (!m_stopping) {
@@ -257,8 +257,9 @@ void WarpManager::Stop() {
 std::wstring WarpManager::BrowserArguments() const {
     const int port = m_port.load();
     if (port == 0) return {};
-    return L" --proxy-server=socks5://127.0.0.1:" + std::to_wstring(port) +
-           L" --force-webrtc-ip-handling-policy=disable_non_proxied_udp";
+    // WebRTC is kept inside the proxy by a profile preference (see CreateEnvironment);
+    // WebView2 ignores Chrome's --force-webrtc-ip-handling-policy switch.
+    return L" --proxy-server=socks5://127.0.0.1:" + std::to_wstring(port);
 }
 
 std::wstring WarpManager::EndpointText() const {
@@ -286,6 +287,7 @@ std::wstring WarpManager::StatusText() const {
     case State::Up: return L"已连接";
     case State::Down: return Config::Instance().GetSettings().warpFailClosed ? L"未连接（已阻止联网）" : L"未连接（直接连接）";
     case State::Unavailable: return L"不可用（直接连接）";
+    case State::Shared: return L"已开启（由另一个浏览器进程运行）";
     }
     return {};
 }

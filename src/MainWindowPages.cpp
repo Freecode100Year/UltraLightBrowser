@@ -404,7 +404,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                       {"startBackground", settings.startBackground}, {"saveHistory", settings.saveHistory},
                       {"enableAdBlock", NativeRequestFilter::Instance().IsEnabled()},
                       {"readerTheme", settings.readerTheme}, {"readerFont", settings.readerFont}, {"readerFontSize", settings.readerFontSize},
-                      {"hardwareAcceleration", settings.hardwareAcceleration}, {"preloadLinks", settings.preloadLinks}, {"warpEnabled", settings.warpEnabled}, {"warpFailClosed", settings.warpFailClosed},
+                      {"hardwareAcceleration", settings.hardwareAcceleration}, {"preloadLinks", settings.preloadLinks}, {"preloadAvailable", WebViewManager::PrefetchAllowed()}, {"warpEnabled", settings.warpEnabled}, {"warpFailClosed", settings.warpFailClosed},
                       {"warpStatus", U8(WarpManager::Instance().StatusText() + (WarpManager::Instance().EndpointText().empty() ? std::wstring() : L"，入口 " + WarpManager::Instance().EndpointText()))}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
         } else if (cmd == "setSetting") {
             const std::string key = Arg(args, "key");
