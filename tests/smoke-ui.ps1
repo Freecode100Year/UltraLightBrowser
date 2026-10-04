@@ -177,7 +177,7 @@ Start-Sleep 12
 @'
 (async () => {
   const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
-  const page = list.find(t => t.type === 'page' && t.url.includes('ulb.internal'));
+  const page = list.find(t => t.type === 'page' && t.url.includes('start.html'));
   console.log('FAILCLOSED page', page && page.url);
   const ws = new (require('ws'))(page.webSocketDebuggerUrl);
   await new Promise(r => ws.on('open', r));
