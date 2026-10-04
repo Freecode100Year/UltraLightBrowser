@@ -1,7 +1,6 @@
 #include "AppShell.hpp"
 #include "Commands.hpp"
 #include "Config.hpp"
-#include "DnsManager.hpp"
 #include "Icons.hpp"
 #include "InternalPages.hpp"
 #include "MainWindow.hpp"
@@ -258,7 +257,6 @@ void AppShell::WhenEnvironmentReady(HWND errorOwner, std::function<void(ICoreWeb
             return;
         }
         m_environment = env;
-        DnsManager::Instance().ApplySettings();
         auto waiters = std::move(m_envWaiters);
         m_envWaiters.clear();
         for (auto& w : waiters) w(m_environment.get());

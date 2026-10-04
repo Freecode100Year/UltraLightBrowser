@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(UltraLightBrowser
-    VERSION 2.1.0
+    VERSION 2.1.1
     DESCRIPTION "Minimal, Ultra-Fast Windows 11 Native Browser Shell (macOS Safari UI Edition)"
     LANGUAGES CXX C
 )
@@ -80,8 +80,6 @@ set(SOURCE_FILES
     src/NativeRequestFilter.hpp
     src/ElementBlocker.cpp
     src/ElementBlocker.hpp
-    src/DnsManager.cpp
-    src/DnsManager.hpp
     src/PowerManager.cpp
     src/PowerManager.hpp
     src/WarpManager.cpp

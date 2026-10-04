@@ -4,6 +4,7 @@
 #include "Config.hpp"
 #include "StringUtils.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -96,7 +97,9 @@ void WarpManager::Start() {
             std::thread([this, port]() {
                 while (!m_stopping) {
                     Sleep(3000);
-                    if (!m_stopping && !m_process && !PortOpen(port)) Launch(port);
+                    if (!m_stopping && !m_process && !PortOpen(port) && Launch(port)) {
+                        std::ofstream(WarpFolder() / "port", std::ios::trunc) << port;
+                    }
                 }
             }).detach();
             return;
@@ -182,6 +185,7 @@ bool WarpManager::Launch(int port) {
 }
 
 void WarpManager::ReadOutput(HANDLE pipe) {
+    const ULONGLONG started = GetTickCount64();
     std::string pending;
     char buf[512];
     DWORD read = 0;
@@ -201,7 +205,7 @@ void WarpManager::ReadOutput(HANDLE pipe) {
                 m_state = State::Down;
             } else if (line == "SCAN start") {
                 m_scanning = true;
-            } else if (line == "SCAN none") {
+            } else if (line == "SCAN end" || line == "SCAN none") {
                 m_scanning = false;
             } else if (line.rfind("ENDPOINT ", 0) == 0) {
                 // "ENDPOINT <ip:port> <rtt ms>"
@@ -213,7 +217,6 @@ void WarpManager::ReadOutput(HANDLE pipe) {
                 AcquireSRWLockExclusive(&m_lock);
                 m_endpoint = std::move(text);
                 ReleaseSRWLockExclusive(&m_lock);
-                if (ms > 0) m_scanning = false;
             }
         }
     }
@@ -225,14 +228,19 @@ void WarpManager::ReadOutput(HANDLE pipe) {
     m_state = State::Down;
     const int port = m_port.load();
     if (port == 0) return;
-    Sleep(1000);
-    if (!m_stopping) Launch(port);
+    // A helper that keeps exiting at once (e.g. another program took the port) is
+    // retried with growing pauses instead of every second.
+    m_quickExits = GetTickCount64() - started < 10000 ? (std::min)(m_quickExits + 1, 30) : 0;
+    for (DWORD waited = 0, pause = 1000u * (1 + m_quickExits); waited < pause && !m_stopping; waited += 250) Sleep(250);
+    while (!m_stopping && !Launch(port)) Sleep(5000);
 }
 
 void WarpManager::Stop() {
     m_stopping = true;
+    // Another copy of the browser may still be using this helper (or its own on the
+    // same port); the port file stays for it and for copies started later.
     std::error_code ec;
-    std::filesystem::remove(WarpFolder() / "port", ec);
+    if (!AppShell::AnotherInstanceRunning()) std::filesystem::remove(WarpFolder() / "port", ec);
     if (m_job) {
         CloseHandle(m_job);  // kills the helper
         m_job = nullptr;

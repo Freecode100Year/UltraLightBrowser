@@ -3,7 +3,6 @@
 #include <shellscalingapi.h>
 #include "AppShell.hpp"
 #include "Config.hpp"
-#include "DnsManager.hpp"
 #include "PowerManager.hpp"
 #include "WarpManager.hpp"
 #include "WebViewManager.hpp"
@@ -34,10 +33,9 @@ int WINAPI wWinMain(
     InitCommonControlsEx(&icex);
 
     // 4. Initialize Configuration, remove anything a crash or forced kill left behind
-    // (unless another copy is running on the same profile), and apply Public DNS
+    // (unless another copy is running on the same profile), then start WARP
     UltraLight::Config::Instance();
     if (!UltraLight::AppShell::AnotherInstanceRunning()) UltraLight::WebViewManager::PurgeAllCacheAndTempFiles();
-    UltraLight::DnsManager::Instance().ApplySettings();
     UltraLight::WarpManager::Instance().Start();  // before the WebView2 environment exists
 
     // 5. Disable EcoQoS on Host Process for maximum responsiveness

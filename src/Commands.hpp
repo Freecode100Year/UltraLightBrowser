@@ -17,8 +17,6 @@ enum AppCommandID : WORD {
     IDM_ZOOM_IN             = 2004,
     IDM_ZOOM_OUT            = 2005,
     IDM_ZOOM_RESET          = 2006,
-    IDM_DNS_TOGGLE_ENABLE   = 2010,
-    IDM_DNS_OPEN_SETTINGS   = 2011,
     IDM_BLOCKER_PICKER      = 2012,
     IDM_BLOCKER_TOGGLE_NATIVE = 2013,
     IDM_BLOCKER_CLEAR_RULES = 2014,
@@ -117,8 +115,7 @@ enum AppCommandID : WORD {
     IDM_SUSPEND_30          = 2323,
     IDM_SUSPEND_60          = 2324,
 
-    IDM_SELECT_TAB_BASE     = 2400,  // Ctrl+1..9 -> 2401..2409
-    IDM_DNS_SELECT_BASE     = 2100   // .. 2149
+    IDM_SELECT_TAB_BASE     = 2400   // Ctrl+1..9 -> 2401..2409
 };
 
 // Maps a key press to a browser command (0 = not a shortcut). Shared by the

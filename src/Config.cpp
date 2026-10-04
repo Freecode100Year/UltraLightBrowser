@@ -76,13 +76,6 @@ void Config::Load() {
             if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
             if (s.contains("enableAdBlock")) m_settings.enableAdBlock = s["enableAdBlock"];
             if (s.contains("ecoMode")) m_settings.ecoMode = s["ecoMode"];
-            if (s.contains("enablePublicDns")) m_settings.enablePublicDns = s["enablePublicDns"];
-            if (s.contains("selectedDnsProvider") && s["selectedDnsProvider"].is_string()) {
-                m_settings.selectedDnsProvider = s["selectedDnsProvider"].get<std::string>();
-            }
-            if (s.contains("customDnsTemplate") && s["customDnsTemplate"].is_string()) {
-                m_settings.customDnsTemplate = s["customDnsTemplate"].get<std::string>();
-            }
             if (s.contains("systemAudioPassthrough") && s["systemAudioPassthrough"].is_boolean()) {
                 m_settings.systemAudioPassthrough = s["systemAudioPassthrough"].get<bool>();
             }
@@ -172,9 +165,6 @@ void Config::Save() {
             {"hardwareAcceleration", m_settings.hardwareAcceleration},
             {"enableAdBlock", m_settings.enableAdBlock},
             {"ecoMode", m_settings.ecoMode},
-            {"enablePublicDns", m_settings.enablePublicDns},
-            {"selectedDnsProvider", m_settings.selectedDnsProvider},
-            {"customDnsTemplate", m_settings.customDnsTemplate},
             {"systemAudioPassthrough", m_settings.systemAudioPassthrough},
             {"enableSurroundSound", m_settings.enableSurroundSound},
             {"surroundSoundMode", m_settings.surroundSoundMode},

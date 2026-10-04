@@ -9,7 +9,7 @@
 //	PORT <n>         proxy is listening
 //	STATE up|down    tunnel state changes
 //	ENDPOINT <ip:port> <rtt ms>   endpoint in use (after optimisation)
-//	SCAN start|none
+//	SCAN start|end|none
 //	ERROR <text>
 //
 // stdin accepts "RESCAN" (optimise the endpoint now).
@@ -72,18 +72,21 @@ func main() {
 	}
 }
 
-// dial connects to host:port, through the tunnel when it is up.
+// dial connects to host:port, through the tunnel when it is up. A name that does
+// not resolve inside the tunnel fails rather than going direct: the direct path
+// would ask the system resolver and connect from the real address.
 func dial(ctx context.Context, t *Tunnel, host string, port int) (net.Conn, error) {
 	if nt := t.Net(); nt != nil {
 		addrs, err := t.Resolve(ctx, host)
-		if err == nil && len(addrs) > 0 {
-			return dialFirst(ctx, addrs, port, func(ctx context.Context, a string) (net.Conn, error) {
-				return nt.DialContext(ctx, "tcp", a)
-			})
-		}
-		if err != nil && *failClosed {
+		if err != nil {
 			return nil, err
 		}
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("no address for %s", host)
+		}
+		return dialFirst(ctx, addrs, port, func(ctx context.Context, a string) (net.Conn, error) {
+			return nt.DialContext(ctx, "tcp", a)
+		})
 	}
 	if *failClosed {
 		return nil, fmt.Errorf("tunnel down")

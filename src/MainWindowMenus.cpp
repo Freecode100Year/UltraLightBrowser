@@ -4,7 +4,6 @@
 #include "MainWindow.hpp"
 #include "AppShell.hpp"
 #include "Config.hpp"
-#include "DnsManager.hpp"
 #include "WarpManager.hpp"
 #include "ElementBlocker.hpp"
 #include "InternalPages.hpp"
@@ -173,21 +172,6 @@ HMENU MainWindow::BuildSoundMenu() {
     return m;
 }
 
-HMENU MainWindow::BuildDnsMenu() {
-    const auto& settings = Config::Instance().GetSettings();
-    const auto& providers = DnsManager::Instance().GetProviders();
-    HMENU m = CreatePopupMenu();
-    AppendMenuW(m, MF_STRING | (settings.enablePublicDns ? MF_CHECKED : 0), IDM_DNS_TOGGLE_ENABLE, L"使用加密 DNS（DoH）");
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    for (size_t i = 0; i < providers.size() && i < 50; ++i) {
-        const bool on = settings.enablePublicDns && settings.selectedDnsProvider == providers[i].id;
-        AppendMenuW(m, MF_STRING | (on ? MF_CHECKED : 0), IDM_DNS_SELECT_BASE + static_cast<UINT>(i), providers[i].name.c_str());
-    }
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, IDM_DNS_OPEN_SETTINGS, L"高级设置…");
-    return m;
-}
-
 HMENU MainWindow::BuildWarpMenu() {
     const auto& settings = Config::Instance().GetSettings();
     HMENU m = CreatePopupMenu();
@@ -257,13 +241,6 @@ void MainWindow::ShowMainMenu() {
     AppendSubmenu(m, BuildSiteMenu(), L"此网站的设置", Icon::Gear);
     AppendSubmenu(m, BuildBlockerMenu(), L"内容拦截器", Icon::Block);
     AppendSubmenu(m, BuildSoundMenu(), std::wstring(L"声音\t") + (settings.systemAudioPassthrough ? L"原声" : L"增强"), Icon::Sound);
-    std::wstring dnsLabel = L"系统";
-    if (settings.enablePublicDns) {
-        const auto* p = DnsManager::Instance().GetActiveProvider();
-        dnsLabel = settings.selectedDnsProvider == "custom" ? L"自定义" : (p ? p->name : L"已开启");
-        if (dnsLabel.size() > 14) dnsLabel = dnsLabel.substr(0, 14) + L"…";
-    }
-    AppendSubmenu(m, BuildDnsMenu(), L"DNS\t" + dnsLabel, Icon::Globe);
     const auto warpState = WarpManager::Instance().GetState();
     const wchar_t* warpLabel = warpState == WarpManager::State::Up ? L"已连接"
         : warpState == WarpManager::State::Off ? L"关闭" : L"未连接";
@@ -443,12 +420,6 @@ bool MainWindow::HandleMenuCommand(WORD id) {
         }
         return true;
     }
-    case IDM_DNS_TOGGLE_ENABLE:
-        settings.enablePublicDns = !settings.enablePublicDns;
-        Config::Instance().Save();
-        DnsManager::Instance().ApplySettings();
-        ShowToast(settings.enablePublicDns ? L"已开启加密 DNS，重新启动后完全生效" : L"已关闭加密 DNS，重新启动后完全生效");
-        return true;
     case IDM_WARP_TOGGLE:
         settings.warpEnabled = !settings.warpEnabled;
         Config::Instance().Save();
@@ -462,9 +433,6 @@ bool MainWindow::HandleMenuCommand(WORD id) {
         settings.warpFailClosed = !settings.warpFailClosed;
         Config::Instance().Save();
         ShowToast(L"重新启动 UltraLightBrowser 后生效");
-        return true;
-    case IDM_DNS_OPEN_SETTINGS:
-        DnsManager::Instance().ShowDnsDialog(m_hWnd);
         return true;
     case IDM_UA_DEFAULT:
     case IDM_UA_MACOS_EDGE: {
@@ -519,18 +487,6 @@ bool MainWindow::HandleMenuCommand(WORD id) {
     }
     if (id >= IDM_ZOOM_SET_BASE && id < IDM_ZOOM_SET_BASE + std::size(kZoomPresets)) {
         if (tab && tab->view) tab->view->SetZoomFactor(kZoomPresets[id - IDM_ZOOM_SET_BASE] / 100.0);
-        return true;
-    }
-    if (id >= IDM_DNS_SELECT_BASE && id < IDM_DNS_SELECT_BASE + 50) {
-        const auto& providers = DnsManager::Instance().GetProviders();
-        const size_t idx = id - IDM_DNS_SELECT_BASE;
-        if (idx < providers.size()) {
-            settings.enablePublicDns = true;
-            settings.selectedDnsProvider = providers[idx].id;
-            Config::Instance().Save();
-            DnsManager::Instance().ApplySettings();
-            ShowToast(L"已切换到 " + providers[idx].name + L"，重新启动后完全生效");
-        }
         return true;
     }
     return false;

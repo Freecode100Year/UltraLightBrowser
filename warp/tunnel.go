@@ -167,8 +167,11 @@ func (t *Tunnel) Optimize() {
 	t.mu.Unlock()
 	// Switch when the current endpoint no longer answers or another is clearly faster.
 	switchTo := current == "" || currentRTT == 0 || best.RTT+5*time.Millisecond < currentRTT*8/10
-	if switchTo && best.Endpoint != current {
-		t.roam(best.Endpoint)
+	if switchTo && best.Endpoint != current && t.roam(best.Endpoint) {
+		current, currentRTT = best.Endpoint, best.RTT
+	}
+	if current == "" {
+		// Tunnel not up yet: the next connect attempt starts with the winner.
 		current, currentRTT = best.Endpoint, best.RTT
 	}
 	t.mu.Lock()
@@ -179,15 +182,16 @@ func (t *Tunnel) Optimize() {
 	t.mu.Unlock()
 	saveAccount(t.path, &snapshot)
 	status("ENDPOINT %s %d", current, currentRTT.Milliseconds())
+	status("SCAN end")
 }
 
 // roam points the running tunnel at another endpoint; open connections survive.
-func (t *Tunnel) roam(endpoint string) {
+func (t *Tunnel) roam(endpoint string) bool {
 	t.mu.Lock()
 	dev, acct := t.dev, t.acct
 	t.mu.Unlock()
 	if dev == nil || acct == nil {
-		return
+		return false
 	}
 	// Re-adding the peer drops its old session, so the first packet starts a fresh
 	// handshake with the new endpoint at once instead of after a 5 s rekey timeout.
@@ -195,11 +199,13 @@ func (t *Tunnel) roam(endpoint string) {
 	peer, _ := base64.StdEncoding.DecodeString(acct.PeerKey)
 	key := hex.EncodeToString(peer)
 	cfg := fmt.Sprintf("public_key=%s\nremove=true\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\nallowed_ip=::/0\npersistent_keepalive_interval=25\n", key, key, endpoint)
-	if dev.IpcSet(cfg) == nil {
-		t.mu.Lock()
-		t.endpoint = endpoint
-		t.mu.Unlock()
+	if dev.IpcSet(cfg) != nil {
+		return false
 	}
+	t.mu.Lock()
+	t.endpoint = endpoint
+	t.mu.Unlock()
+	return true
 }
 
 func hasIPv6() bool {

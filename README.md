@@ -65,7 +65,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 **统一菜单（右上角 ⋯）**
 - 新建标签页 / 窗口 / 无痕浏览窗口；书签、历史记录、下载、阅读列表
 - 显示阅读器、页内查找、缩放、打印
-- 此网站的设置、内容拦截器、声音、DNS、用户代理、节能
+- 此网站的设置、内容拦截器、声音、Cloudflare WARP、用户代理、节能
 - 全屏、设置、关于
 
 **起始页、书签与历史**
@@ -86,7 +86,6 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 - **内置 Cloudflare WARP（默认开启）**：用户态 WireGuard 隧道（无需驱动和管理员权限），网页与 DNS 全部经 Cloudflare 出口，优先 IPv6；WebRTC 只走代理；**IP 优选**：向 Cloudflare 的多个 WARP 入口地址段和 50 多个端口发送 WireGuard 握手包测延迟，自动切到最快的入口（切换时连接不中断），每 6 小时或连接失败时重新优选，也可手动“重新优选 IP”；WARP 不可用时默认直接连接，可改为阻止联网（菜单“⋯ → Cloudflare WARP”或设置 → 隐私）
 - **关闭即清除全部痕迹**：历史记录、Cookie 和网站数据、网页缓存、下载列表、网站设置、非书签网站的图标全部删除，并清空系统 DNS 缓存和任务栏“最近”记录；意外退出或被强制结束时，下次启动先补做清理。只保留书签、阅读列表、标签组和设置
 - 元素隐藏：Ctrl+Shift+H 点选页面元素永久隐藏
-- 公共 DNS / DoH：Quad9（默认）、Cloudflare、Google、OpenDNS 或自定义 DoH；只写入本程序自己的数据目录，不修改系统或 Edge 设置
 
 **音频**
 - 默认原声输出：不接管网页音频，可配合 Windows 空间音效 / Dolby Access 使用
@@ -188,7 +187,6 @@ src/
 ├── WebViewManager.*         单个标签页的 WebView2、音频增强、标识切换
 ├── NativeRequestFilter.*    广告 / 跟踪请求拦截
 ├── ElementBlocker.*         元素隐藏
-├── DnsManager.*             公共 DNS / DoH
 ├── PowerManager.*           后台节能与 EcoQoS
 ├── UserAgent.hpp / MacStealth.hpp / SelfTestPage.hpp   macOS 标识
 └── Config.*                 设置读写
@@ -199,6 +197,7 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 
 ## 最近更新
 
+- **v2.1.1**：移除“公共 DNS”设置（开启 WARP 时域名已在隧道内由 Cloudflare 解析，该设置不起作用；旧版本保存的 DNS 选择在启动时清除）。审计修复：WARP 已连接时，隧道内解析不到的域名不再改用本机 DNS 直连（会泄露访问的域名和真实 IP）；同时运行两个浏览器窗口进程时，先关闭的一个不再删掉另一个仍在用的 WARP 端口记录；WARP 组件反复启动失败时逐步延长重试间隔；切换入口失败时不再显示为已切换；“重新优选 IP”在入口无变化时也能正确结束。
 - **v2.1.0**：内置 Cloudflare WARP（默认开启，带 IP 优选）：浏览器经 WARP 加密隧道上网，优先 IPv6，域名在隧道内由 Cloudflare DNS 解析；无需安装 WARP 客户端或管理员权限；WebRTC 不会绕过隧道泄露真实 IP；可选“WARP 断开时阻止联网”。
 - **v2.0.9**：审计修复：macOS 模式下停用网页预先载入（预取请求不经过身份伪装，会暴露 Windows 和 WebView2）；意外退出后下次启动补清网站图标与系统 DNS 缓存；下载的文件不再记录来源网址（保留“来自互联网”安全标记）。
 - **v2.0.8**：启动和新标签页默认打开 Brave 搜索，地址栏不显示其网址；搜索引擎新增 Brave。

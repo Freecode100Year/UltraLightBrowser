@@ -1342,7 +1342,8 @@ void WebViewManager::PurgeAllCacheAndTempFiles() {
     // Everything the browser engine writes goes: cookies, site storage, HTTP / code /
     // GPU caches, history, the downloads list, autofill, crash reports, logs. This also
     // runs at startup, so traces left by a crash or a forced kill are removed too.
-    // Only the encryption key and the encrypted-DNS choice from Local State are kept;
+    // Only the encryption key from Local State is kept (this also drops the encrypted-DNS
+    // choice older versions stored there);
     // without os_crypt WebView2 fails to start (0x8007139F) on some machines.
     const std::filesystem::path userDataDir = Config::Instance().GetUserDataDirectory();
     const std::filesystem::path appDataDir = Config::Instance().GetAppDataPath();
@@ -1358,7 +1359,6 @@ void WebViewManager::PurgeAllCacheAndTempFiles() {
             if (root.is_object() && root.contains("os_crypt")) {
                 json minimal = json::object();
                 minimal["os_crypt"] = root["os_crypt"];
-                if (root.contains("dns_over_https")) minimal["dns_over_https"] = root["dns_over_https"];
                 minimalLocalState = minimal.dump();
             }
         }

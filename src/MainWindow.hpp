@@ -184,7 +184,6 @@ private:
     HMENU BuildSiteMenu();
     HMENU BuildBlockerMenu();
     HMENU BuildSoundMenu();
-    HMENU BuildDnsMenu();
     HMENU BuildWarpMenu();
     HMENU BuildIdentityMenu();
     HMENU BuildPowerMenu();

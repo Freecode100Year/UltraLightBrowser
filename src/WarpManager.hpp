@@ -49,6 +49,7 @@ private:
     std::wstring m_endpoint;
     HANDLE m_portEvent = nullptr;
     std::atomic<int> m_port{0};
+    int m_quickExits = 0;  // helper exits soon after start, in a row (reader thread only)
     std::atomic<State> m_state{State::Off};
 };
 
