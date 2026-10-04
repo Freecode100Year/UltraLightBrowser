@@ -28,6 +28,11 @@ public:
 
     State GetState() const { return m_state.load(); }
     std::wstring StatusText() const;
+    // Endpoint in use, e.g. "188.114.97.22:7152（13 ms）"; empty before it is known.
+    std::wstring EndpointText() const;
+    bool Scanning() const { return m_scanning.load(); }
+    // Optimise the WARP endpoint now ("重新优选 IP").
+    void Rescan();
 
 private:
     WarpManager() = default;
@@ -38,6 +43,10 @@ private:
     HANDLE m_process = nullptr;
     HANDLE m_job = nullptr;
     std::atomic<bool> m_stopping{false};
+    std::atomic<bool> m_scanning{false};
+    HANDLE m_stdin = nullptr;
+    mutable SRWLOCK m_lock = SRWLOCK_INIT;
+    std::wstring m_endpoint;
     HANDLE m_portEvent = nullptr;
     std::atomic<int> m_port{0};
     std::atomic<State> m_state{State::Off};

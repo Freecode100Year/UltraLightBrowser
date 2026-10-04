@@ -394,6 +394,9 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
         } else if (cmd == "markRead") {
             result = lib.SetRead(Arg(args, "id"), args.value("read", true));
             libraryChanged = true;
+        } else if (cmd == "warpRescan") {
+            WarpManager::Instance().Rescan();
+            result = true;
         } else if (cmd == "getSettings") {
             result = {{"startupPage", settings.startupPage}, {"newTabPage", settings.newTabPage}, {"homeUrl", U8(settings.startUrl)},
                       {"searchEngine", settings.searchEngine}, {"tabSuspendMinutes", settings.tabSuspendMinutes},
@@ -402,7 +405,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                       {"enableAdBlock", NativeRequestFilter::Instance().IsEnabled()},
                       {"readerTheme", settings.readerTheme}, {"readerFont", settings.readerFont}, {"readerFontSize", settings.readerFontSize},
                       {"hardwareAcceleration", settings.hardwareAcceleration}, {"preloadLinks", settings.preloadLinks}, {"warpEnabled", settings.warpEnabled}, {"warpFailClosed", settings.warpFailClosed},
-                      {"warpStatus", U8(WarpManager::Instance().StatusText())}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
+                      {"warpStatus", U8(WarpManager::Instance().StatusText() + (WarpManager::Instance().EndpointText().empty() ? std::wstring() : L"，入口 " + WarpManager::Instance().EndpointText()))}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
         } else if (cmd == "setSetting") {
             const std::string key = Arg(args, "key");
             const json value = args.contains("value") ? args["value"] : json(nullptr);

@@ -108,6 +108,7 @@ $root = "$env:LOCALAPPDATA\UltraLightBrowser"
 "TRACE files left:"
 Get-ChildItem $root -Recurse -File -Force | Where-Object { $_.FullName -notmatch '\\ui\\[^\\]+\.(html|js|css)$' -and $_.FullName -notmatch '\\ui\\(vendor|\.stamp)' } |
   ForEach-Object { "  " + $_.FullName.Substring($root.Length) + "  " + $_.Length }
+"WARP account: " + ((Get-Content "$root\warp\account.json" -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json) | ForEach-Object { "best=$($_.best_endpoint) rtt=$($_.best_rtt_ms)ms" })
 "TRACE Local State keys: " + ((Get-Content "$root\UserData\EBWebView\Local State" -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json).PSObject.Properties.Name -join ',')
 Get-Content "$env:LOCALAPPDATA\UltraLightBrowser\library.json" -ErrorAction SilentlyContinue
 $p = Start-Process $Exe -PassThru

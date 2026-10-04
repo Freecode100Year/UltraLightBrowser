@@ -91,6 +91,7 @@ enum AppCommandID : WORD {
     IDM_PRINT               = 2238,
     IDM_WARP_TOGGLE         = 2239,
     IDM_WARP_FAIL_CLOSED    = 2240,
+    IDM_WARP_RESCAN         = 2241,
 
     // Site settings
     IDM_SITE_AUTO_READER    = 2300,

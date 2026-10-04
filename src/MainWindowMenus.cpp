@@ -191,8 +191,14 @@ HMENU MainWindow::BuildDnsMenu() {
 HMENU MainWindow::BuildWarpMenu() {
     const auto& settings = Config::Instance().GetSettings();
     HMENU m = CreatePopupMenu();
-    const std::wstring state = L"状态：" + WarpManager::Instance().StatusText();
+    auto& warp = WarpManager::Instance();
+    const std::wstring state = L"状态：" + warp.StatusText();
     AppendMenuW(m, MF_STRING | MF_GRAYED, 0, state.c_str());
+    const std::wstring endpoint = warp.EndpointText();
+    if (!endpoint.empty()) AppendMenuW(m, MF_STRING | MF_GRAYED, 0, (L"入口：" + endpoint).c_str());
+    const bool running = warp.GetState() == WarpManager::State::Up || warp.GetState() == WarpManager::State::Down;
+    AppendMenuW(m, MF_STRING | (running && !warp.Scanning() ? 0 : MF_GRAYED), IDM_WARP_RESCAN,
+                warp.Scanning() ? L"正在优选 IP…" : L"重新优选 IP");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING | (settings.warpEnabled ? MF_CHECKED : 0), IDM_WARP_TOGGLE, L"使用 Cloudflare WARP");
     AppendMenuW(m, MF_STRING | (settings.warpFailClosed ? MF_CHECKED : 0) | (settings.warpEnabled ? 0 : MF_GRAYED),
@@ -447,6 +453,10 @@ bool MainWindow::HandleMenuCommand(WORD id) {
         settings.warpEnabled = !settings.warpEnabled;
         Config::Instance().Save();
         ShowToast(settings.warpEnabled ? L"已开启 WARP，重新启动 UltraLightBrowser 后生效" : L"已关闭 WARP，重新启动 UltraLightBrowser 后生效");
+        return true;
+    case IDM_WARP_RESCAN:
+        WarpManager::Instance().Rescan();
+        ShowToast(L"正在优选 WARP 入口 IP，约需 5 秒");
         return true;
     case IDM_WARP_FAIL_CLOSED:
         settings.warpFailClosed = !settings.warpFailClosed;

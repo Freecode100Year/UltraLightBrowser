@@ -37,12 +37,20 @@ type Account struct {
 	EndpointV4 string `json:"endpoint_v4"` // host only
 	EndpointV6 string `json:"endpoint_v6"`
 	Ports      []int  `json:"ports"`
+	// Result of the last endpoint optimisation.
+	Best      string    `json:"best_endpoint,omitempty"`
+	BestRTTms int       `json:"best_rtt_ms,omitempty"`
+	ScannedAt time.Time `json:"scanned_at,omitempty"`
 }
 
 type Tunnel struct {
-	mu  sync.Mutex
-	net *netstack.Net
-	dev *device.Device
+	mu       sync.Mutex
+	net      *netstack.Net
+	dev      *device.Device
+	acct     *Account
+	path     string
+	endpoint string
+	scanning sync.Mutex
 }
 
 // Net returns the tunnel's network stack while the tunnel is up.
@@ -102,14 +110,105 @@ func (t *Tunnel) Run(statePath string) {
 		}
 		saveAccount(statePath, acct)
 	}
-	for {
-		for _, ep := range endpoints(acct) {
+	t.mu.Lock()
+	t.acct, t.path = acct, statePath
+	t.mu.Unlock()
+	for round := 0; ; round++ {
+		if round > 0 {
+			// Nothing worked: look for reachable endpoints before trying again.
+			t.Optimize()
+		}
+		t.mu.Lock()
+		eps := endpoints(acct)
+		t.mu.Unlock()
+		for _, ep := range eps {
 			if t.connect(acct, ep) {
+				t.mu.Lock()
+				stale := time.Since(acct.ScannedAt) > 6*time.Hour
+				t.mu.Unlock()
+				if stale {
+					go t.Optimize()
+				}
 				t.monitor()
 			}
 		}
 		time.Sleep(5 * time.Second)
 	}
+}
+
+// Optimize scans WARP endpoints and roams the tunnel to the fastest one when it
+// is clearly better than the current endpoint.
+func (t *Tunnel) Optimize() {
+	if !t.scanning.TryLock() {
+		return
+	}
+	defer t.scanning.Unlock()
+	t.mu.Lock()
+	acct, current := t.acct, t.endpoint
+	t.mu.Unlock()
+	if acct == nil {
+		return
+	}
+	status("SCAN start")
+	results := scan(acct, 160, hasIPv6(), current)
+	if len(results) == 0 {
+		status("SCAN none")
+		return
+	}
+	best := results[0]
+	currentRTT := time.Duration(0)
+	for _, r := range results {
+		if r.Endpoint == current {
+			currentRTT = r.RTT
+		}
+	}
+	t.mu.Lock()
+	acct.ScannedAt = time.Now()
+	t.mu.Unlock()
+	// Switch when the current endpoint no longer answers or another is clearly faster.
+	switchTo := current == "" || currentRTT == 0 || best.RTT+5*time.Millisecond < currentRTT*8/10
+	if switchTo && best.Endpoint != current {
+		t.roam(best.Endpoint)
+		current, currentRTT = best.Endpoint, best.RTT
+	}
+	t.mu.Lock()
+	if currentRTT > 0 {
+		acct.Best, acct.BestRTTms = current, int(currentRTT.Milliseconds())
+	}
+	snapshot := *acct
+	t.mu.Unlock()
+	saveAccount(t.path, &snapshot)
+	status("ENDPOINT %s %d", current, currentRTT.Milliseconds())
+}
+
+// roam points the running tunnel at another endpoint; open connections survive.
+func (t *Tunnel) roam(endpoint string) {
+	t.mu.Lock()
+	dev, acct := t.dev, t.acct
+	t.mu.Unlock()
+	if dev == nil || acct == nil {
+		return
+	}
+	// Re-adding the peer drops its old session, so the first packet starts a fresh
+	// handshake with the new endpoint at once instead of after a 5 s rekey timeout.
+	// Connections live in the netstack and are not affected.
+	peer, _ := base64.StdEncoding.DecodeString(acct.PeerKey)
+	key := hex.EncodeToString(peer)
+	cfg := fmt.Sprintf("public_key=%s\nremove=true\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\nallowed_ip=::/0\npersistent_keepalive_interval=25\n", key, key, endpoint)
+	if dev.IpcSet(cfg) == nil {
+		t.mu.Lock()
+		t.endpoint = endpoint
+		t.mu.Unlock()
+	}
+}
+
+func hasIPv6() bool {
+	c, err := net.Dial("udp6", "[2606:4700:4700::1111]:53")
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
 }
 
 func endpoints(a *Account) []string {
@@ -118,6 +217,9 @@ func endpoints(a *Account) []string {
 		ports = []int{2408, 500, 1701, 4500}
 	}
 	var eps []string
+	if a.Best != "" {
+		eps = append(eps, a.Best)
+	}
 	for _, p := range ports {
 		if a.EndpointV4 != "" {
 			eps = append(eps, net.JoinHostPort(a.EndpointV4, strconv.Itoa(p)))
@@ -159,12 +261,14 @@ func (t *Tunnel) connect(a *Account, endpoint string) bool {
 	dev.Up()
 	t.mu.Lock()
 	t.dev = dev
+	t.endpoint = endpoint
 	t.mu.Unlock()
 	if !probe(tnet) {
 		t.close()
 		return false
 	}
 	t.setNet(tnet)
+	status("ENDPOINT %s 0", endpoint)
 	return true
 }
 

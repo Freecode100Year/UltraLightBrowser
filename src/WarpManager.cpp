@@ -132,6 +132,13 @@ bool WarpManager::Launch(int port) {
     HANDLE readPipe = nullptr, writePipe = nullptr;
     if (!CreatePipe(&readPipe, &writePipe, &sa, 0)) return false;
     SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+    HANDLE cmdRead = nullptr, cmdWrite = nullptr;  // control lines to the helper
+    if (!CreatePipe(&cmdRead, &cmdWrite, &sa, 0)) {
+        CloseHandle(readPipe);
+        CloseHandle(writePipe);
+        return false;
+    }
+    SetHandleInformation(cmdWrite, HANDLE_FLAG_INHERIT, 0);
 
     std::wstring cmd = L"\"" + exe + L"\" -state \"" + (folder / "account.json").wstring() +
                        L"\" -listen 127.0.0.1:" + std::to_wstring(port) + L" -parent " + std::to_wstring(GetCurrentProcessId());
@@ -141,14 +148,21 @@ bool WarpManager::Launch(int port) {
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdOutput = writePipe;
     si.hStdError = writePipe;
+    si.hStdInput = cmdRead;
     PROCESS_INFORMATION pi{};
     const BOOL started = CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, TRUE,
                                         CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, folder.wstring().c_str(), &si, &pi);
     CloseHandle(writePipe);
+    CloseHandle(cmdRead);
     if (!started) {
         CloseHandle(readPipe);
+        CloseHandle(cmdWrite);
         return false;
     }
+    AcquireSRWLockExclusive(&m_lock);
+    if (m_stdin) CloseHandle(m_stdin);
+    m_stdin = cmdWrite;
+    ReleaseSRWLockExclusive(&m_lock);
     // The helper dies with the browser, even if the browser crashes.
     if (!m_job) {
         m_job = CreateJobObjectW(nullptr, nullptr);
@@ -185,6 +199,21 @@ void WarpManager::ReadOutput(HANDLE pipe) {
                 m_state = State::Up;
             } else if (line == "STATE down") {
                 m_state = State::Down;
+            } else if (line == "SCAN start") {
+                m_scanning = true;
+            } else if (line == "SCAN none") {
+                m_scanning = false;
+            } else if (line.rfind("ENDPOINT ", 0) == 0) {
+                // "ENDPOINT <ip:port> <rtt ms>"
+                const std::string rest = line.substr(9);
+                const size_t space = rest.rfind(' ');
+                std::wstring text = StringUtils::Utf8ToWide(rest.substr(0, space));
+                const int ms = space == std::string::npos ? 0 : std::atoi(rest.c_str() + space + 1);
+                if (ms > 0) text += L"（" + std::to_wstring(ms) + L" ms）";
+                AcquireSRWLockExclusive(&m_lock);
+                m_endpoint = std::move(text);
+                ReleaseSRWLockExclusive(&m_lock);
+                if (ms > 0) m_scanning = false;
             }
         }
     }
@@ -222,6 +251,24 @@ std::wstring WarpManager::BrowserArguments() const {
     if (port == 0) return {};
     return L" --proxy-server=socks5://127.0.0.1:" + std::to_wstring(port) +
            L" --force-webrtc-ip-handling-policy=disable_non_proxied_udp";
+}
+
+std::wstring WarpManager::EndpointText() const {
+    AcquireSRWLockShared(&m_lock);
+    std::wstring text = m_endpoint;
+    ReleaseSRWLockShared(&m_lock);
+    return text;
+}
+
+void WarpManager::Rescan() {
+    AcquireSRWLockShared(&m_lock);
+    HANDLE pipe = m_stdin;
+    ReleaseSRWLockShared(&m_lock);
+    if (!pipe) return;
+    m_scanning = true;
+    static const char kCommand[] = "RESCAN\n";
+    DWORD written = 0;
+    WriteFile(pipe, kCommand, sizeof(kCommand) - 1, &written, nullptr);
 }
 
 std::wstring WarpManager::StatusText() const {

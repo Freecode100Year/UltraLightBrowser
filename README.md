@@ -83,7 +83,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 - 内置广告 / 跟踪域名拦截（含常见国内外广告与统计服务），第三方子框架和跟踪像素同样过滤；可对单个网站关闭
 - 此网站的设置：摄像头、麦克风、位置（询问 / 允许 / 拒绝），弹出式窗口，页面缩放，自动阅读器（仅本次运行有效）
 - 开启 WebView2 严格防跟踪
-- **内置 Cloudflare WARP（默认开启）**：用户态 WireGuard 隧道（无需驱动和管理员权限），网页与 DNS 全部经 Cloudflare 出口，优先 IPv6；WebRTC 只走代理；WARP 不可用时默认直接连接，可改为阻止联网（菜单“⋯ → Cloudflare WARP”或设置 → 隐私）
+- **内置 Cloudflare WARP（默认开启）**：用户态 WireGuard 隧道（无需驱动和管理员权限），网页与 DNS 全部经 Cloudflare 出口，优先 IPv6；WebRTC 只走代理；**IP 优选**：向 Cloudflare 的多个 WARP 入口地址段和 50 多个端口发送 WireGuard 握手包测延迟，自动切到最快的入口（切换时连接不中断），每 6 小时或连接失败时重新优选，也可手动“重新优选 IP”；WARP 不可用时默认直接连接，可改为阻止联网（菜单“⋯ → Cloudflare WARP”或设置 → 隐私）
 - **关闭即清除全部痕迹**：历史记录、Cookie 和网站数据、网页缓存、下载列表、网站设置、非书签网站的图标全部删除，并清空系统 DNS 缓存和任务栏“最近”记录；意外退出或被强制结束时，下次启动先补做清理。只保留书签、阅读列表、标签组和设置
 - 元素隐藏：Ctrl+Shift+H 点选页面元素永久隐藏
 - 公共 DNS / DoH：Quad9（默认）、Cloudflare、Google、OpenDNS 或自定义 DoH；只写入本程序自己的数据目录，不修改系统或 Edge 设置
@@ -199,7 +199,7 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 
 ## 最近更新
 
-- **v2.1.0**：内置 Cloudflare WARP（默认开启）：浏览器经 WARP 加密隧道上网，优先 IPv6，域名在隧道内由 Cloudflare DNS 解析；无需安装 WARP 客户端或管理员权限；WebRTC 不会绕过隧道泄露真实 IP；可选“WARP 断开时阻止联网”。
+- **v2.1.0**：内置 Cloudflare WARP（默认开启，带 IP 优选）：浏览器经 WARP 加密隧道上网，优先 IPv6，域名在隧道内由 Cloudflare DNS 解析；无需安装 WARP 客户端或管理员权限；WebRTC 不会绕过隧道泄露真实 IP；可选“WARP 断开时阻止联网”。
 - **v2.0.9**：审计修复：macOS 模式下停用网页预先载入（预取请求不经过身份伪装，会暴露 Windows 和 WebView2）；意外退出后下次启动补清网站图标与系统 DNS 缓存；下载的文件不再记录来源网址（保留“来自互联网”安全标记）。
 - **v2.0.8**：启动和新标签页默认打开 Brave 搜索，地址栏不显示其网址；搜索引擎新增 Brave。
 - **v2.0.7**：网页打开更快：在起始页输入网址时提前下载该网页（按回车时已下载好）；指针停在同一网站的链接上时预先载入；阅读器检测、缩略图、预备标签页改到页面加载完成后的空闲时再做；广告与跟踪拦截名单从 70 个扩充到 201 个域名。

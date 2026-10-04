@@ -8,15 +8,21 @@
 //
 //	PORT <n>         proxy is listening
 //	STATE up|down    tunnel state changes
+//	ENDPOINT <ip:port> <rtt ms>   endpoint in use (after optimisation)
+//	SCAN start|none
 //	ERROR <text>
+//
+// stdin accepts "RESCAN" (optimise the endpoint now).
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -55,6 +61,7 @@ func main() {
 
 	t := &Tunnel{}
 	go t.Run(*statePath)
+	go readCommands(t)
 
 	for {
 		c, err := ln.Accept()
@@ -137,6 +144,17 @@ func dialFirst(ctx context.Context, addrs []net.IP, port int, dialOne func(conte
 	}
 	cancel()
 	return nil, lastErr
+}
+
+// readCommands accepts control lines from the browser on stdin.
+func readCommands(t *Tunnel) {
+	sc := bufio.NewScanner(os.Stdin)
+	for sc.Scan() {
+		switch strings.TrimSpace(sc.Text()) {
+		case "RESCAN":
+			go t.Optimize()
+		}
+	}
 }
 
 func watchParent(pid int) {
