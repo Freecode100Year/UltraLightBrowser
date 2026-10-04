@@ -9,6 +9,7 @@
 #include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
+#include "WarpManager.hpp"
 #include "StringUtils.hpp"
 #include <cwchar>
 #include <iostream>
@@ -194,6 +195,7 @@ void WebViewManager::CreateEnvironment(HWND errorOwner, EnvironmentCallback done
     if (!Config::Instance().GetSettings().hardwareAcceleration) {
         performanceArgs += L" --disable-gpu";
     }
+    performanceArgs += WarpManager::Instance().BrowserArguments();
     options->put_AdditionalBrowserArguments(performanceArgs.c_str());
 
     const std::wstring userDataDirStr = userDataDir.wstring();

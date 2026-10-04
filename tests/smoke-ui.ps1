@@ -138,6 +138,17 @@ const WebSocket = require('ws');
     await new Promise(r => ws.on('message', m => { const d = JSON.parse(m); if (d.id === 1) { console.log('MAC', JSON.stringify(d.result.result.value)); r(); } }));
     ws.close();
   }
+  // WARP: exit address seen by Cloudflare, and WebRTC candidates (must not show the real address).
+  const page = list.find(t => t.type === 'page' && /example\.(com|org)/.test(t.url));
+  if (page) {
+    const ws = new WebSocket(page.webSocketDebuggerUrl);
+    await new Promise(r => ws.on('open', r));
+    const ev = (id, expression) => new Promise(r => { ws.on('message', m => { const d = JSON.parse(m); if (d.id === id) r(d.result && d.result.result && d.result.result.value); });
+      ws.send(JSON.stringify({id, method: 'Runtime.evaluate', params: {returnByValue: true, awaitPromise: true, expression}})); });
+    console.log('WARP-TRACE', JSON.stringify(await ev(11, `fetch('https://www.cloudflare.com/cdn-cgi/trace').then(r => r.text()).then(t => t.split('\\n').filter(l => /^(ip|warp|loc)=/.test(l)).join(' ')).catch(e => 'ERR ' + e.message)`)));
+    console.log('WEBRTC', JSON.stringify(await ev(12, `new Promise(res => { const pc = new RTCPeerConnection({iceServers: [{urls: 'stun:stun.l.google.com:19302'}]}); const c = []; pc.onicecandidate = e => { if (e.candidate) c.push(e.candidate.candidate.split(' ').slice(4, 8).join(' ')); else res(c.join(' | ') || 'none'); }; pc.createDataChannel('x'); pc.createOffer().then(o => pc.setLocalDescription(o)); setTimeout(() => res(c.join(' | ') || 'none'), 5000); })`)));
+    ws.close();
+  }
   process.exit(0);
 })().catch(e => { console.log('CDP-ERR', e.message); process.exit(0); });
 '@ | Set-Content mac.js

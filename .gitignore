@@ -77,3 +77,7 @@ config.json
 UltraLightBrowser-Windows-x64/
 release_*/
 dist/
+
+# WARP helper build output
+warp/bin/
+!warp/go.mod

@@ -185,6 +185,7 @@ private:
     HMENU BuildBlockerMenu();
     HMENU BuildSoundMenu();
     HMENU BuildDnsMenu();
+    HMENU BuildWarpMenu();
     HMENU BuildIdentityMenu();
     HMENU BuildPowerMenu();
     void TrackMenu(HMENU menu, const RECT& anchor, bool alignRight);

@@ -130,6 +130,8 @@ void Config::Load() {
             readInt("readerFontSize", m_settings.readerFontSize, 12, 40);
             readBool("sidebarVisible", m_settings.sidebarVisible);
             readBool("preloadLinks", m_settings.preloadLinks);
+            readBool("warpEnabled", m_settings.warpEnabled);
+            readBool("warpFailClosed", m_settings.warpFailClosed);
             // v2.0.8: the start page became Brave Search. Move configs that still use
             // the old defaults (Google home, favorites page on start and new tabs).
             if (!s.contains("homeVersion")) {
@@ -194,7 +196,9 @@ void Config::Save() {
             {"readerFont", m_settings.readerFont},
             {"readerFontSize", m_settings.readerFontSize},
             {"sidebarVisible", m_settings.sidebarVisible},
-            {"preloadLinks", m_settings.preloadLinks}
+            {"preloadLinks", m_settings.preloadLinks},
+            {"warpEnabled", m_settings.warpEnabled},
+            {"warpFailClosed", m_settings.warpFailClosed}
         };
 
         json rulesObj = json::object();

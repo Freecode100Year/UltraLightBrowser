@@ -8,6 +8,7 @@
 #include "InternalPages.hpp"
 #include "NativeRequestFilter.hpp"
 #include "StringUtils.hpp"
+#include "WarpManager.hpp"
 
 #include <commdlg.h>
 #include <fstream>
@@ -400,7 +401,8 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                       {"startBackground", settings.startBackground}, {"saveHistory", settings.saveHistory},
                       {"enableAdBlock", NativeRequestFilter::Instance().IsEnabled()},
                       {"readerTheme", settings.readerTheme}, {"readerFont", settings.readerFont}, {"readerFontSize", settings.readerFontSize},
-                      {"hardwareAcceleration", settings.hardwareAcceleration}, {"preloadLinks", settings.preloadLinks}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
+                      {"hardwareAcceleration", settings.hardwareAcceleration}, {"preloadLinks", settings.preloadLinks}, {"warpEnabled", settings.warpEnabled}, {"warpFailClosed", settings.warpFailClosed},
+                      {"warpStatus", U8(WarpManager::Instance().StatusText())}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
         } else if (cmd == "setSetting") {
             const std::string key = Arg(args, "key");
             const json value = args.contains("value") ? args["value"] : json(nullptr);
@@ -437,6 +439,8 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                 settings.readerFontSize = std::clamp(value.get<int>(), 12, 40);
             } else if (key == "hardwareAcceleration") settings.hardwareAcceleration = boolean();
             else if (key == "preloadLinks") settings.preloadLinks = boolean();
+            else if (key == "warpEnabled") settings.warpEnabled = boolean();
+            else if (key == "warpFailClosed") settings.warpFailClosed = boolean();
             else throw std::runtime_error("unknown setting");
             Config::Instance().Save();
             libraryChanged = key.rfind("start", 0) == 0;

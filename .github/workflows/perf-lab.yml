@@ -10,6 +10,13 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: nuget/setup-nuget@17d6beb0142f0371858976c178033f915525e692
       - run: nuget restore packages.config -PackagesDirectory packages
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: warp/go.mod
+          cache-dependency-path: warp/go.sum
+      - name: Build WARP helper
+        shell: pwsh
+        run: go build -C warp -trimpath -ldflags "-s -w -buildid=" -o bin/ulb-warp.exe .
       - run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64
       - run: cmake --build build --config Release --parallel
       - name: Experiments

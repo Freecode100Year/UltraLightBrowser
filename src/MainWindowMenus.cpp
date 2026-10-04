@@ -5,6 +5,7 @@
 #include "AppShell.hpp"
 #include "Config.hpp"
 #include "DnsManager.hpp"
+#include "WarpManager.hpp"
 #include "ElementBlocker.hpp"
 #include "InternalPages.hpp"
 #include "NativeRequestFilter.hpp"
@@ -187,6 +188,18 @@ HMENU MainWindow::BuildDnsMenu() {
     return m;
 }
 
+HMENU MainWindow::BuildWarpMenu() {
+    const auto& settings = Config::Instance().GetSettings();
+    HMENU m = CreatePopupMenu();
+    const std::wstring state = L"状态：" + WarpManager::Instance().StatusText();
+    AppendMenuW(m, MF_STRING | MF_GRAYED, 0, state.c_str());
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING | (settings.warpEnabled ? MF_CHECKED : 0), IDM_WARP_TOGGLE, L"使用 Cloudflare WARP");
+    AppendMenuW(m, MF_STRING | (settings.warpFailClosed ? MF_CHECKED : 0) | (settings.warpEnabled ? 0 : MF_GRAYED),
+                IDM_WARP_FAIL_CLOSED, L"WARP 断开时阻止联网");
+    return m;
+}
+
 HMENU MainWindow::BuildIdentityMenu() {
     HMENU m = CreatePopupMenu();
     const bool mac = Config::Instance().GetSettings().userAgentProfile == "macos-edge";
@@ -245,6 +258,10 @@ void MainWindow::ShowMainMenu() {
         if (dnsLabel.size() > 14) dnsLabel = dnsLabel.substr(0, 14) + L"…";
     }
     AppendSubmenu(m, BuildDnsMenu(), L"DNS\t" + dnsLabel, Icon::Globe);
+    const auto warpState = WarpManager::Instance().GetState();
+    const wchar_t* warpLabel = warpState == WarpManager::State::Up ? L"已连接"
+        : warpState == WarpManager::State::Off ? L"关闭" : L"未连接";
+    AppendSubmenu(m, BuildWarpMenu(), std::wstring(L"Cloudflare WARP\t") + warpLabel, Icon::Shield);
     AppendSubmenu(m, BuildIdentityMenu(), std::wstring(L"用户代理\t") + (settings.userAgentProfile == "macos-edge" ? L"macOS" : L"默认"), Icon::Monitor);
     const int minutes = settings.tabSuspendMinutes;
     AppendSubmenu(m, BuildPowerMenu(), std::wstring(L"节能\t") + (minutes > 0 ? L"后台标签自动挂起" : L"关闭"), Icon::Bolt);
@@ -425,6 +442,16 @@ bool MainWindow::HandleMenuCommand(WORD id) {
         Config::Instance().Save();
         DnsManager::Instance().ApplySettings();
         ShowToast(settings.enablePublicDns ? L"已开启加密 DNS，重新启动后完全生效" : L"已关闭加密 DNS，重新启动后完全生效");
+        return true;
+    case IDM_WARP_TOGGLE:
+        settings.warpEnabled = !settings.warpEnabled;
+        Config::Instance().Save();
+        ShowToast(settings.warpEnabled ? L"已开启 WARP，重新启动 UltraLightBrowser 后生效" : L"已关闭 WARP，重新启动 UltraLightBrowser 后生效");
+        return true;
+    case IDM_WARP_FAIL_CLOSED:
+        settings.warpFailClosed = !settings.warpFailClosed;
+        Config::Instance().Save();
+        ShowToast(L"重新启动 UltraLightBrowser 后生效");
         return true;
     case IDM_DNS_OPEN_SETTINGS:
         DnsManager::Instance().ShowDnsDialog(m_hWnd);

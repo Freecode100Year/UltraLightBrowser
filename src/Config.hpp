@@ -46,6 +46,8 @@ struct AppSettings {
     int readerFontSize = 19;
     bool sidebarVisible = false;
     bool preloadLinks = true;                   // prefetch same-site links on hover
+    bool warpEnabled = true;                    // browse through the built-in Cloudflare WARP
+    bool warpFailClosed = false;                // no direct connections while WARP is down
 };
 
 class Config {

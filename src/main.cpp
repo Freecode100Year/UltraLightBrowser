@@ -5,6 +5,7 @@
 #include "Config.hpp"
 #include "DnsManager.hpp"
 #include "PowerManager.hpp"
+#include "WarpManager.hpp"
 #include "WebViewManager.hpp"
 
 #pragma comment(lib, "comctl32.lib")
@@ -37,12 +38,14 @@ int WINAPI wWinMain(
     UltraLight::Config::Instance();
     if (!UltraLight::AppShell::AnotherInstanceRunning()) UltraLight::WebViewManager::PurgeAllCacheAndTempFiles();
     UltraLight::DnsManager::Instance().ApplySettings();
+    UltraLight::WarpManager::Instance().Start();  // before the WebView2 environment exists
 
     // 5. Disable EcoQoS on Host Process for maximum responsiveness
     UltraLight::PowerManager::Instance().DisableEcoQoS(GetCurrentProcess());
 
     // 6. Windows, tabs and the message loop
     const int result = UltraLight::AppShell::Instance().Run(hInstance, nCmdShow);
+    UltraLight::WarpManager::Instance().Stop();
 
     CoUninitialize();
     return result;
