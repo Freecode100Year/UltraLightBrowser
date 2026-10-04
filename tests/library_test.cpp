@@ -107,6 +107,16 @@ int main() {
         Library other(dir / "copy");
         assert(other.ImportNetscapeHtml(out, 1) == static_cast<int>(lib.Bookmarks().size()));
     }
+    {
+        // A failed write keeps the library dirty, so the next save tries again.
+        const auto blocked = dir / "blocked";
+        std::ofstream(blocked) << "not a directory";
+        Library lib(blocked);
+        lib.AddBookmark("A", "https://a.example/", kFavoritesFolder, 1);
+        assert(!lib.Save() && lib.IsDirty());
+        std::filesystem::remove(blocked);
+        assert(lib.Save() && !lib.IsDirty() && std::filesystem::exists(blocked / "library.json"));
+    }
     assert(Library::HostOf("https://user:pw@Sub.Example.COM:8080/x?y") == "sub.example.com");
     assert(Library::HostOf("http://[::1]:80/") == "[::1]");
     std::filesystem::remove_all(dir);

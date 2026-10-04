@@ -7,6 +7,7 @@
 
 #include <windows.h>
 #include <atomic>
+#include <mutex>
 #include <string>
 
 namespace UltraLight {
@@ -22,8 +23,8 @@ public:
     void Start();
     void Stop();
 
-    // Extra browser arguments: the proxy and a WebRTC policy that keeps WebRTC from
-    // sending UDP outside the proxy (which would reveal the real address).
+    // Extra browser arguments: the proxy. With "阻止联网" on and no helper, a proxy
+    // port that refuses every connection, so nothing goes direct.
     std::wstring BrowserArguments() const;
 
     State GetState() const { return m_state.load(); }
@@ -39,13 +40,19 @@ private:
     bool Extract(const std::wstring& exePath);
     bool Launch(int port);  // 0 = any free port
     void ReadOutput(HANDLE pipe);
+    void BlockIfFailClosed();
 
+    // m_process, m_job and m_stdin are replaced by the reader thread when the helper
+    // restarts and released by Stop() on the UI thread.
+    mutable std::mutex m_procMutex;
     HANDLE m_process = nullptr;
     HANDLE m_job = nullptr;
+    HANDLE m_stdin = nullptr;
     std::atomic<bool> m_stopping{false};
     std::atomic<bool> m_scanning{false};
-    HANDLE m_stdin = nullptr;
-    mutable SRWLOCK m_lock = SRWLOCK_INIT;
+    mutable SRWLOCK m_lock = SRWLOCK_INIT;  // m_endpoint
+    UINT_PTR m_blockSocket = ~UINT_PTR(0);  // bound, never listening: refuses connections
+    std::atomic<int> m_blockPort{0};
     std::wstring m_endpoint;
     HANDLE m_portEvent = nullptr;
     std::atomic<int> m_port{0};

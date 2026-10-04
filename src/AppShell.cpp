@@ -269,18 +269,22 @@ void AppShell::LibraryChanged() {
 }
 
 void AppShell::SaveLibrarySoon() {
+    if (m_saveFailed.exchange(false)) m_library->MarkDirty();
     auto snapshot = m_library->TakeSnapshot();
     if (snapshot.empty()) return;
     // File I/O stays off the UI thread; writes are serialized by the mutex.
     std::thread([this, snapshot = std::move(snapshot)]() {
         std::lock_guard<std::mutex> lock(m_saveMutex);
-        for (const auto& [path, data] : snapshot) Library::WriteFileAtomic(path, data);
+        for (const auto& [path, data] : snapshot) {
+            if (!Library::WriteFileAtomic(path, data)) m_saveFailed = true;
+        }
     }).detach();
 }
 
 void AppShell::SaveLibraryNow() {
     std::lock_guard<std::mutex> lock(m_saveMutex);  // waits for background writes
-    m_library->Save();
+    if (m_saveFailed.exchange(false)) m_library->MarkDirty();
+    if (!m_library->Save()) m_saveFailed = true;
 }
 
 void AppShell::Retire(std::unique_ptr<WebViewManager> view) {

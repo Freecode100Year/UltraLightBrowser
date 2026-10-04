@@ -160,3 +160,33 @@ Get-Process UltraLightBrowser -ErrorAction SilentlyContinue | Select-Object Id, 
 Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue |
   Where-Object { $_.ProviderName -in 'Application Error','Windows Error Reporting' } | ForEach-Object { $_.Message } | Select-Object -First 3
 Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
+
+# "WARP 断开时阻止联网" must hold even when the WARP helper cannot start at all:
+# the helper file is replaced by a directory so extraction fails.
+Start-Sleep 3
+$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+$cfg.settings.userAgentProfile = 'default'
+$cfg.settings | Add-Member -NotePropertyName warpFailClosed -NotePropertyValue $true -Force
+$cfg.settings.startupPage = 'start'   # built-in page: loads without network
+$cfg | ConvertTo-Json -Depth 8 | Set-Content $cfgPath -Encoding utf8NoBOM
+$helper = "$env:LOCALAPPDATA\UltraLightBrowser\warp\ulb-warp.exe"
+Remove-Item $helper -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force $helper | Out-Null
+$p = Start-Process $Exe -PassThru
+Start-Sleep 12
+@'
+(async () => {
+  const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
+  const page = list.find(t => t.type === 'page' && t.url.includes('ulb.internal'));
+  console.log('FAILCLOSED page', page && page.url);
+  const ws = new (require('ws'))(page.webSocketDebuggerUrl);
+  await new Promise(r => ws.on('open', r));
+  // Page.navigate reports a network failure in errorText.
+  ws.send(JSON.stringify({id: 1, method: 'Page.navigate', params: {url: 'https://www.cloudflare.com/cdn-cgi/trace'}}));
+  await new Promise(r => ws.on('message', m => { const d = JSON.parse(m); if (d.id === 1) { console.log('FAILCLOSED-NOHELPER', JSON.stringify(d.result && d.result.errorText ? 'BLOCKED ' + d.result.errorText : 'REACHED')); r(); } }));
+  process.exit(0);
+})().catch(e => { console.log('CDP-ERR', e.message); process.exit(0); });
+'@ | Set-Content failclosed.js
+node failclosed.js
+Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
+Remove-Item $helper -Force -Recurse -ErrorAction SilentlyContinue

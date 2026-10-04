@@ -75,13 +75,15 @@ public:
     explicit Library(std::filesystem::path directory);
 
     void Load();
-    // Writes the library file when bookmarks, reading list or tab groups changed.
-    void Save();
+    // Writes the library file when bookmarks, reading list or tab groups changed;
+    // after a failed write the library stays dirty so the next save retries.
+    bool Save();
     // Serializes changed stores and clears their dirty flags; the caller may write
     // the files on another thread with WriteFileAtomic.
     std::vector<std::pair<std::filesystem::path, std::string>> TakeSnapshot();
-    static void WriteFileAtomic(const std::filesystem::path& path, const std::string& data);
+    static bool WriteFileAtomic(const std::filesystem::path& path, const std::string& data);
     bool IsDirty() const { return m_dirtyLibrary; }
+    void MarkDirty() { m_dirtyLibrary = true; }
 
     // Bookmarks
     const std::vector<std::string>& Folders() const { return m_folders; }

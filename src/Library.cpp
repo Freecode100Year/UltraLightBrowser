@@ -240,27 +240,35 @@ void Library::LoadLibraryFile() {
     if (root.contains("sites")) m_dirtyLibrary = true;
 }
 
-void Library::WriteFileAtomic(const std::filesystem::path& path, const std::string& data) {
+bool Library::WriteFileAtomic(const std::filesystem::path& path, const std::string& data) {
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
     auto tmp = path;
     tmp += ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out.is_open()) return;
+        if (!out.is_open()) return false;
         out << data;
         out.flush();
-        if (!out) return;
+        if (!out) {
+            out.close();
+            std::filesystem::remove(tmp, ec);
+            return false;
+        }
     }
     std::filesystem::rename(tmp, path, ec);
-    if (ec) {
-        std::filesystem::copy_file(tmp, path, std::filesystem::copy_options::overwrite_existing, ec);
-        std::filesystem::remove(tmp, ec);
-    }
+    if (!ec) return true;
+    std::filesystem::copy_file(tmp, path, std::filesystem::copy_options::overwrite_existing, ec);
+    const bool copied = !ec;
+    std::filesystem::remove(tmp, ec);
+    return copied;
 }
 
-void Library::Save() {
-    for (const auto& [path, data] : TakeSnapshot()) WriteFileAtomic(path, data);
+bool Library::Save() {
+    bool ok = true;
+    for (const auto& [path, data] : TakeSnapshot()) ok = WriteFileAtomic(path, data) && ok;
+    if (!ok) m_dirtyLibrary = true;
+    return ok;
 }
 
 std::vector<std::pair<std::filesystem::path, std::string>> Library::TakeSnapshot() {

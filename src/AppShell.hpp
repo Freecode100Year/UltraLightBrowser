@@ -4,6 +4,7 @@
 #include <objbase.h>
 #include <WebView2.h>
 #include <wil/com.h>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <memory>
@@ -72,6 +73,7 @@ private:
     ULONG_PTR m_gdiplusToken = 0;
     bool m_exiting = false;
     std::mutex m_saveMutex;
+    std::atomic<bool> m_saveFailed{false};  // a background write failed; the next save retries
 };
 
 } // namespace UltraLight

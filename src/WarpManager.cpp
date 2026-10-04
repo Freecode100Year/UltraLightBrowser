@@ -32,6 +32,26 @@ std::string LoadHelperResource() {
     return bytes && size ? std::string(static_cast<const char*>(bytes), size) : std::string();
 }
 
+// Binds a loopback port without listening on it: connections to it are refused,
+// and no other program can take the port while the socket stays open.
+int ReserveRefusingPort(UINT_PTR& socketOut) {
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 0;
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == INVALID_SOCKET) return 0;
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int len = sizeof(addr);
+    if (bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
+        getsockname(s, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+        closesocket(s);
+        return 0;
+    }
+    socketOut = s;
+    return ntohs(addr.sin_port);
+}
+
 bool PortOpen(int port) {
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
@@ -76,6 +96,12 @@ bool WarpManager::Extract(const std::wstring& exePath) {
     return MoveFileExW(tmp.c_str(), exePath.c_str(), MOVEFILE_REPLACE_EXISTING) != FALSE;
 }
 
+void WarpManager::BlockIfFailClosed() {
+    // "WARP 断开时阻止联网" must also hold when the helper cannot run at all.
+    if (!Config::Instance().GetSettings().warpFailClosed || m_blockPort != 0) return;
+    m_blockPort = ReserveRefusingPort(m_blockSocket);
+}
+
 void WarpManager::Start() {
     const auto& settings = Config::Instance().GetSettings();
     if (!settings.warpEnabled) {
@@ -97,7 +123,12 @@ void WarpManager::Start() {
             std::thread([this, port]() {
                 while (!m_stopping) {
                     Sleep(3000);
-                    if (!m_stopping && !m_process && !PortOpen(port) && Launch(port)) {
+                    bool running;
+                    {
+                        std::lock_guard<std::mutex> lock(m_procMutex);
+                        running = m_process != nullptr;
+                    }
+                    if (!m_stopping && !running && !PortOpen(port) && Launch(port)) {
                         std::ofstream(WarpFolder() / "port", std::ios::trunc) << port;
                     }
                 }
@@ -109,20 +140,25 @@ void WarpManager::Start() {
     const std::wstring exe = (folder / "ulb-warp.exe").wstring();
     if (!Extract(exe)) {
         m_state = State::Unavailable;
+        BlockIfFailClosed();
         return;
     }
     m_portEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     m_state = State::Starting;
     if (!Launch(0)) {
         m_state = State::Unavailable;
+        BlockIfFailClosed();
         return;
     }
-    // The proxy listens almost at once; the tunnel itself comes up in the background
-    // and connections wait for it (or go direct if it cannot be reached).
-    if (m_portEvent) WaitForSingleObject(m_portEvent, 3000);
+    // The proxy listens almost at once (the first start of a freshly extracted helper
+    // can take longer while antivirus scans it); the tunnel itself comes up in the
+    // background and connections wait for it (or go direct if it cannot be reached).
+    if (m_portEvent) WaitForSingleObject(m_portEvent, 8000);
     if (m_port == 0) {
         Stop();
+        m_port = 0;
         m_state = State::Unavailable;
+        BlockIfFailClosed();
         return;
     }
     std::ofstream(portFile, std::ios::trunc) << m_port.load();
@@ -162,24 +198,34 @@ bool WarpManager::Launch(int port) {
         CloseHandle(cmdWrite);
         return false;
     }
-    AcquireSRWLockExclusive(&m_lock);
-    if (m_stdin) CloseHandle(m_stdin);
-    m_stdin = cmdWrite;
-    ReleaseSRWLockExclusive(&m_lock);
-    // The helper dies with the browser, even if the browser crashes.
-    if (!m_job) {
-        m_job = CreateJobObjectW(nullptr, nullptr);
-        if (m_job) {
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            SetInformationJobObject(m_job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+    {
+        std::lock_guard<std::mutex> lock(m_procMutex);
+        if (m_stopping) {
+            // Stop() already ran: this helper must not outlive the browser.
+            TerminateProcess(pi.hProcess, 0);
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            CloseHandle(readPipe);
+            CloseHandle(cmdWrite);
+            return false;
         }
+        if (m_stdin) CloseHandle(m_stdin);
+        m_stdin = cmdWrite;
+        // The helper dies with the browser, even if the browser crashes.
+        if (!m_job) {
+            m_job = CreateJobObjectW(nullptr, nullptr);
+            if (m_job) {
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+                limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                SetInformationJobObject(m_job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+            }
+        }
+        if (m_job) AssignProcessToJobObject(m_job, pi.hProcess);
+        if (m_process) CloseHandle(m_process);
+        m_process = pi.hProcess;
     }
-    if (m_job) AssignProcessToJobObject(m_job, pi.hProcess);
     ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
-    if (m_process) CloseHandle(m_process);
-    m_process = pi.hProcess;
     std::thread([this, readPipe]() { ReadOutput(readPipe); }).detach();
     return true;
 }
@@ -196,7 +242,7 @@ void WarpManager::ReadOutput(HANDLE pipe) {
             std::string line = pending.substr(0, nl);
             pending.erase(0, nl + 1);
             if (!line.empty() && line.back() == '\r') line.pop_back();
-            if (line.rfind("PORT ", 0) == 0) {
+            if (line.rfind("PORT ", 0) == 0 && !m_stopping) {
                 m_port = std::atoi(line.c_str() + 5);
                 if (m_portEvent) SetEvent(m_portEvent);
             } else if (line == "STATE up") {
@@ -241,21 +287,29 @@ void WarpManager::Stop() {
     // same port); the port file stays for it and for copies started later.
     std::error_code ec;
     if (!AppShell::AnotherInstanceRunning()) std::filesystem::remove(WarpFolder() / "port", ec);
-    if (m_job) {
-        CloseHandle(m_job);  // kills the helper
-        m_job = nullptr;
-    } else if (m_process) {
-        TerminateProcess(m_process, 0);
-    }
-    if (m_process) {
-        WaitForSingleObject(m_process, 1000);
-        CloseHandle(m_process);
+    HANDLE process;
+    {
+        std::lock_guard<std::mutex> lock(m_procMutex);
+        if (m_job) {
+            CloseHandle(m_job);  // kills the helper
+            m_job = nullptr;
+        } else if (m_process) {
+            TerminateProcess(m_process, 0);
+        }
+        process = m_process;
         m_process = nullptr;
+        if (m_stdin) CloseHandle(m_stdin);
+        m_stdin = nullptr;
+    }
+    if (process) {
+        WaitForSingleObject(process, 1000);
+        CloseHandle(process);
     }
 }
 
 std::wstring WarpManager::BrowserArguments() const {
-    const int port = m_port.load();
+    int port = m_port.load();
+    if (port == 0) port = m_blockPort.load();
     if (port == 0) return {};
     // WebRTC is kept inside the proxy by a profile preference (see CreateEnvironment);
     // WebView2 ignores Chrome's --force-webrtc-ip-handling-policy switch.
@@ -270,13 +324,13 @@ std::wstring WarpManager::EndpointText() const {
 }
 
 bool WarpManager::Rescan() {
-    AcquireSRWLockShared(&m_lock);
-    HANDLE pipe = m_stdin;
-    ReleaseSRWLockShared(&m_lock);
-    if (!pipe) return false;
     static const char kCommand[] = "RESCAN\n";
     DWORD written = 0;
-    if (!WriteFile(pipe, kCommand, sizeof(kCommand) - 1, &written, nullptr)) return false;
+    {
+        // Held while writing so a restart cannot close the pipe underneath.
+        std::lock_guard<std::mutex> lock(m_procMutex);
+        if (!m_stdin || !WriteFile(m_stdin, kCommand, sizeof(kCommand) - 1, &written, nullptr)) return false;
+    }
     m_scanning = true;
     return true;
 }
@@ -287,7 +341,7 @@ std::wstring WarpManager::StatusText() const {
     case State::Starting: return L"正在连接…";
     case State::Up: return L"已连接";
     case State::Down: return Config::Instance().GetSettings().warpFailClosed ? L"未连接（已阻止联网）" : L"未连接（直接连接）";
-    case State::Unavailable: return L"不可用（直接连接）";
+    case State::Unavailable: return m_blockPort != 0 ? L"不可用（已阻止联网）" : L"不可用（直接连接）";
     case State::Shared: return L"已开启（由另一个浏览器进程运行）";
     }
     return {};

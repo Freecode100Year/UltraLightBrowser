@@ -2,6 +2,7 @@
 #include "Commands.hpp"
 #include "InternalPages.hpp"
 #include "Config.hpp"
+#include "AppShell.hpp"
 #include "VideoDiagnostics.hpp"
 #include "UserAgent.hpp"
 #include "MacStealth.hpp"
@@ -172,15 +173,27 @@ void WebViewManager::CreateEnvironment(HWND errorOwner, EnvironmentCallback done
 
     // With WARP the browser goes through a proxy; WebRTC must not send UDP around it
     // (that would reveal the real address). WebView2 ignores Chrome's
-    // --force-webrtc-ip-handling-policy switch, so the profile preference is seeded.
-    if (!WarpManager::Instance().BrowserArguments().empty()) {
+    // --force-webrtc-ip-handling-policy switch, so the profile preference is set,
+    // also in a profile that survived (e.g. the startup cleanup was skipped). While
+    // another copy runs, its browser process owns the file and already has the policy.
+    if (!WarpManager::Instance().BrowserArguments().empty() && !AppShell::AnotherInstanceRunning()) {
         const auto prefsPath = userDataDir / "EBWebView" / "Default" / "Preferences";
         std::error_code prefsEc;
-        if (!std::filesystem::exists(prefsPath, prefsEc)) {
-            std::filesystem::create_directories(prefsPath.parent_path(), prefsEc);
-            std::ofstream(prefsPath, std::ios::binary | std::ios::trunc)
-                << R"({"webrtc":{"ip_handling_policy":"disable_non_proxied_udp","multiple_routes_enabled":false,"nonproxied_udp_enabled":false}})";
+        std::filesystem::create_directories(prefsPath.parent_path(), prefsEc);
+        json prefs = json::object();
+        {
+            std::ifstream in(prefsPath, std::ios::binary);
+            if (in.is_open()) {
+                prefs = json::parse(in, nullptr, false);
+                if (!prefs.is_object()) prefs = json::object();
+            }
         }
+        json& webrtc = prefs["webrtc"];
+        if (!webrtc.is_object()) webrtc = json::object();
+        webrtc["ip_handling_policy"] = "disable_non_proxied_udp";
+        webrtc["multiple_routes_enabled"] = false;
+        webrtc["nonproxied_udp_enabled"] = false;
+        std::ofstream(prefsPath, std::ios::binary | std::ios::trunc) << prefs.dump(-1, ' ', false, json::error_handler_t::replace);
     }
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
