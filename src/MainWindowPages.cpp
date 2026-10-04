@@ -395,8 +395,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
             result = lib.SetRead(Arg(args, "id"), args.value("read", true));
             libraryChanged = true;
         } else if (cmd == "warpRescan") {
-            WarpManager::Instance().Rescan();
-            result = true;
+            result = WarpManager::Instance().Rescan();
         } else if (cmd == "getSettings") {
             result = {{"startupPage", settings.startupPage}, {"newTabPage", settings.newTabPage}, {"homeUrl", U8(settings.startUrl)},
                       {"searchEngine", settings.searchEngine}, {"tabSuspendMinutes", settings.tabSuspendMinutes},

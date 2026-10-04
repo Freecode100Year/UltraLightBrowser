@@ -2,11 +2,14 @@ param([ValidateSet('Release','Debug')][string]$Configuration = 'Release')
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
-    foreach ($tool in @('nuget','cmake')) {
+    foreach ($tool in @('nuget','cmake','go')) {
         if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
             throw "Install $tool and add it to PATH. Also install Visual Studio 2022 Desktop development with C++."
         }
     }
+    # The WARP helper is embedded in the executable as a resource.
+    go build -C warp -trimpath -ldflags '-s -w -buildid=' -o bin/ulb-warp.exe .
+    if ($LASTEXITCODE -ne 0) { throw 'WARP helper build failed.' }
     nuget restore packages.config -PackagesDirectory packages
     if ($LASTEXITCODE -ne 0) { throw 'NuGet restore failed.' }
     cmake -B build -S . -G 'Visual Studio 17 2022' -A x64

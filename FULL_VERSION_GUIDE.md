@@ -5,7 +5,7 @@
 
 ## Windows 编译
 
-安装 Visual Studio 2022 的「使用 C++ 的桌面开发」、CMake 3.25 以上、NuGet CLI，
+安装 Visual Studio 2022 的「使用 C++ 的桌面开发」、CMake 3.25 以上、NuGet CLI、Go（版本见 `warp/go.mod`），
 并确保 Microsoft Edge WebView2 Evergreen Runtime 可用。在源码目录运行：
 
 ```powershell
@@ -18,6 +18,7 @@
 如果 PowerShell 的脚本策略阻止运行，可直接执行：
 
 ```powershell
+go build -C warp -trimpath -ldflags "-s -w -buildid=" -o bin/ulb-warp.exe .
 nuget restore packages.config -PackagesDirectory packages
 cmake -B build -S . -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --parallel

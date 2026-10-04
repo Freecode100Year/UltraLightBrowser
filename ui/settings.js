@@ -48,7 +48,10 @@ async function load() {
       row("记录浏览历史", sw("saveHistory"), "历史记录只保存在内存中，关闭 UltraLightBrowser 后即被移除。无痕浏览窗口从不记录。"),
       row("启用内容拦截器", sw("enableAdBlock"), "阻止广告和跨网站跟踪器。可在“此网站的设置”中对单个网站停用。"),
       row("使用 Cloudflare WARP", sw("warpEnabled"), "所有网页经 Cloudflare WARP 加密隧道访问，优先使用 IPv6，网站看到的是 Cloudflare 的地址。当前状态：" + s.warpStatus + "。更改后需重新启动。"),
-      action("WARP 入口：", "重新优选 IP", async () => { await call("warpRescan"); toast("正在优选 WARP 入口 IP，约需 5 秒"); setTimeout(load, 6000); }),
+      action("WARP 入口：", "重新优选 IP", async () => {
+        if (!(await call("warpRescan"))) { toast("WARP 未在此窗口进程中运行，无法优选"); return; }
+        toast("正在优选 WARP 入口 IP，约需 5 秒"); setTimeout(load, 6000);
+      }),
       row("WARP 断开时阻止联网", sw("warpFailClosed"), "开启后，WARP 无法连接时不会改用直接连接，避免暴露真实 IP。更改后需重新启动。"),
       action("历史记录：", "清除历史记录…", async () => {
         if (confirm("清除所有历史记录？此操作无法撤销。")) { await call("clearHistory", { range: "all" }); toast("已清除历史记录"); }

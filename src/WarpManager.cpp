@@ -269,15 +269,16 @@ std::wstring WarpManager::EndpointText() const {
     return text;
 }
 
-void WarpManager::Rescan() {
+bool WarpManager::Rescan() {
     AcquireSRWLockShared(&m_lock);
     HANDLE pipe = m_stdin;
     ReleaseSRWLockShared(&m_lock);
-    if (!pipe) return;
-    m_scanning = true;
+    if (!pipe) return false;
     static const char kCommand[] = "RESCAN\n";
     DWORD written = 0;
-    WriteFile(pipe, kCommand, sizeof(kCommand) - 1, &written, nullptr);
+    if (!WriteFile(pipe, kCommand, sizeof(kCommand) - 1, &written, nullptr)) return false;
+    m_scanning = true;
+    return true;
 }
 
 std::wstring WarpManager::StatusText() const {

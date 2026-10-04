@@ -32,7 +32,7 @@ public:
     std::wstring EndpointText() const;
     bool Scanning() const { return m_scanning.load(); }
     // Optimise the WARP endpoint now ("重新优选 IP").
-    void Rescan();
+    bool Rescan();  // false when this process does not run the helper
 
 private:
     WarpManager() = default;

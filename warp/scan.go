@@ -198,10 +198,15 @@ func seal(key, plain, ad []byte) []byte {
 	return aead.Seal(nil, nonce, plain, ad)
 }
 
+// tai64n encodes the handshake timestamp the way wireguard-go does: nanoseconds
+// rounded down to about 16 ms. The server only accepts an initiation whose timestamp
+// is newer than the last one it saw from this key, so the probes must never carry a
+// finer (and therefore possibly newer) timestamp than the tunnel's own next handshake.
 func tai64n(t time.Time) []byte {
+	const whitenerMask = uint32(0x1000000 - 1)
 	out := make([]byte, 12)
 	binary.BigEndian.PutUint64(out[:8], uint64(0x400000000000000a)+uint64(t.Unix()))
-	binary.BigEndian.PutUint32(out[8:], uint32(t.Nanosecond()))
+	binary.BigEndian.PutUint32(out[8:], uint32(t.Nanosecond())&^whitenerMask)
 	return out
 }
 

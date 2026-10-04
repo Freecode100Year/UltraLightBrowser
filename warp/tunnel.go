@@ -195,7 +195,10 @@ func (t *Tunnel) roam(endpoint string) bool {
 	}
 	// Re-adding the peer drops its old session, so the first packet starts a fresh
 	// handshake with the new endpoint at once instead of after a 5 s rekey timeout.
-	// Connections live in the netstack and are not affected.
+	// Connections live in the netstack and are not affected. The pause keeps that
+	// handshake's timestamp strictly newer than the last scan probe's (both are
+	// rounded to ~16 ms), otherwise the server would drop it as a replay.
+	time.Sleep(40 * time.Millisecond)
 	peer, _ := base64.StdEncoding.DecodeString(acct.PeerKey)
 	key := hex.EncodeToString(peer)
 	cfg := fmt.Sprintf("public_key=%s\nremove=true\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\nallowed_ip=::/0\npersistent_keepalive_interval=25\n", key, key, endpoint)

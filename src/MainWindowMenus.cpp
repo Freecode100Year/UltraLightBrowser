@@ -427,8 +427,7 @@ bool MainWindow::HandleMenuCommand(WORD id) {
         ShowToast(settings.warpEnabled ? L"已开启 WARP，重新启动 UltraLightBrowser 后生效" : L"已关闭 WARP，重新启动 UltraLightBrowser 后生效");
         return true;
     case IDM_WARP_RESCAN:
-        WarpManager::Instance().Rescan();
-        ShowToast(L"正在优选 WARP 入口 IP，约需 5 秒");
+        ShowToast(WarpManager::Instance().Rescan() ? L"正在优选 WARP 入口 IP，约需 5 秒" : L"WARP 未在此窗口进程中运行，无法优选");
         return true;
     case IDM_WARP_FAIL_CLOSED:
         settings.warpFailClosed = !settings.warpFailClosed;

@@ -118,6 +118,7 @@ Start-Sleep 1
 Keys "^+b" 3000; Shot "20-restart-bookmarks"
 ClickRel 27 26 $true; Keys "{DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{ENTER}" 3000; Shot "21-reading-list"
 Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
+"WARP account after 2nd run: " + ((Get-Content "$env:LOCALAPPDATA\UltraLightBrowser\warp\account.json" -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json) | ForEach-Object { "best=$($_.best_endpoint) rtt=$($_.best_rtt_ms)ms scanned=$($_.scanned_at)" })
 Start-Sleep 3
 $cfgPath = "$env:LOCALAPPDATA\UltraLightBrowser\config.json"
 $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
