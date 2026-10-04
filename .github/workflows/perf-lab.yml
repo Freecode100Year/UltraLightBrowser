@@ -14,4 +14,7 @@ jobs:
       - run: cmake --build build --config Release --parallel
       - name: Experiments
         shell: pwsh
+        run: ./tests/perf-lab.ps1 -Exe build\Release\UltraLightBrowser.exe
+      - name: Identity of prefetch requests and download marks
+        shell: pwsh
         run: ./tests/ua-prefetch.ps1 -Exe build\Release\UltraLightBrowser.exe
