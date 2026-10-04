@@ -168,6 +168,7 @@ $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
 $cfg.settings.userAgentProfile = 'default'
 $cfg.settings | Add-Member -NotePropertyName warpFailClosed -NotePropertyValue $true -Force
 $cfg.settings.startupPage = 'start'   # built-in page: loads without network
+$cfg.settings.newTabPage = 'start'
 $cfg | ConvertTo-Json -Depth 8 | Set-Content $cfgPath -Encoding utf8NoBOM
 $helper = "$env:LOCALAPPDATA\UltraLightBrowser\warp\ulb-warp.exe"
 Remove-Item $helper -Force -ErrorAction SilentlyContinue
@@ -178,7 +179,7 @@ Start-Sleep 12
 (async () => {
   const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
   const page = list.find(t => t.type === 'page' && t.url.includes('start.html'));
-  console.log('FAILCLOSED page', page && page.url);
+  console.log('FAILCLOSED pages', list.filter(t => t.type === 'page').map(t => t.url).join(' '));
   const ws = new (require('ws'))(page.webSocketDebuggerUrl);
   await new Promise(r => ws.on('open', r));
   // Page.navigate reports a network failure in errorText.
