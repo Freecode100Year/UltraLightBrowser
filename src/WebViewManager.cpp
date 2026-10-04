@@ -170,6 +170,19 @@ void WebViewManager::CreateEnvironment(HWND errorOwner, EnvironmentCallback done
     // Proactively self-heal: remove damaged or stub Local State before WebView2 initializes
     SanitizeLocalState(userDataDir);
 
+    // With WARP the browser goes through a proxy; WebRTC must not send UDP around it
+    // (that would reveal the real address). WebView2 ignores Chrome's
+    // --force-webrtc-ip-handling-policy switch, so the profile preference is seeded.
+    if (!WarpManager::Instance().BrowserArguments().empty()) {
+        const auto prefsPath = userDataDir / "EBWebView" / "Default" / "Preferences";
+        std::error_code prefsEc;
+        if (!std::filesystem::exists(prefsPath, prefsEc)) {
+            std::filesystem::create_directories(prefsPath.parent_path(), prefsEc);
+            std::ofstream(prefsPath, std::ios::binary | std::ios::trunc)
+                << R"({"webrtc":{"ip_handling_policy":"disable_non_proxied_udp","multiple_routes_enabled":false,"nonproxied_udp_enabled":false}})";
+        }
+    }
+
     auto options = Make<CoreWebView2EnvironmentOptions>();
 
     // Inject pure hardware GPU pipeline, aggressive discard, and low-latency network flags
