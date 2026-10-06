@@ -23,8 +23,8 @@
 
 UltraLightBrowser 是一个注重隐私的 Windows 浏览器，界面仿照 macOS Safari：紧凑式标签栏（当前标签就是地址栏）、起始页、边栏、阅读器、标签页概览，所有选项集中在右上角一个“⋯”菜单里。
 
-- **隐私优先**：内置 Cloudflare WARP 加密隧道（默认开启），关闭浏览器即清除全部浏览痕迹，内置广告与跟踪拦截。
-- **单文件、免安装**：一个约 11MB 的 exe（浏览器本体约 1.3MB，其余是内置的 WARP 组件），双击即可运行，不需要管理员权限。
+- **隐私优先**：内置 Cloudflare WARP 加密隧道（默认开启），也可改用自己的私人线路（VLESS + REALITY），关闭浏览器即清除全部浏览痕迹，内置广告与跟踪拦截。
+- **单文件、免安装**：一个约 21MB 的 exe（浏览器本体约 1.3MB，其余是内置的网络组件：WARP 和私人线路），双击即可运行，不需要管理员权限。
 - **系统内核**：界面用原生 Win32 + GDI+ 绘制，网页由 Windows 自带的 Microsoft Edge WebView2（Chromium）渲染，内核随系统自动更新安全补丁，网页兼容性与 Edge 一致。
 
 ## 下载
@@ -63,13 +63,27 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 - **免注册**：第一次运行时自动注册免费 WARP 账号，不需要安装 Cloudflare 客户端。
 - **自动恢复**：组件随浏览器退出；组件意外退出会自动重启。
 
-设置位置：菜单“⋯ → Cloudflare WARP”或“设置 → 隐私”。开关 WARP 需重新启动浏览器。
+设置位置：菜单“⋯ → 网络线路”或“设置 → 隐私 → 网络线路”。切换线路需重新启动浏览器。
 
 需要知道的：
 - 账号注册使用 WARP 官方 App 的同一接口（非公开 API），Cloudflare 可能随时更改或限制；失效时按上面的断开规则处理。
 - 在中国大陆等网络环境下，WARP 入口和 WireGuard 协议可能被封锁或限速，IP 优选只能尽量寻找可用入口。
 - Cloudflare 能看到你访问了哪些网站（加密网页的内容看不到）；网站看到的是 Cloudflare 的地址。
 - 开启 WARP 时，“预先载入链接”自动停用（Chromium 内核在使用代理时不进行预先载入）。
+
+### 我的线路（私人服务器）
+
+在 WARP 被封锁或限速的网络中，可以改用自己（或信任的人）搭建的 [Xray](https://github.com/XTLS/Xray-core) 服务器：
+
+- **导入**：“设置 → 隐私 → 我的线路 → 导入链接…”，粘贴 `vless://` 链接（仅支持 REALITY，TCP 传输，可带 `flow=xtls-rprx-vision`），再在“网络线路”中选择“我的线路”并重新启动。
+- **全部经过线路**：网页和域名解析都由服务器完成；线路不通时网页打不开，**从不改用直接连接**；WebRTC 同样只走线路。
+- **链接保存**：用 Windows DPAPI 加密保存在本机，只有当前 Windows 账户能解密；不写入设置文件，可随时“移除”。
+- **不记录**：浏览器内置的线路组件不输出任何日志。
+
+需要知道的：
+- 线路服务器能看到你访问了哪些网站（加密网页的内容看不到），只导入你信任的人提供的链接。
+- 服务器地址只有 IPv6 时，本机网络也必须有 IPv6。
+- 本项目不提供任何线路或服务器。
 
 ### 关闭即清除全部痕迹
 
@@ -239,7 +253,7 @@ src/
 ├── PowerManager.*           后台节能与 EcoQoS
 ├── UserAgent.hpp / MacStealth.hpp / SelfTestPage.hpp   macOS 标识
 └── Config.*                 设置读写
-warp/                        WARP 组件（Go）：注册、WireGuard 隧道、本机 SOCKS5、IP 优选
+warp/                        网络组件（Go）：WARP 注册、WireGuard 隧道、IP 优选、私人线路（Xray）、本机 SOCKS5
 ui/                          内置页面（起始页、历史、书签、设置、总览、边栏、阅读器）
 ui/vendor/                   Mozilla Readability（Apache-2.0）
 tests/                       单元测试、页面资源检查、Windows 界面冒烟测试、性能测试
@@ -247,6 +261,7 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 
 ## 最近更新
 
+- **v2.2.0**：新增“我的线路”：可导入自己的 VLESS + REALITY 服务器链接，菜单和设置中可在直接连接、Cloudflare WARP、我的线路之间切换；线路不通时一律不直接联网；链接经 Windows DPAPI 加密保存在本机。内置 Xray 内核使 exe 增大约 10MB。
 - **v2.1.4**：审计修复：开启“WARP 断开时阻止联网”后，即使 WARP 组件根本无法启动（被杀毒软件拦截、文件损坏等），也不再直接联网；首次启动等待 WARP 组件的时间从 3 秒延长到 8 秒（新解压的组件可能正被杀毒软件扫描）；WARP 组件重启与浏览器退出同时发生时不再可能遗留组件进程或重复关闭句柄；保留下来的旧浏览器配置也会补上 WebRTC 防泄露设置；书签等资料写入磁盘失败后，下次保存或退出时会重试，不再丢失。
 - **v2.1.3**：审计修复：WARP 入口测速使用与 WireGuard 相同精度的握手时间戳，并在切换入口前稍作等待，避免切换后的首次握手被服务器当作重放丢弃而断流几秒；第二个浏览器进程中点“重新优选 IP”会提示无法优选，不再假装已开始；`build-windows.ps1` 和编译说明补上 WARP 组件的编译步骤（之前按说明从源码编译会失败）；自述文件重写。
 - **v2.1.2**：开启 WARP 时“预先载入链接”和起始页地址栏预载自动停用，设置中注明原因（浏览器内核在使用代理时不进行预先载入，实测确认）；删除不起作用的启动参数（WebView2 忽略或 Chromium 已移除的开关）和未使用的节能模式设置；同时运行两个浏览器进程时，第二个进程的 WARP 状态显示为“由另一个浏览器进程运行”，不再一律显示“已连接”。
@@ -274,4 +289,4 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 
 ## 第三方组件
 
-- WARP 组件（`warp/`）使用 [wireguard-go](https://git.zx2c4.com/wireguard-go)（MIT）与 [gVisor](https://gvisor.dev) 网络栈（Apache-2.0）。WARP 是 Cloudflare 的服务，本项目与 Cloudflare 无关。
+- 网络组件（`warp/`）使用 [wireguard-go](https://git.zx2c4.com/wireguard-go)（MIT）、[gVisor](https://gvisor.dev) 网络栈（Apache-2.0）和 [Xray-core](https://github.com/XTLS/Xray-core)（MPL-2.0）。WARP 是 Cloudflare 的服务，本项目与 Cloudflare 无关。

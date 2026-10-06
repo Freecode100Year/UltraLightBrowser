@@ -4,13 +4,17 @@
 #include "Config.hpp"
 #include "StringUtils.hpp"
 
+#include <wincrypt.h>
+
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <thread>
 
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "crypt32.lib")
 
 namespace UltraLight {
 
@@ -69,7 +73,70 @@ bool PortOpen(int port) {
     return open;
 }
 
+std::filesystem::path LineFile() {
+    return WarpFolder() / "line.dat";
+}
+
+// "host:port" of a vless://uuid@host:port?... link (IPv6 hosts without brackets).
+std::string ServerOf(const std::string& link) {
+    const size_t at = link.find('@');
+    if (at == std::string::npos) return {};
+    std::string rest = link.substr(at + 1, link.find_first_of("?#/", at + 1) - at - 1);
+    if (!rest.empty() && rest[0] == '[') {
+        const size_t close = rest.find(']');
+        if (close == std::string::npos) return {};
+        return rest.substr(1, close - 1) + rest.substr(close + 1);
+    }
+    return rest;
+}
+
 } // namespace
+
+bool WarpManager::SetLine(const std::string& input) {
+    std::string link = input;
+    while (!link.empty() && isspace(static_cast<unsigned char>(link.back()))) link.pop_back();
+    while (!link.empty() && isspace(static_cast<unsigned char>(link.front()))) link.erase(0, 1);
+    if (link.rfind("vless://", 0) != 0 || link.find("security=reality") == std::string::npos ||
+        link.find("pbk=") == std::string::npos || ServerOf(link).empty() || link.size() > 4096) {
+        return false;
+    }
+    DATA_BLOB in{static_cast<DWORD>(link.size()), reinterpret_cast<BYTE*>(link.data())};
+    DATA_BLOB out{};
+    if (!CryptProtectData(&in, L"UltraLightBrowser line", nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) return false;
+    std::error_code ec;
+    std::filesystem::create_directories(WarpFolder(), ec);
+    const std::filesystem::path tmp = LineFile().wstring() + L".tmp";
+    bool ok;
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        f.write(reinterpret_cast<const char*>(out.pbData), out.cbData);
+        ok = static_cast<bool>(f);
+    }
+    LocalFree(out.pbData);
+    return ok && MoveFileExW(tmp.c_str(), LineFile().c_str(), MOVEFILE_REPLACE_EXISTING);
+}
+
+void WarpManager::ClearLine() {
+    std::error_code ec;
+    std::filesystem::remove(LineFile(), ec);
+}
+
+std::string WarpManager::LoadLine() {
+    std::ifstream f(LineFile(), std::ios::binary);
+    std::string blob((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (blob.empty()) return {};
+    DATA_BLOB in{static_cast<DWORD>(blob.size()), reinterpret_cast<BYTE*>(blob.data())};
+    DATA_BLOB out{};
+    if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) return {};
+    std::string link(reinterpret_cast<const char*>(out.pbData), out.cbData);
+    SecureZeroMemory(out.pbData, out.cbData);
+    LocalFree(out.pbData);
+    return link;
+}
+
+std::string WarpManager::LineServer() {
+    return ServerOf(LoadLine());
+}
 
 WarpManager& WarpManager::Instance() {
     static WarpManager s_instance;
@@ -98,7 +165,8 @@ bool WarpManager::Extract(const std::wstring& exePath) {
 
 void WarpManager::BlockIfFailClosed() {
     // "WARP 断开时阻止联网" must also hold when the helper cannot run at all.
-    if (!Config::Instance().GetSettings().warpFailClosed || m_blockPort != 0) return;
+    // A private line never goes direct.
+    if ((!Config::Instance().GetSettings().warpFailClosed && !m_lineMode) || m_blockPort != 0) return;
     m_blockPort = ReserveRefusingPort(m_blockSocket);
 }
 
@@ -110,6 +178,7 @@ void WarpManager::Start() {
     }
     const std::filesystem::path folder = WarpFolder();
     const std::filesystem::path portFile = folder / "port";
+    m_lineMode = settings.useLine;
 
     // A second copy of the browser shares the profile and must use the same
     // browser arguments, so it joins the helper that is already running.
@@ -137,6 +206,14 @@ void WarpManager::Start() {
         }
     }
 
+    if (m_lineMode) {
+        m_link = LoadLine();
+        if (m_link.empty()) {
+            m_state = State::Unavailable;
+            BlockIfFailClosed();
+            return;
+        }
+    }
     const std::wstring exe = (folder / "ulb-warp.exe").wstring();
     if (!Extract(exe)) {
         m_state = State::Unavailable;
@@ -179,9 +256,24 @@ bool WarpManager::Launch(int port) {
     }
     SetHandleInformation(cmdWrite, HANDLE_FLAG_INHERIT, 0);
 
-    std::wstring cmd = L"\"" + exe + L"\" -state \"" + (folder / "account.json").wstring() +
-                       L"\" -listen 127.0.0.1:" + std::to_wstring(port) + L" -parent " + std::to_wstring(GetCurrentProcessId());
+    std::wstring cmd = L"\"" + exe + L"\"";
+    if (!m_lineMode) cmd += L" -state \"" + (folder / "account.json").wstring() + L"\"";
+    cmd += L" -listen 127.0.0.1:" + std::to_wstring(port) + L" -parent " + std::to_wstring(GetCurrentProcessId());
     if (Config::Instance().GetSettings().warpFailClosed) cmd += L" -fail-closed";
+
+    // The link goes to the helper in its environment, not on the command line.
+    std::wstring env;
+    if (m_lineMode) {
+        if (wchar_t* block = GetEnvironmentStringsW()) {
+            for (const wchar_t* p = block; *p; p += wcslen(p) + 1) {
+                if (_wcsnicmp(p, L"ULB_LINE=", 9) != 0) env.append(p).push_back(L'\0');
+            }
+            FreeEnvironmentStringsW(block);
+        }
+        env += L"ULB_LINE=" + StringUtils::Utf8ToWide(m_link);
+        env.push_back(L'\0');
+        env.push_back(L'\0');
+    }
 
     STARTUPINFOW si{sizeof(si)};
     si.dwFlags = STARTF_USESTDHANDLES;
@@ -190,7 +282,9 @@ bool WarpManager::Launch(int port) {
     si.hStdInput = cmdRead;
     PROCESS_INFORMATION pi{};
     const BOOL started = CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, TRUE,
-                                        CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, folder.wstring().c_str(), &si, &pi);
+                                        CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+                                        env.empty() ? nullptr : env.data(), folder.wstring().c_str(), &si, &pi);
+    if (!env.empty()) SecureZeroMemory(env.data(), env.size() * sizeof(wchar_t));
     CloseHandle(writePipe);
     CloseHandle(cmdRead);
     if (!started) {
@@ -253,6 +347,10 @@ void WarpManager::ReadOutput(HANDLE pipe) {
                 m_scanning = true;
             } else if (line == "SCAN end" || line == "SCAN none") {
                 m_scanning = false;
+            } else if (line.rfind("LINE ", 0) == 0) {
+                AcquireSRWLockExclusive(&m_lock);
+                m_endpoint = StringUtils::Utf8ToWide(line.substr(5));
+                ReleaseSRWLockExclusive(&m_lock);
             } else if (line.rfind("ENDPOINT ", 0) == 0) {
                 // "ENDPOINT <ip:port> <rtt ms>"
                 const std::string rest = line.substr(9);
@@ -325,6 +423,7 @@ std::wstring WarpManager::EndpointText() const {
 
 bool WarpManager::Rescan() {
     static const char kCommand[] = "RESCAN\n";
+    if (m_lineMode) return false;
     DWORD written = 0;
     {
         // Held while writing so a restart cannot close the pipe underneath.
@@ -340,7 +439,7 @@ std::wstring WarpManager::StatusText() const {
     case State::Off: return L"已关闭";
     case State::Starting: return L"正在连接…";
     case State::Up: return L"已连接";
-    case State::Down: return Config::Instance().GetSettings().warpFailClosed ? L"未连接（已阻止联网）" : L"未连接（直接连接）";
+    case State::Down: return Config::Instance().GetSettings().warpFailClosed || m_lineMode ? L"未连接（已阻止联网）" : L"未连接（直接连接）";
     case State::Unavailable: return m_blockPort != 0 ? L"不可用（已阻止联网）" : L"不可用（直接连接）";
     case State::Shared: return L"已开启（由另一个浏览器进程运行）";
     }

@@ -191,3 +191,29 @@ Start-Sleep 12
 node failclosed.js
 Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
 Remove-Item $helper -Force -Recurse -ErrorAction SilentlyContinue
+
+# "我的线路" never goes direct: (1) chosen but nothing imported, (2) an imported
+# link whose server cannot be reached. The helper must start for (2).
+$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+$cfg.settings.warpFailClosed = $false
+$cfg.settings | Add-Member -NotePropertyName useLine -NotePropertyValue $true -Force
+$cfg | ConvertTo-Json -Depth 8 | Set-Content $cfgPath -Encoding utf8NoBOM
+$lineFile = "$env:LOCALAPPDATA\UltraLightBrowser\warp\line.dat"
+Remove-Item $lineFile -Force -ErrorAction SilentlyContinue
+(Get-Content failclosed.js -Raw) -replace 'FAILCLOSED-NOHELPER', 'LINE-NOLINK' | Set-Content line1.js
+(Get-Content failclosed.js -Raw) -replace 'FAILCLOSED-NOHELPER', 'LINE-UNREACHABLE' | Set-Content line2.js
+$p = Start-Process $Exe -PassThru
+Start-Sleep 12
+node line1.js
+Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
+Start-Sleep 3
+Add-Type -AssemblyName System.Security
+$link = 'vless://00000000-0000-4000-8000-000000000000@[2001:db8::1]:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.amd.com&fp=chrome&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=01&type=tcp'
+$blob = [System.Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($link), $null, 'CurrentUser')
+[IO.File]::WriteAllBytes($lineFile, $blob)
+$p = Start-Process $Exe -PassThru
+Start-Sleep 12
+"LINE helper running: " + [bool](Get-Process ulb-warp -ErrorAction SilentlyContinue)
+node line2.js
+Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
+Remove-Item $lineFile -Force -ErrorAction SilentlyContinue

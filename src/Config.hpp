@@ -44,6 +44,7 @@ struct AppSettings {
     bool preloadLinks = true;                   // prefetch same-site links on hover
     bool warpEnabled = true;                    // browse through the built-in Cloudflare WARP
     bool warpFailClosed = false;                // no direct connections while WARP is down
+    bool useLine = false;                       // use the imported private line instead of WARP
 };
 
 class Config {

@@ -181,11 +181,20 @@ HMENU MainWindow::BuildWarpMenu() {
     const std::wstring endpoint = warp.EndpointText();
     if (!endpoint.empty()) AppendMenuW(m, MF_STRING | MF_GRAYED, 0, (L"入口：" + endpoint).c_str());
     const bool running = warp.GetState() == WarpManager::State::Up || warp.GetState() == WarpManager::State::Down;
-    AppendMenuW(m, MF_STRING | (running && !warp.Scanning() ? 0 : MF_GRAYED), IDM_WARP_RESCAN,
-                warp.Scanning() ? L"正在优选 IP…" : L"重新优选 IP");
+    if (!warp.LineMode()) {
+        AppendMenuW(m, MF_STRING | (running && !warp.Scanning() ? 0 : MF_GRAYED), IDM_WARP_RESCAN,
+                    warp.Scanning() ? L"正在优选 IP…" : L"重新优选 IP");
+    }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING | (settings.warpEnabled ? MF_CHECKED : 0), IDM_WARP_TOGGLE, L"使用 Cloudflare WARP");
-    AppendMenuW(m, MF_STRING | (settings.warpFailClosed ? MF_CHECKED : 0) | (settings.warpEnabled ? 0 : MF_GRAYED),
+    // The choice takes effect after a restart; the checks show the saved choice.
+    const bool hasLine = !WarpManager::LineServer().empty();
+    const UINT chosen = !settings.warpEnabled ? IDM_NET_DIRECT : settings.useLine ? IDM_NET_LINE : IDM_WARP_TOGGLE;
+    AppendMenuW(m, MF_STRING, IDM_NET_DIRECT, L"直接连接");
+    AppendMenuW(m, MF_STRING, IDM_WARP_TOGGLE, L"Cloudflare WARP");
+    AppendMenuW(m, MF_STRING | (hasLine ? 0 : MF_GRAYED), IDM_NET_LINE, hasLine ? L"我的线路" : L"我的线路（在设置中导入）");
+    CheckMenuRadioItem(m, IDM_WARP_TOGGLE, IDM_NET_LINE, chosen, MF_BYCOMMAND);
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING | (settings.warpFailClosed ? MF_CHECKED : 0) | (settings.warpEnabled && !settings.useLine ? 0 : MF_GRAYED),
                 IDM_WARP_FAIL_CLOSED, L"WARP 断开时阻止联网");
     return m;
 }
@@ -244,8 +253,9 @@ void MainWindow::ShowMainMenu() {
     const auto warpState = WarpManager::Instance().GetState();
     const wchar_t* warpLabel = warpState == WarpManager::State::Up ? L"已连接"
         : warpState == WarpManager::State::Shared ? L"已开启"
-        : warpState == WarpManager::State::Off ? L"关闭" : L"未连接";
-    AppendSubmenu(m, BuildWarpMenu(), std::wstring(L"Cloudflare WARP\t") + warpLabel, Icon::Shield);
+        : warpState == WarpManager::State::Off ? L"直接连接" : L"未连接";
+    const wchar_t* lineName = warpState == WarpManager::State::Off ? L"" : WarpManager::Instance().LineMode() ? L"我的线路 · " : L"WARP · ";
+    AppendSubmenu(m, BuildWarpMenu(), std::wstring(L"网络线路\t") + lineName + warpLabel, Icon::Shield);
     AppendSubmenu(m, BuildIdentityMenu(), std::wstring(L"用户代理\t") + (settings.userAgentProfile == "macos-edge" ? L"macOS" : L"默认"), Icon::Monitor);
     const int minutes = settings.tabSuspendMinutes;
     AppendSubmenu(m, BuildPowerMenu(), std::wstring(L"节能\t") + (minutes > 0 ? L"后台标签自动挂起" : L"关闭"), Icon::Bolt);
@@ -422,9 +432,14 @@ bool MainWindow::HandleMenuCommand(WORD id) {
         return true;
     }
     case IDM_WARP_TOGGLE:
-        settings.warpEnabled = !settings.warpEnabled;
+    case IDM_NET_DIRECT:
+    case IDM_NET_LINE:
+        settings.warpEnabled = id != IDM_NET_DIRECT;
+        settings.useLine = id == IDM_NET_LINE;
         Config::Instance().Save();
-        ShowToast(settings.warpEnabled ? L"已开启 WARP，重新启动 UltraLightBrowser 后生效" : L"已关闭 WARP，重新启动 UltraLightBrowser 后生效");
+        ShowToast(id == IDM_NET_DIRECT ? L"已改为直接连接，重新启动 UltraLightBrowser 后生效"
+                  : id == IDM_NET_LINE ? L"已改用我的线路，重新启动 UltraLightBrowser 后生效"
+                                       : L"已改用 WARP，重新启动 UltraLightBrowser 后生效");
         return true;
     case IDM_WARP_RESCAN:
         ShowToast(WarpManager::Instance().Rescan() ? L"正在优选 WARP 入口 IP，约需 5 秒" : L"WARP 未在此窗口进程中运行，无法优选");

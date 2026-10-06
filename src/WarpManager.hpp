@@ -4,6 +4,10 @@
 // device, runs a userspace WireGuard tunnel and serves a loopback SOCKS5 proxy;
 // the browser environment is created with that proxy, so every request (and its
 // DNS lookup) goes through Cloudflare, IPv6 first.
+//
+// Instead of WARP the same helper can run a private line: an imported vless://
+// REALITY link (kept DPAPI-encrypted in warp\line.dat). A line never falls back to
+// direct connections.
 
 #include <windows.h>
 #include <atomic>
@@ -33,7 +37,13 @@ public:
     std::wstring EndpointText() const;
     bool Scanning() const { return m_scanning.load(); }
     // Optimise the WARP endpoint now ("重新优选 IP").
-    bool Rescan();  // false when this process does not run the helper
+    bool Rescan();  // false when this process does not run the helper (or runs a line)
+
+    // The private line. SetLine accepts only vless:// REALITY links.
+    static bool SetLine(const std::string& link);
+    static void ClearLine();
+    static std::string LineServer();  // "host:port" of the saved link, empty if none
+    bool LineMode() const { return m_lineMode; }
 
 private:
     WarpManager() = default;
@@ -41,6 +51,7 @@ private:
     bool Launch(int port);  // 0 = any free port
     void ReadOutput(HANDLE pipe);
     void BlockIfFailClosed();
+    static std::string LoadLine();
 
     // m_process, m_job and m_stdin are replaced by the reader thread when the helper
     // restarts and released by Stop() on the UI thread.
@@ -56,6 +67,8 @@ private:
     std::wstring m_endpoint;
     HANDLE m_portEvent = nullptr;
     std::atomic<int> m_port{0};
+    bool m_lineMode = false;
+    std::string m_link;  // vless:// link, in line mode
     int m_quickExits = 0;  // helper exits soon after start, in a row (reader thread only)
     std::atomic<State> m_state{State::Off};
 };

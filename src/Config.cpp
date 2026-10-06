@@ -124,6 +124,7 @@ void Config::Load() {
             readBool("preloadLinks", m_settings.preloadLinks);
             readBool("warpEnabled", m_settings.warpEnabled);
             readBool("warpFailClosed", m_settings.warpFailClosed);
+            readBool("useLine", m_settings.useLine);
             // v2.0.8: the start page became Brave Search. Move configs that still use
             // the old defaults (Google home, favorites page on start and new tabs).
             if (!s.contains("homeVersion")) {
@@ -186,7 +187,8 @@ void Config::Save() {
             {"sidebarVisible", m_settings.sidebarVisible},
             {"preloadLinks", m_settings.preloadLinks},
             {"warpEnabled", m_settings.warpEnabled},
-            {"warpFailClosed", m_settings.warpFailClosed}
+            {"warpFailClosed", m_settings.warpFailClosed},
+            {"useLine", m_settings.useLine}
         };
 
         json rulesObj = json::object();

@@ -13,6 +13,11 @@
 //	ERROR <text>
 //
 // stdin accepts "RESCAN" (optimise the endpoint now).
+//
+// With a vless:// link in the ULB_LINE environment variable the helper uses that
+// private VLESS + REALITY server instead of WARP (-state is then not needed):
+// every connection and name lookup goes through it, never direct. It prints
+// PORT, STATE and ERROR lines, plus "LINE <host:port>" once the core is running.
 package main
 
 import (
@@ -36,6 +41,9 @@ var (
 
 var out sync.Mutex
 
+// line is set when the helper runs a private line instead of WARP.
+var line *Line
+
 func status(format string, args ...any) {
 	out.Lock()
 	defer out.Unlock()
@@ -44,7 +52,9 @@ func status(format string, args ...any) {
 
 func main() {
 	flag.Parse()
-	if *statePath == "" {
+	link := os.Getenv("ULB_LINE")
+	os.Unsetenv("ULB_LINE")
+	if *statePath == "" && link == "" {
 		status("ERROR missing -state")
 		os.Exit(2)
 	}
@@ -60,8 +70,19 @@ func main() {
 	status("PORT %d", ln.Addr().(*net.TCPAddr).Port)
 
 	t := &Tunnel{}
-	go t.Run(*statePath)
-	go readCommands(t)
+	if link != "" {
+		l, server, err := StartLine(link)
+		if err != nil {
+			status("ERROR line: %v", err)
+			os.Exit(1)
+		}
+		line = l
+		status("LINE %s", server)
+		go l.Monitor()
+	} else {
+		go t.Run(*statePath)
+		go readCommands(t)
+	}
 
 	for {
 		c, err := ln.Accept()
@@ -76,6 +97,9 @@ func main() {
 // not resolve inside the tunnel fails rather than going direct: the direct path
 // would ask the system resolver and connect from the real address.
 func dial(ctx context.Context, t *Tunnel, host string, port int) (net.Conn, error) {
+	if line != nil {
+		return line.Dial(ctx, host, port)
+	}
 	if nt := t.Net(); nt != nil {
 		addrs, err := t.Resolve(ctx, host)
 		if err != nil {
