@@ -94,7 +94,7 @@ std::string ServerOf(const std::string& link) {
 // parts so scrapers that collect share links from GitHub pass it over.
 std::string PublicLine() {
     return std::string("vl") + "ess://" + "5680cee3-6b91-4739-86b8-5aded88cd227" + "@[" + "2001:470:1f07:5f5:3bcd:d73f:3e79:6b3e" + "]:443" +
-           "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome" +
+           "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.nvidia.com&fp=chrome" +
            "&pbk=" + "89rnPvfXmhlVxTRQot_US6EV7GWZLaNgTK2aDKINiW4" + "&sid=" + "14702eaec705a52e" + "&type=tcp";
 }
 
