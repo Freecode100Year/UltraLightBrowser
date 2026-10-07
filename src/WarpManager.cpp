@@ -90,6 +90,14 @@ std::string ServerOf(const std::string& link) {
     return rest;
 }
 
+// The built-in public line, used while no link is imported. Assembled from
+// parts so scrapers that collect share links from GitHub pass it over.
+std::string PublicLine() {
+    return std::string("vl") + "ess://" + "5680cee3-6b91-4739-86b8-5aded88cd227" + "@[" + "2001:470:1f07:5f5:3bcd:d73f:3e79:6b3e" + "]:443" +
+           "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome" +
+           "&pbk=" + "89rnPvfXmhlVxTRQot_US6EV7GWZLaNgTK2aDKINiW4" + "&sid=" + "14702eaec705a52e" + "&type=tcp";
+}
+
 } // namespace
 
 bool WarpManager::SetLine(const std::string& input) {
@@ -122,6 +130,15 @@ void WarpManager::ClearLine() {
 }
 
 std::string WarpManager::LoadLine() {
+    std::string link = LoadImported();
+    return link.empty() ? PublicLine() : link;
+}
+
+bool WarpManager::LineImported() {
+    return !LoadImported().empty();
+}
+
+std::string WarpManager::LoadImported() {
     std::ifstream f(LineFile(), std::ios::binary);
     std::string blob((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     if (blob.empty()) return {};
@@ -132,10 +149,6 @@ std::string WarpManager::LoadLine() {
     SecureZeroMemory(out.pbData, out.cbData);
     LocalFree(out.pbData);
     return link;
-}
-
-std::string WarpManager::LineServer() {
-    return ServerOf(LoadLine());
 }
 
 WarpManager& WarpManager::Instance() {

@@ -71,13 +71,14 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 - Cloudflare 能看到你访问了哪些网站（加密网页的内容看不到）；网站看到的是 Cloudflare 的地址。
 - 开启 WARP 时，“预先载入链接”自动停用（Chromium 内核在使用代理时不进行预先载入）。
 
-### 我的线路（私人服务器）
+### 我的线路（VLESS + REALITY）
 
-在 WARP 被封锁或限速的网络中，可以改用自己（或信任的人）搭建的 [Xray](https://github.com/XTLS/Xray-core) 服务器：
+在 WARP 被封锁或限速的网络中，可以改用 [Xray](https://github.com/XTLS/Xray-core) 服务器：
 
-- **导入**：“设置 → 隐私 → 我的线路 → 导入链接…”，粘贴 `vless://` 链接（仅支持 REALITY，TCP 传输，可带 `flow=xtls-rprx-vision`），再在“网络线路”中选择“我的线路”并重新启动。
+- **内置公共线路**：未导入链接时使用作者提供的公共服务器，菜单“⋯ → 网络线路 → 我的线路”选中并重新启动即可，无需任何设置。仅可经 IPv6 连接（所在网络需有 IPv6）；服务器不记录访问日志，不允许 BT 下载和发送邮件。
+- **导入自己的线路**：“设置 → 隐私 → 我的线路 → 导入链接…”，粘贴 `vless://` 链接（仅支持 REALITY，TCP 传输，可带 `flow=xtls-rprx-vision`），再在“网络线路”中选择“我的线路”并重新启动。
 - **全部经过线路**：网页和域名解析都由服务器完成；线路不通时网页打不开，**从不改用直接连接**；WebRTC 同样只走线路。
-- **链接保存**：用 Windows DPAPI 加密保存在本机，只有当前 Windows 账户能解密；不写入设置文件，可随时“移除”。
+- **链接保存**：用 Windows DPAPI 加密保存在本机，只有当前 Windows 账户能解密；不写入设置文件，可随时“移除”（移除后改用公共线路）。
 - **不记录**：浏览器内置的线路组件不输出任何日志。
 
 需要知道的：
@@ -127,7 +128,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 **统一菜单（右上角 ⋯）**
 - 新建标签页 / 窗口 / 无痕浏览窗口；书签、历史记录、下载、阅读列表
 - 显示阅读器、页内查找、缩放、打印
-- 此网站的设置、内容拦截器、声音、Cloudflare WARP、用户代理、节能
+- 此网站的设置、内容拦截器、声音、Cloudflare WARP、浏览器UA标识、节能
 - 全屏、设置、关于
 
 **起始页、书签与历史**
@@ -155,7 +156,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 - 后台标签页按设置的时间自动挂起，切换回来时自动恢复；可立即挂起其他标签页
 - 可选：最小化时自动挂起网页（播放声音时除外）
 
-**用户代理**
+**浏览器UA标识**
 - Microsoft Edge — Windows（默认）/ Microsoft Edge — macOS，对所有标签页生效，详见下文
 
 ## macOS Edge 伪装
@@ -175,7 +176,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 
 被改写的函数调用 `toString()` 时仍显示为原生代码（`[native code]`）。macOS 模式下停用预先载入，因为预取请求不经过伪装，会暴露 Windows 和 WebView2。
 
-**自检**：菜单“⋯ → 用户代理 → 检查当前用户代理…”列出上述各项以及各类 Worker 中的实际取值，与 macOS 不一致的项标红。请求头与字体请另用 [BrowserLeaks](https://browserleaks.com/) 等站点核对。
+**自检**：菜单“⋯ → 浏览器UA标识 → 检查当前浏览器UA标识…”列出上述各项以及各类 Worker 中的实际取值，与 macOS 不一致的项标红。请求头与字体请另用 [BrowserLeaks](https://browserleaks.com/) 等站点核对。
 
 **系统版本号**：默认报告 macOS `26.2.0`，可在 `%LOCALAPPDATA%\UltraLightBrowser\config.json` 的 `settings.macPlatformVersion` 中修改（仅允许数字和点）。
 
@@ -261,6 +262,7 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 
 ## 最近更新
 
+- **v2.2.1**：“我的线路”内置公共线路，未导入链接时也可直接使用；“用户代理”改称“浏览器UA标识”。
 - **v2.2.0**：新增“我的线路”：可导入自己的 VLESS + REALITY 服务器链接，菜单和设置中可在直接连接、Cloudflare WARP、我的线路之间切换；线路不通时一律不直接联网；链接经 Windows DPAPI 加密保存在本机。内置 Xray 内核使 exe 增大约 10MB。
 - **v2.1.4**：审计修复：开启“WARP 断开时阻止联网”后，即使 WARP 组件根本无法启动（被杀毒软件拦截、文件损坏等），也不再直接联网；首次启动等待 WARP 组件的时间从 3 秒延长到 8 秒（新解压的组件可能正被杀毒软件扫描）；WARP 组件重启与浏览器退出同时发生时不再可能遗留组件进程或重复关闭句柄；保留下来的旧浏览器配置也会补上 WebRTC 防泄露设置；书签等资料写入磁盘失败后，下次保存或退出时会重试，不再丢失。
 - **v2.1.3**：审计修复：WARP 入口测速使用与 WireGuard 相同精度的握手时间戳，并在切换入口前稍作等待，避免切换后的首次握手被服务器当作重放丢弃而断流几秒；第二个浏览器进程中点“重新优选 IP”会提示无法优选，不再假装已开始；`build-windows.ps1` 和编译说明补上 WARP 组件的编译步骤（之前按说明从源码编译会失败）；自述文件重写。

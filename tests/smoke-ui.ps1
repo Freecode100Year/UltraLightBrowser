@@ -192,15 +192,16 @@ node failclosed.js
 Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
 Remove-Item $helper -Force -Recurse -ErrorAction SilentlyContinue
 
-# "我的线路" never goes direct: (1) chosen but nothing imported, (2) an imported
-# link whose server cannot be reached. The helper must start for (2).
+# "我的线路": (1) nothing imported, so the built-in public line is used (blocked,
+# not direct, on runners without IPv6); (2) an imported link whose server cannot
+# be reached never goes direct. The helper must start for (2).
 $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
 $cfg.settings.warpFailClosed = $false
 $cfg.settings | Add-Member -NotePropertyName useLine -NotePropertyValue $true -Force
 $cfg | ConvertTo-Json -Depth 8 | Set-Content $cfgPath -Encoding utf8NoBOM
 $lineFile = "$env:LOCALAPPDATA\UltraLightBrowser\warp\line.dat"
 Remove-Item $lineFile -Force -ErrorAction SilentlyContinue
-(Get-Content failclosed.js -Raw) -replace 'FAILCLOSED-NOHELPER', 'LINE-NOLINK' | Set-Content line1.js
+(Get-Content failclosed.js -Raw) -replace 'FAILCLOSED-NOHELPER', 'LINE-PUBLIC' | Set-Content line1.js
 (Get-Content failclosed.js -Raw) -replace 'FAILCLOSED-NOHELPER', 'LINE-UNREACHABLE' | Set-Content line2.js
 $p = Start-Process $Exe -PassThru
 Start-Sleep 12

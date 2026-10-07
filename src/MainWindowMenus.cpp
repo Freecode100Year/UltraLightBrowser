@@ -187,11 +187,10 @@ HMENU MainWindow::BuildWarpMenu() {
     }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     // The choice takes effect after a restart; the checks show the saved choice.
-    const bool hasLine = !WarpManager::LineServer().empty();
     const UINT chosen = !settings.warpEnabled ? IDM_NET_DIRECT : settings.useLine ? IDM_NET_LINE : IDM_WARP_TOGGLE;
     AppendMenuW(m, MF_STRING, IDM_NET_DIRECT, L"直接连接");
     AppendMenuW(m, MF_STRING, IDM_WARP_TOGGLE, L"Cloudflare WARP");
-    AppendMenuW(m, MF_STRING | (hasLine ? 0 : MF_GRAYED), IDM_NET_LINE, hasLine ? L"我的线路" : L"我的线路（在设置中导入）");
+    AppendMenuW(m, MF_STRING, IDM_NET_LINE, L"我的线路");
     CheckMenuRadioItem(m, IDM_WARP_TOGGLE, IDM_NET_LINE, chosen, MF_BYCOMMAND);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING | (settings.warpFailClosed ? MF_CHECKED : 0) | (settings.warpEnabled && !settings.useLine ? 0 : MF_GRAYED),
@@ -205,7 +204,7 @@ HMENU MainWindow::BuildIdentityMenu() {
     AppendMenuW(m, MF_STRING | (!mac ? MF_CHECKED : 0), IDM_UA_DEFAULT, L"默认（Microsoft Edge — Windows）");
     AppendMenuW(m, MF_STRING | (mac ? MF_CHECKED : 0), IDM_UA_MACOS_EDGE, L"Microsoft Edge — macOS");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, IDM_UA_SELFTEST, L"检查当前用户代理…");
+    AppendMenuW(m, MF_STRING, IDM_UA_SELFTEST, L"检查当前浏览器UA标识…");
     return m;
 }
 
@@ -256,7 +255,7 @@ void MainWindow::ShowMainMenu() {
         : warpState == WarpManager::State::Off ? L"直接连接" : L"未连接";
     const wchar_t* lineName = warpState == WarpManager::State::Off ? L"" : WarpManager::Instance().LineMode() ? L"我的线路 · " : L"WARP · ";
     AppendSubmenu(m, BuildWarpMenu(), std::wstring(L"网络线路\t") + lineName + warpLabel, Icon::Shield);
-    AppendSubmenu(m, BuildIdentityMenu(), std::wstring(L"用户代理\t") + (settings.userAgentProfile == "macos-edge" ? L"macOS" : L"默认"), Icon::Monitor);
+    AppendSubmenu(m, BuildIdentityMenu(), std::wstring(L"浏览器UA标识\t") + (settings.userAgentProfile == "macos-edge" ? L"macOS" : L"默认"), Icon::Monitor);
     const int minutes = settings.tabSuspendMinutes;
     AppendSubmenu(m, BuildPowerMenu(), std::wstring(L"节能\t") + (minutes > 0 ? L"后台标签自动挂起" : L"关闭"), Icon::Bolt);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
@@ -463,7 +462,7 @@ bool MainWindow::HandleMenuCommand(WORD id) {
             settings.userAgentProfile = profile;
             Config::Instance().Save();
         } else {
-            MessageBoxW(m_hWnd, L"UA 切换失败，设置未保存。请等待页面初始化，或更新 WebView2 Runtime 后重试。", L"浏览器标识", MB_OK | MB_ICONWARNING);
+            MessageBoxW(m_hWnd, L"UA 切换失败，设置未保存。请等待页面初始化，或更新 WebView2 Runtime 后重试。", L"浏览器UA标识", MB_OK | MB_ICONWARNING);
         }
         return true;
     }

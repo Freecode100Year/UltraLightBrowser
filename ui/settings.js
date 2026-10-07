@@ -54,7 +54,7 @@ async function load() {
       row("记录浏览历史", sw("saveHistory"), "历史记录只保存在内存中，关闭 UltraLightBrowser 后即被移除。无痕浏览窗口从不记录。"),
       row("启用内容拦截器", sw("enableAdBlock"), "阻止广告和跨网站跟踪器。可在“此网站的设置”中对单个网站停用。"),
       row("网络线路：", select("networkMode", [["direct", "直接连接"], ["warp", "Cloudflare WARP"], ["line", "我的线路"]]),
-        "WARP：所有网页经 Cloudflare 加密隧道访问，网站看到的是 Cloudflare 的地址。我的线路：经你导入的私人服务器（VLESS + REALITY）访问，" +
+        "WARP：所有网页经 Cloudflare 加密隧道访问，网站看到的是 Cloudflare 的地址。我的线路：经 VLESS + REALITY 服务器访问，可穿过网络封锁，" +
         "断开时一律不直接连接。当前状态：" + s.warpStatus + "。更改后需重新启动。"),
       row("我的线路：", el("span", {},
         el("button", { onclick: async () => {
@@ -62,11 +62,12 @@ async function load() {
           if (link === null) return;
           if (await call("setLine", { link })) { toast("已导入线路。在“网络线路”中选择“我的线路”并重新启动后使用"); load(); }
           else toast("不是有效的 REALITY 线路链接");
-        } }, s.lineServer ? "替换…" : "导入链接…"),
-        s.lineServer ? el("button", { class: "danger", style: { marginLeft: "8px" }, onclick: async () => {
-          if (confirm("移除已导入的线路？")) { await call("clearLine"); toast("已移除线路，重新启动后生效"); load(); }
+        } }, s.lineImported ? "替换…" : "导入链接…"),
+        s.lineImported ? el("button", { class: "danger", style: { marginLeft: "8px" }, onclick: async () => {
+          if (confirm("移除已导入的线路，改用内置公共线路？")) { await call("clearLine"); toast("已移除，重新启动后改用内置公共线路"); load(); }
         } }, "移除") : null),
-        s.lineServer ? "已导入，服务器 " + s.lineServer + "。链接经 Windows 加密保存在本机，只有当前 Windows 账户能读取。" : "尚未导入。线路链接由线路提供者给你，请勿转发。"),
+        s.lineImported ? "使用你导入的线路。链接经 Windows 加密保存在本机，只有当前 Windows 账户能读取。" :
+          "使用内置公共线路（需要 IPv6 网络）。有自己的服务器时可导入 vless:// 链接替换。"),
       s.lineMode ? null : action("WARP 入口：", "重新优选 IP", async () => {
         if (!(await call("warpRescan"))) { toast("WARP 未在此窗口进程中运行，无法优选"); return; }
         toast("正在优选 WARP 入口 IP，约需 5 秒"); setTimeout(load, 6000);
@@ -87,7 +88,7 @@ async function load() {
     section("advanced", "高级",
       row("使用硬件加速", sw("hardwareAcceleration"), "更改后需重新启动 UltraLightBrowser。"),
       row("预先载入链接", sw("preloadLinks", !s.preloadAvailable), "指针停在同一网站的链接上时提前下载该网页，点按后打开更快。对新标签页生效。" +
-        (s.preloadAvailable ? "" : "当前不可用：使用 WARP 或 macOS 用户代理时浏览器内核不进行预先载入。")),
+        (s.preloadAvailable ? "" : "当前不可用：使用 WARP 或 macOS 浏览器UA标识时浏览器内核不进行预先载入。")),
       row("版本：", el("span", { class: "muted", text: "UltraLightBrowser " + s.version })),
       row("项目主页：", el("a", { href: "https://github.com/Freecode100Year/UltraLightBrowser", style: { color: "var(--accent)" }, text: "github.com/Freecode100Year/UltraLightBrowser" }))));
   if (location.hash) document.querySelector(location.hash)?.scrollIntoView();

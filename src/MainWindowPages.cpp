@@ -399,11 +399,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
         } else if (cmd == "setLine") {
             result = WarpManager::SetLine(Arg(args, "link"));
         } else if (cmd == "clearLine") {
-            WarpManager::ClearLine();
-            if (settings.useLine) {
-                settings.useLine = false;
-                Config::Instance().Save();
-            }
+            WarpManager::ClearLine();  // back to the public line
             result = true;
         } else if (cmd == "getSettings") {
             result = {{"startupPage", settings.startupPage}, {"newTabPage", settings.newTabPage}, {"homeUrl", U8(settings.startUrl)},
@@ -414,7 +410,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                       {"readerTheme", settings.readerTheme}, {"readerFont", settings.readerFont}, {"readerFontSize", settings.readerFontSize},
                       {"hardwareAcceleration", settings.hardwareAcceleration}, {"preloadLinks", settings.preloadLinks}, {"preloadAvailable", WebViewManager::PrefetchAllowed()}, {"warpFailClosed", settings.warpFailClosed},
                       {"networkMode", !settings.warpEnabled ? "direct" : settings.useLine ? "line" : "warp"},
-                      {"lineServer", WarpManager::LineServer()}, {"lineMode", WarpManager::Instance().LineMode()},
+                      {"lineImported", WarpManager::LineImported()}, {"lineMode", WarpManager::Instance().LineMode()},
                       {"warpStatus", U8(WarpManager::Instance().StatusText() + (WarpManager::Instance().EndpointText().empty() ? std::wstring() : L"，入口 " + WarpManager::Instance().EndpointText()))}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
         } else if (cmd == "setSetting") {
             const std::string key = Arg(args, "key");
@@ -454,7 +450,6 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
             else if (key == "preloadLinks") settings.preloadLinks = boolean();
             else if (key == "networkMode") {
                 const std::string mode = str({"direct", "warp", "line"});
-                if (mode == "line" && WarpManager::LineServer().empty()) throw std::runtime_error("请先导入线路链接");
                 settings.warpEnabled = mode != "direct";
                 settings.useLine = mode == "line";
             }

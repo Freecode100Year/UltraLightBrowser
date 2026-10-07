@@ -5,9 +5,9 @@
 // the browser environment is created with that proxy, so every request (and its
 // DNS lookup) goes through Cloudflare, IPv6 first.
 //
-// Instead of WARP the same helper can run a private line: an imported vless://
-// REALITY link (kept DPAPI-encrypted in warp\line.dat). A line never falls back to
-// direct connections.
+// Instead of WARP the same helper can run a line: an imported vless:// REALITY
+// link (kept DPAPI-encrypted in warp\line.dat), or else the built-in public line.
+// A line never falls back to direct connections.
 
 #include <windows.h>
 #include <atomic>
@@ -39,10 +39,10 @@ public:
     // Optimise the WARP endpoint now ("重新优选 IP").
     bool Rescan();  // false when this process does not run the helper (or runs a line)
 
-    // The private line. SetLine accepts only vless:// REALITY links.
+    // The line: an imported vless:// REALITY link, or the built-in public line.
     static bool SetLine(const std::string& link);
     static void ClearLine();
-    static std::string LineServer();  // "host:port" of the saved link, empty if none
+    static bool LineImported();       // false: the built-in public line is used
     bool LineMode() const { return m_lineMode; }
 
 private:
@@ -51,7 +51,8 @@ private:
     bool Launch(int port);  // 0 = any free port
     void ReadOutput(HANDLE pipe);
     void BlockIfFailClosed();
-    static std::string LoadLine();
+    static std::string LoadLine();      // the imported link, else the public line
+    static std::string LoadImported();
 
     // m_process, m_job and m_stdin are replaced by the reader thread when the helper
     // restarts and released by Stop() on the UI thread.
