@@ -32,8 +32,9 @@ import (
 // Line is a private VLESS + REALITY server (a "vless://" share link). Every
 // connection, including name resolution, goes through it; there is no direct path.
 type Line struct {
-	inst *core.Instance
-	up   atomic.Bool
+	inst   *core.Instance
+	server string
+	up     atomic.Bool
 }
 
 // parseLink reads vless://uuid@host:port?security=reality&sni=..&pbk=..&sid=..&fp=..&flow=..
@@ -123,7 +124,7 @@ func StartLine(link string) (*Line, string, error) {
 	if err := inst.Start(); err != nil {
 		return nil, "", err
 	}
-	return &Line{inst: inst}, server, nil
+	return &Line{inst: inst, server: server}, server, nil
 }
 
 func (l *Line) Dial(ctx context.Context, host string, port int) (net.Conn, error) {
@@ -155,6 +156,34 @@ func (l *Line) check() error {
 	return nil
 }
 
+// reason says why the line is down: "noipv6" when this computer has no IPv6
+// route to an IPv6 server, "unreachable" when the server does not answer, or
+// "handshake" when it answers but the tunnel does not come up.
+func (l *Line) reason() string {
+	if c, err := net.DialTimeout("tcp", l.server, 8*time.Second); err == nil {
+		c.Close()
+		return "handshake"
+	}
+	host, _, _ := net.SplitHostPort(l.server)
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil && !routesIPv6(ip) {
+		return "noipv6"
+	}
+	return "unreachable"
+}
+
+// routesIPv6 reports whether the system routes to ip from a global IPv6 address.
+// Connecting a UDP socket sends nothing; Teredo (2001::/32) does not count.
+func routesIPv6(ip net.IP) bool {
+	c, err := net.DialUDP("udp6", nil, &net.UDPAddr{IP: ip, Port: 443})
+	if err != nil {
+		return false
+	}
+	defer c.Close()
+	local := c.LocalAddr().(*net.UDPAddr).IP
+	_, teredo, _ := net.ParseCIDR("2001::/32")
+	return local.IsGlobalUnicast() && !teredo.Contains(local)
+}
+
 // Monitor reports STATE up/down; it checks every 20 s while down, 2 min while up.
 func (l *Line) Monitor() {
 	first := true
@@ -167,6 +196,7 @@ func (l *Line) Monitor() {
 			} else {
 				status("STATE down")
 				status("ERROR line: %v", err)
+				status("REASON %s", l.reason())
 			}
 			first = false
 		}

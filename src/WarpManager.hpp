@@ -62,6 +62,9 @@ private:
     HANDLE m_stdin = nullptr;
     std::atomic<bool> m_stopping{false};
     std::atomic<bool> m_scanning{false};
+    // Why the line is down, from the helper's REASON line: 0 unknown, 1 no IPv6,
+    // 2 server unreachable, 3 server answers but the tunnel fails.
+    std::atomic<int> m_reason{0};
     mutable SRWLOCK m_lock = SRWLOCK_INIT;  // m_endpoint
     UINT_PTR m_blockSocket = ~UINT_PTR(0);  // bound, never listening: refuses connections
     std::atomic<int> m_blockPort{0};

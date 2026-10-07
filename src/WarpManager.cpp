@@ -353,9 +353,13 @@ void WarpManager::ReadOutput(HANDLE pipe) {
                 m_port = std::atoi(line.c_str() + 5);
                 if (m_portEvent) SetEvent(m_portEvent);
             } else if (line == "STATE up") {
+                m_reason = 0;
                 m_state = State::Up;
             } else if (line == "STATE down") {
                 m_state = State::Down;
+            } else if (line.rfind("REASON ", 0) == 0) {
+                const std::string why = line.substr(7);
+                m_reason = why == "noipv6" ? 1 : why == "unreachable" ? 2 : why == "handshake" ? 3 : 0;
             } else if (line == "SCAN start") {
                 m_scanning = true;
             } else if (line == "SCAN end" || line == "SCAN none") {
@@ -452,7 +456,15 @@ std::wstring WarpManager::StatusText() const {
     case State::Off: return L"已关闭";
     case State::Starting: return L"正在连接…";
     case State::Up: return L"已连接";
-    case State::Down: return Config::Instance().GetSettings().warpFailClosed || m_lineMode ? L"未连接（已阻止联网）" : L"未连接（直接连接）";
+    case State::Down: {
+        std::wstring text = Config::Instance().GetSettings().warpFailClosed || m_lineMode ? L"未连接（已阻止联网）" : L"未连接（直接连接）";
+        switch (m_reason.load()) {
+        case 1: text += L"：本机没有 IPv6 网络，这条线路需要 IPv6"; break;
+        case 2: text += L"：连不到入口服务器"; break;
+        case 3: text += L"：入口服务器拒绝了连接，链接可能已失效"; break;
+        }
+        return text;
+    }
     case State::Unavailable: return m_blockPort != 0 ? L"不可用（已阻止联网）" : L"不可用（直接连接）";
     case State::Shared: return L"已开启（由另一个浏览器进程运行）";
     }

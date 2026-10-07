@@ -11,6 +11,7 @@
 //	ENDPOINT <ip:port> <rtt ms>   endpoint in use (after optimisation)
 //	SCAN start|end|none
 //	ERROR <text>
+//	REASON noipv6|unreachable|handshake   why a private line is down
 //
 // stdin accepts "RESCAN" (optimise the endpoint now).
 //
