@@ -218,3 +218,10 @@ Start-Sleep 12
 node line2.js
 Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
 Remove-Item $lineFile -Force -ErrorAction SilentlyContinue
+# The helper says why a line is down (runners have no IPv6: "REASON noipv6").
+$env:ULB_LINE = $link
+$h = Start-Process "$env:LOCALAPPDATA\UltraLightBrowser\warp\ulb-warp.exe" -ArgumentList '-listen 127.0.0.1:0' -RedirectStandardOutput line-helper.txt -PassThru -WindowStyle Hidden
+Remove-Item Env:ULB_LINE
+Start-Sleep 30
+Stop-Process $h -Force -ErrorAction SilentlyContinue
+"LINE-REASON " + ((Get-Content line-helper.txt | Select-String '^REASON ') -join ' ')
