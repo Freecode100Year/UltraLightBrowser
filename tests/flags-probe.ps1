@@ -27,11 +27,12 @@ Start-Sleep 2
 const WebSocket = require('ws'); const { PNG } = require('pngjs');
 (async () => {
   let page;
-  for (let i = 0; i < 60 && !page; i++) {
-    try { page = (await (await fetch('http://127.0.0.1:9223/json/list')).json()).find(t => t.type === 'page'); } catch {}
+  let last = '';
+  for (let i = 0; i < 120 && !page; i++) {
+    try { const l = await (await fetch('http://127.0.0.1:9223/json/list')).json(); last = JSON.stringify(l.map(t => t.type + ' ' + t.url)); page = l.find(t => t.type === 'page'); } catch (e) { last = String(e); }
     if (!page) await new Promise(r => setTimeout(r, 500));
   }
-  if (!page) { console.log('NO PAGE'); process.exit(0); }
+  if (!page) { console.log('NO PAGE ' + last); process.exit(0); }
   const bv = await (await fetch('http://127.0.0.1:9223/json/version')).json();
   const conn = async (url) => { const ws = new WebSocket(url); await new Promise(r => ws.on('open', r)); let id = 0; const pend = {};
     ws.on('message', m => { const d = JSON.parse(m); if (d.id && pend[d.id]) { pend[d.id](d); delete pend[d.id]; } });
@@ -61,6 +62,7 @@ const WebSocket = require('ws'); const { PNG } = require('pngjs');
 '@ | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP\probe.js"
 
 $configs = @(
+  @{Name = 'baseline-noauto'; Args = ''; Prefs = $null; NoAuto = $true},
   @{Name = 'baseline'; Args = ''; Prefs = $null},
   @{Name = 'privacy-sandbox-off'; Args = '--disable-features=Translate,OptimizationHints,MediaRouter,BrowsingTopics,InterestGroupStorage,Fledge,AdInterestGroupAPI,PrivateAggregationApi,SharedStorageAPI,FencedFrames,ConversionMeasurement,AttributionReportingCrossAppWeb,AutofillServerCommunication'; Prefs = $null},
   @{Name = 'force-dark'; Args = '--enable-features=PageDiscarding,Freezer,WebContentsForceDark'; Prefs = $null},
@@ -79,8 +81,11 @@ foreach ($c in $configs) {
     New-Item -ItemType Directory -Force "$root\UserData\EBWebView\Default" | Out-Null
     $c.Prefs | Set-Content -Encoding utf8NoBOM "$root\UserData\EBWebView\Default\Preferences"
   }
-  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9223 --enable-automation $($c.Args)".Trim()
+  $auto = if ($c.NoAuto) { '' } else { '--enable-automation' }
+  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9223 $auto $($c.Args)".Trim()
   $p = Start-Process $Exe -PassThru
+  Start-Sleep 3
+  "ALIVE " + (-not $p.HasExited) + " webview2=" + @(Get-Process msedgewebview2 -ErrorAction SilentlyContinue).Count
   node "$env:RUNNER_TEMP\probe.js" 2>&1
   if (Test-Path "$root\UserData\EBWebView\Default\Preferences") {
     $pr = Get-Content -Raw "$root\UserData\EBWebView\Default\Preferences" | ConvertFrom-Json
