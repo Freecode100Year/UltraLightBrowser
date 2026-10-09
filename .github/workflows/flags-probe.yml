@@ -1,5 +1,7 @@
 name: flags-probe
 on:
+  push:
+    branches: [feat/chromium-flags]
   workflow_dispatch:
     inputs:
       release:
