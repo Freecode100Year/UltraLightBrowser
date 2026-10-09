@@ -85,7 +85,10 @@ foreach ($c in $configs) {
   $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9223 $auto $($c.Args)".Trim()
   $p = Start-Process $Exe -PassThru
   Start-Sleep 3
+  Start-Sleep 5
   "ALIVE " + (-not $p.HasExited) + " webview2=" + @(Get-Process msedgewebview2 -ErrorAction SilentlyContinue).Count
+  Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -notmatch '--type=' } | ForEach-Object { "BROWSERPROC " + ($_.CommandLine -replace '--user-data-dir="[^"]*"', '') }
+  "LISTEN " + ((Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in 9222, 9223 } | ForEach-Object { "$($_.LocalAddress):$($_.LocalPort)" }) -join ' ')
   node "$env:RUNNER_TEMP\probe.js" 2>&1
   if (Test-Path "$root\UserData\EBWebView\Default\Preferences") {
     $pr = Get-Content -Raw "$root\UserData\EBWebView\Default\Preferences" | ConvertFrom-Json
