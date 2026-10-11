@@ -8,6 +8,10 @@ inline constexpr const wchar_t* kVideoDiagnosticsScript = LR"video((() => {
         const status = api.getStatus();
         lines.push('音频输出：' + (status.output === 'native' ? '原声 / 系统处理' : '浏览器增强') +
             '，处理上下文：' + (status.audioContext === 'not-created' ? '未创建' : status.audioContext));
+        if (status.output !== 'native' && status.limiter) {
+            lines.push('限幅：' + ({'true-peak': '真峰值限幅 -1 dBTP', loading: '加载中',
+                unavailable: '本页不允许加载，使用压缩保护', 'not-loaded': '未启动'}[status.limiter] || status.limiter));
+        }
     }
     // Non-enumerable so the sample store does not show up in page global scans.
     if (!window.__UltraLightVideoSamples) {

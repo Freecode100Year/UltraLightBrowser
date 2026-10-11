@@ -1571,8 +1571,205 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
             } catch (e) {
                 try { audioCtx = new AudioContextClass(); } catch (e2) { return null; }
             }
+            loadLimiter(audioCtx);
         }
         return audioCtx;
+    }
+)raw";
+
+    jsCode += R"raw(
+    // 2b. True-peak limiter, run in an AudioWorklet. Its source is read here,
+    // before any page script runs, and loaded as a blob module when the
+    // AudioContext is created. Pages whose CSP refuses blob: modules keep the
+    // compressor fallback in build(). Costs about 4 ms of delay.
+    function ultraLightTruePeakLimiter() {
+        // True-peak limiter. Points between samples are reconstructed by 4x
+        // polyphase oversampling (Kaiser-windowed sinc), so peaks a DAC would
+        // produce between two samples count too. The gain each sample needs is
+        // held over the lookahead window, released exponentially, then smoothed
+        // by two moving averages (a triangle) that together span the window, so
+        // the gain is already down when the peak plays and changes gently enough
+        // not to create new peaks. All channels share one gain, so the stereo
+        // image stays put. Audio is delayed by TAPS / 2 + lookahead - 1 samples.
+        const PHASES = 4, TAPS = 64, HALF = TAPS / 2;
+        function besselI0(x) {
+            let sum = 1, term = 1;
+            for (let k = 1; k < 32; ++k) { term *= (x / (2 * k)) * (x / (2 * k)); sum += term; }
+            return sum;
+        }
+        // COEF[p][j] reconstructs the point p/PHASES after sample n from samples
+        // n - HALF + 1 .. n + HALF (j = 0 is the oldest).
+        const COEF = [];
+        let coefAbs = 1;
+        for (let p = 1; p < PHASES; ++p) {
+            const row = new Float64Array(TAPS);
+            let sum = 0, abs = 0;
+            for (let j = 0; j < TAPS; ++j) {
+                const t = (j - (HALF - 1)) - p / PHASES;
+                const w = t / HALF;
+                const win = Math.abs(w) >= 1 ? 0 : besselI0(9 * Math.sqrt(1 - w * w)) / besselI0(9);
+                row[j] = Math.sin(Math.PI * t) / (Math.PI * t) * win;
+                sum += row[j];
+            }
+            for (let j = 0; j < TAPS; ++j) { row[j] /= sum; abs += Math.abs(row[j]); }
+            if (abs > coefAbs) coefAbs = abs;
+            COEF.push(row);
+        }
+        // While every sample in the filter window is below ceiling / coefAbs, no
+        // reconstructed point can reach the ceiling, and the filter is skipped.
+
+        class TruePeakLimiter extends AudioWorkletProcessor {
+            constructor(options) {
+                super();
+                const o = (options && options.processorOptions) || {};
+                this.ceiling = Math.pow(10, (typeof o.ceilingDb === "number" ? o.ceilingDb : -1) / 20);
+                this.quiet = this.ceiling / coefAbs;
+                const L = Math.max(2, Math.round(sampleRate * (o.lookaheadMs || 3) / 1000));
+                this.L = L;
+                this.A = Math.ceil((L + 1) / 2);          // A + B - 1 = L
+                this.B = L + 1 - this.A;
+                this.releaseCoef = Math.exp(-1 / (sampleRate * (o.releaseMs || 80) / 1000));
+                this.latency = HALF + L - 1;
+                let size = 1;
+                while (size < this.latency + TAPS + 4) size <<= 1;
+                this.size = size; this.mask = size - 1;
+                this.hist = [];                            // input samples, per channel
+                this.seg = new Float64Array(size);         // peak from n to n + 1
+                this.needs = new Float64Array(size).fill(1);
+                this.dq = new Float64Array(size);          // sliding-minimum deque of needs
+                this.dqHead = 0; this.dqTail = 0;
+                this.loudAt = -1e9;                        // last sample loud enough to filter
+                this.boxA = new Float64Array(size).fill(1); this.sumA = this.A;
+                this.boxB = new Float64Array(size).fill(1); this.sumB = this.B;
+                this.count = 0;
+                this.rel = 1;
+                this.pos = 0;
+                this.minGain = 1; this.clipped = 0;
+                this.port.onmessage = (e) => {
+                    if (e.data === "stats") {
+                        this.port.postMessage({ minGain: this.minGain, latency: this.latency, clipped: this.clipped });
+                        this.minGain = 1; this.clipped = 0;
+                    }
+                };
+            }
+            process(inputs, outputs) {
+                const input = inputs[0] || [], output = outputs[0];
+                const channels = output.length, frames = output[0].length;
+                while (this.hist.length < channels) this.hist.push(new Float32Array(this.size));
+                const m = this.mask, L = this.L, A = this.A, B = this.B, hist = this.hist;
+                for (let i = 0; i < frames; ++i) {
+                    const n = this.pos;
+                    let loud = false;
+                    for (let c = 0; c < channels; ++c) {
+                        const src = input[c] || input[0];
+                        const v = src ? src[i] : 0;
+                        hist[c][n & m] = v;
+                        if (v > this.quiet || v < -this.quiet) loud = true;
+                    }
+                    if (loud) this.loudAt = n;
+                    // Sample q now has HALF samples after it: reconstruct q .. q+1.
+                    const q = n - HALF;
+                    let peak = 0, seg = 0;
+                    for (let c = 0; c < channels; ++c) {
+                        const a = Math.abs(hist[c][q & m]);
+                        if (a > peak) peak = a;
+                    }
+                    if (n - this.loudAt < TAPS) {
+                        const base = q - (HALF - 1);
+                        for (let c = 0; c < channels; ++c) {
+                            const h = hist[c];
+                            for (let p = 0; p < COEF.length; ++p) {
+                                const row = COEF[p];
+                                let s = 0;
+                                for (let j = 0; j < TAPS; ++j) s += row[j] * h[(base + j) & m];
+                                if (s < 0) s = -s;
+                                if (s > seg) seg = s;
+                            }
+                        }
+                    }
+                    this.seg[q & m] = seg;
+                    if (seg > peak) peak = seg;
+                    const before = this.seg[(q - 1) & m];
+                    if (before > peak) peak = before;
+                    const need = peak > this.ceiling ? this.ceiling / peak : 1;
+                    this.needs[q & m] = need;
+                    if (need < this.minGain) this.minGain = need;
+                    // Smallest need among samples q - L + 1 .. q.
+                    while (this.dqTail > this.dqHead && this.needs[this.dq[(this.dqTail - 1) & m] & m] >= need) --this.dqTail;
+                    this.dq[this.dqTail++ & m] = q;
+                    while (this.dq[this.dqHead & m] <= q - L) ++this.dqHead;
+                    const held = this.needs[this.dq[this.dqHead & m] & m];
+                    // Drops at once, recovers slowly, never above what is held.
+                    this.rel = held <= this.rel ? held : held + (this.rel - held) * this.releaseCoef;
+                    // Two moving averages, A then B samples long. The output gain
+                    // mixes released gains from q - L + 1 .. q only, each at or
+                    // below the need of sample q - L + 1, which plays now.
+                    this.sumA += this.rel - this.boxA[(q - A) & m];
+                    this.boxA[q & m] = this.rel;
+                    const ga = this.sumA / A;
+                    this.sumB += ga - this.boxB[(q - B) & m];
+                    this.boxB[q & m] = ga;
+                    if (++this.count >= 8192) {        // keep rounding error from piling up
+                        this.count = 0;
+                        let s = 0;
+                        for (let k = 0; k < A; ++k) s += this.boxA[(q - k) & m];
+                        this.sumA = s; s = 0;
+                        for (let k = 0; k < B; ++k) s += this.boxB[(q - k) & m];
+                        this.sumB = s;
+                    }
+                    const g = Math.min(1, this.sumB / B);
+                    const out = (q - L + 1) & m;
+                    for (let c = 0; c < channels; ++c) {
+                        let y = hist[c][out] * g;
+                        // Only float rounding can get here.
+                        if (y > this.ceiling) { y = this.ceiling; ++this.clipped; }
+                        else if (y < -this.ceiling) { y = -this.ceiling; ++this.clipped; }
+                        output[c][i] = y;
+                    }
+                    this.pos = n + 1;
+                }
+                return true;
+            }
+        }
+        registerProcessor("ultralight-true-peak-limiter", TruePeakLimiter);
+    }
+    const LIMITER_SOURCE = "(" + ultraLightTruePeakLimiter.toString() + ")();";
+    const LIMITER_NAME = "ultralight-true-peak-limiter";
+    const LIMITER_OPTIONS = { ceilingDb: -1, lookaheadMs: 3, releaseMs: 80 };
+    const BlobClass = window.Blob;
+    const createObjectURL = URL.createObjectURL.bind(URL);
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    let limiterState = "not-loaded";   // loading | ready | unavailable
+
+    function loadLimiter(ctx) {
+        if (limiterState !== "not-loaded") return;
+        if (!ctx.audioWorklet || typeof window.AudioWorkletNode !== "function" || !BlobClass) {
+            limiterState = "unavailable";
+            return;
+        }
+        let url;
+        try {
+            url = createObjectURL(new BlobClass([LIMITER_SOURCE], { type: "text/javascript" }));
+        } catch (e) {
+            limiterState = "unavailable";
+            return;
+        }
+        limiterState = "loading";
+        ctx.audioWorklet.addModule(url).then(() => {
+            limiterState = "ready";
+            refreshControllers();
+        }, () => {
+            limiterState = "unavailable";
+        }).then(() => revokeObjectURL(url));
+    }
+
+    function refreshControllers() {
+        try {
+            document.querySelectorAll("video, audio").forEach(el => {
+                const c = attachedElements.get(el);
+                if (c) c.update(cfg);
+            });
+        } catch (e) {}
     }
 )raw";
 
@@ -1860,9 +2057,35 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
                 night.release.value = 0.24;
                 finalMix.connect(night); finalMix = night;
             }
-            const compressor = make("createDynamicsCompressor");
-            // Soft protection, not a certified true-peak/brickwall limiter.
             const dialogue = cfg.enabled && cfg.mode === "dialogue";
+            if (limiterState === "ready") {
+                let limiter = null;
+                try {
+                    limiter = new window.AudioWorkletNode(ctx, LIMITER_NAME, {
+                        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+                        channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers",
+                        processorOptions: LIMITER_OPTIONS });
+                } catch (e) {}
+                if (limiter) {
+                    graphNodes.push(limiter);
+                    let feed = finalMix;
+                    if (dialogue) {
+                        // Dialogue keeps its gentle leveller before the limiter.
+                        const leveller = make("createDynamicsCompressor");
+                        leveller.threshold.value = -18; leveller.knee.value = 6;
+                        leveller.ratio.value = 3; leveller.attack.value = 0.003;
+                        leveller.release.value = 0.10;
+                        feed.connect(leveller); feed = leveller;
+                    }
+                    // Every sample and every point between samples stays at or
+                    // below -1 dBTP, whatever the volume boost.
+                    feed.connect(limiter); limiter.connect(output);
+                    return;
+                }
+            }
+            // Fallback when the worklet cannot load: soft protection only, not
+            // a true-peak limiter.
+            const compressor = make("createDynamicsCompressor");
             compressor.threshold.value = dialogue ? -18 : -3;
             compressor.knee.value = dialogue ? 6 : 3;
             compressor.ratio.value = dialogue ? 3 : 12; compressor.attack.value = 0.003;
@@ -1870,7 +2093,7 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
             finalMix.connect(compressor); compressor.connect(output);
         }
         function key() {
-            return JSON.stringify([needsProcessing(), cfg.enabled, cfg.mode, cfg.device, cfg.monoDownmix, cfg.deEsser, cfg.nightMode]);
+            return JSON.stringify([needsProcessing(), cfg.enabled, cfg.mode, cfg.device, cfg.monoDownmix, cfg.deEsser, cfg.nightMode, limiterState === "ready"]);
         }
         const controller = {
             update() {
@@ -1997,7 +2220,8 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
                     droppedFrames: quality ? quality.droppedVideoFrames : null });
             });
             return { output: cfg.nativeOutput ? "native" : "enhanced",
-                preset: cfg.mode, audioContext: audioCtx ? audioCtx.state : "not-created", media };
+                preset: cfg.mode, audioContext: audioCtx ? audioCtx.state : "not-created",
+                limiter: limiterState === "ready" ? "true-peak" : limiterState, media };
         },
         updateConfig(newCfg) {
             cfg = Object.assign(cfg, newCfg);

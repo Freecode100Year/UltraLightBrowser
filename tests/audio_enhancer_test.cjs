@@ -11,7 +11,7 @@ function script(nativeOutput = false) {
   }
   return js;
 }
-function run(nativeOutput = false) {
+function run(nativeOutput = false, worklet = 'ok') {
   const nodes = [], contexts = [], timers = new Map(); let nextTimer = 0;
   const param = () => ({ value:1, setValueAtTime(v) { this.value=v; }, setTargetAtTime(v) { this.value=v; }, cancelScheduledValues() {}, linearRampToValueAtTime(v) {this.value=v;} });
   function node(type) {
@@ -28,13 +28,16 @@ function run(nativeOutput = false) {
     createBuffer(ch,len,rate){return {sampleRate:rate,getChannelData(){return new Float32Array(len);}};}
     resume(){this.state='running';return Promise.resolve();} suspend(){this.state='suspended';return Promise.resolve();}
   }
+  const modules=[];
+  if (worklet!=='none') Context.prototype.audioWorklet={addModule(url){modules.push(url);return worklet==='ok'?Promise.resolve():Promise.reject(new Error('csp'));}};
+  class AudioWorkletNode { constructor(ctx,name,options){const n=node('worklet');n.name=name;n.options=options;return n;} }
   const media={currentSrc:'https://example.com/video',src:'',paused:false,ended:false,readyState:4,addEventListener(){},querySelectorAll(){return [];}};
-  const window={AudioContext:Context,location:{href:'https://example.com/',origin:'https://example.com'},addEventListener(){}};
+  const window={AudioContext:Context,AudioWorkletNode:worklet==='none'?undefined:AudioWorkletNode,Blob,location:{href:'https://example.com/',origin:'https://example.com'},addEventListener(){}};
   const document={documentElement:{},querySelectorAll(){return [media];},addEventListener(){}};
-  const sandbox={window,document,URL,Math,WeakMap,WeakSet,Set,Number,JSON,console,MutationObserver:class {observe(){}},setTimeout(fn){const id=++nextTimer;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);}};
+  const sandbox={window,document,URL,Blob,Math,WeakMap,WeakSet,Set,Number,JSON,console,MutationObserver:class {observe(){}},setTimeout(fn){const id=++nextTimer;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);}};
   vm.runInNewContext(script(nativeOutput),sandbox);
   const flush=()=>{for(const [id,fn] of [...timers]){timers.delete(id);fn();}};
-  return {nodes,contexts,window,media,flush};
+  return {nodes,contexts,window,media,flush,modules};
 }
 let failures=0;
 function test(name,fn){try{fn();console.log('PASS:',name);}catch(e){++failures;console.error('FAIL:',name,e.message);}}
@@ -83,4 +86,38 @@ test('night mode creates separate gentle compression',()=>{
   const e=run();e.window.__UltraLightSurround.updateConfig({nightMode:true});e.flush();
   assert(e.nodes.some(n=>n.type==='compressor'&&n.ratio.value===3&&n.release.value===0.24));
 });
+const reach=(e)=>{const s=e.nodes.filter(n=>n.type==='source').pop();const v=new Set();const walk=n=>{if(v.has(n))return;v.add(n);n.outputs.forEach(o=>walk(o.to));};walk(s);return [...v];};
+const settle=()=>new Promise(r=>setImmediate(r));
+async function asyncTest(name,fn){try{await fn();console.log('PASS:',name);}catch(e){++failures;console.error('FAIL:',name,e.message);}}
+(async()=>{
+await asyncTest('true-peak limiter replaces the protection compressor once the worklet loads',async()=>{
+  const e=run(); await settle(); e.flush();
+  assert.equal(e.modules.length,1); assert.match(e.modules[0],/^blob:/);
+  const v=reach(e); const lim=v.find(n=>n.type==='worklet');
+  assert(lim,'limiter in the chain'); assert.equal(lim.name,'ultralight-true-peak-limiter');
+  assert.equal(lim.options.processorOptions.ceilingDb,-1);
+  assert(lim.outputs.some(o=>o.to.type==='gain'),'limiter feeds the output gain');
+  assert(!v.some(n=>n.type==='compressor'&&n.ratio.value===12),'no fallback compressor');
+  assert.equal(e.window.__UltraLightSurround.getStatus().limiter,'true-peak');
+});
+await asyncTest('dialogue keeps its leveller ahead of the limiter',async()=>{
+  const e=run(); await settle(); e.window.__UltraLightSurround.updateConfig({mode:'dialogue'}); e.flush();
+  const v=reach(e); const lev=v.find(n=>n.type==='compressor'&&n.threshold.value===-18&&n.ratio.value===3);
+  assert(lev); assert(lev.outputs.some(o=>o.to.type==='worklet'));
+});
+await asyncTest('a page that refuses the worklet keeps the compressor fallback',async()=>{
+  const e=run(false,'blocked'); await settle(); e.flush();
+  const v=reach(e); assert(!v.some(n=>n.type==='worklet'));
+  assert(v.some(n=>n.type==='compressor'&&n.ratio.value===12&&n.threshold.value===-3));
+  assert.equal(e.window.__UltraLightSurround.getStatus().limiter,'unavailable');
+});
+await asyncTest('no AudioWorklet support keeps the compressor fallback',async()=>{
+  const e=run(false,'none'); await settle(); e.flush();
+  assert(!reach(e).some(n=>n.type==='worklet')); assert.equal(e.modules.length,0);
+});
+await asyncTest('limiter is not used when no processing is needed',async()=>{
+  const e=run(); await settle(); e.window.__UltraLightSurround.updateConfig({enabled:false,volumeBoost:1,vocalBoost:false,monoDownmix:false}); e.flush();
+  assert(!reach(e).some(n=>n.type==='worklet'));
+});
 if(failures)process.exitCode=1;
+})();

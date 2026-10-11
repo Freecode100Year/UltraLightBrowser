@@ -48,6 +48,7 @@ jobs:
           node tests/video_diagnostics_test.cjs
           node tests/audio_enhancer_test.cjs
           node tests/verify_audio_response.mjs
+          node tests/true_peak_limiter_test.cjs
           python3 tests/audio_registration_test.py
 
   windows-build:
