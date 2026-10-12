@@ -17,6 +17,7 @@ struct AppSettings {
     std::string userAgentProfile = "default"; // default / macos-edge
     std::string macPlatformVersion = "26.2.0"; // Sec-CH-UA-Platform-Version in macOS mode
     bool hardwareAcceleration = true;
+    bool videoEnhancement = true;               // GPU video super resolution and RTX Video HDR
     bool enableAdBlock = true;
     bool systemAudioPassthrough = true;       // Keep original output for Windows spatial audio.
     bool enableSurroundSound = true;

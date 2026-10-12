@@ -408,7 +408,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                       {"startBackground", settings.startBackground}, {"saveHistory", settings.saveHistory},
                       {"enableAdBlock", NativeRequestFilter::Instance().IsEnabled()},
                       {"readerTheme", settings.readerTheme}, {"readerFont", settings.readerFont}, {"readerFontSize", settings.readerFontSize},
-                      {"hardwareAcceleration", settings.hardwareAcceleration}, {"preloadLinks", settings.preloadLinks}, {"preloadAvailable", WebViewManager::PrefetchAllowed()}, {"warpFailClosed", settings.warpFailClosed},
+                      {"hardwareAcceleration", settings.hardwareAcceleration}, {"videoEnhancement", settings.videoEnhancement}, {"preloadLinks", settings.preloadLinks}, {"preloadAvailable", WebViewManager::PrefetchAllowed()}, {"warpFailClosed", settings.warpFailClosed},
                       {"networkMode", !settings.warpEnabled ? "direct" : settings.useLine ? "line" : "warp"},
                       {"lineImported", WarpManager::LineImported()}, {"lineMode", WarpManager::Instance().LineMode()},
                       {"warpStatus", U8(WarpManager::Instance().StatusText() + (WarpManager::Instance().EndpointText().empty() ? std::wstring() : L"，入口 " + WarpManager::Instance().EndpointText()))}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
@@ -447,6 +447,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                 if (!value.is_number_integer()) throw std::runtime_error("invalid value");
                 settings.readerFontSize = std::clamp(value.get<int>(), 12, 40);
             } else if (key == "hardwareAcceleration") settings.hardwareAcceleration = boolean();
+            else if (key == "videoEnhancement") settings.videoEnhancement = boolean();
             else if (key == "preloadLinks") settings.preloadLinks = boolean();
             else if (key == "networkMode") {
                 const std::string mode = str({"direct", "warp", "line"});

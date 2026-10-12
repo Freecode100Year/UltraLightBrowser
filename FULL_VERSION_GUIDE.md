@@ -88,6 +88,18 @@ DSP 模式按需创建节点：音箱不创建 HRTF，非影院模式不创建�
 媒体是否被增强、音频上下文状态，以及播放器可提供的视频尺寸、总帧数和丢帧数。
 这是当前页面的快照，不是 GPU 利用率、解码器名称、Dolby 检测或端到端延迟测量。
 
+## 显卡视频增强（v2.4.0）
+
+设置 →「高级」→「显卡视频增强」，默认开启，更改后需重新启动。
+
+- NVIDIA RTX：Chromium 的视频叠加层会向驱动请求 RTX Video Super Resolution（超分）和 RTX Video HDR（SDR 转 HDR）。
+  需要 RTX 显卡，并在 NVIDIA App →「系统 → 视频」开启；HDR 还需 HDR 显示器和 Windows HDR。
+- Intel：打开 Chromium 默认关闭的 `IntelVpSuperResolution`。
+- 关闭开关时传入 Chromium 的驱动变通开关 `--disable_vp_super_resolution --disable_vp_auto_hdr`，显卡不做这两项处理。
+- Chromium 在用电池时会自动停用超分和 RTX HDR；画面没有被放大时超分也不起作用。「播放诊断」会显示视频的放大倍数。
+- 是否生效只能从显卡驱动看：打开 NVIDIA App 的「状态指示器」，生效时视频左上角显示图标。NVIDIA 官方只验证了 Chrome 和 Edge，WebView2 需实测。
+- DRM 视频可能不支持。
+
 ## 渲染、全屏与后台
 
 - 全屏使用完整显示器区域，优先于最大化工作区；全屏关闭 DWM 圆角、边框及扩展边缘。

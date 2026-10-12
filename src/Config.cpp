@@ -74,6 +74,9 @@ void Config::Load() {
                 if (valid) m_settings.macPlatformVersion = v;
             }
             if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
+            if (s.contains("videoEnhancement") && s["videoEnhancement"].is_boolean()) {
+                m_settings.videoEnhancement = s["videoEnhancement"].get<bool>();
+            }
             if (s.contains("enableAdBlock")) m_settings.enableAdBlock = s["enableAdBlock"];
             if (s.contains("systemAudioPassthrough") && s["systemAudioPassthrough"].is_boolean()) {
                 m_settings.systemAudioPassthrough = s["systemAudioPassthrough"].get<bool>();
@@ -163,6 +166,7 @@ void Config::Save() {
             {"userAgentProfile", m_settings.userAgentProfile},
             {"macPlatformVersion", m_settings.macPlatformVersion},
             {"hardwareAcceleration", m_settings.hardwareAcceleration},
+            {"videoEnhancement", m_settings.videoEnhancement},
             {"enableAdBlock", m_settings.enableAdBlock},
             {"systemAudioPassthrough", m_settings.systemAudioPassthrough},
             {"enableSurroundSound", m_settings.enableSurroundSound},

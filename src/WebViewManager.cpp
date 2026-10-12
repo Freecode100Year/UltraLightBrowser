@@ -198,12 +198,23 @@ void WebViewManager::CreateEnvironment(HWND errorOwner, EnvironmentCallback done
 
     auto options = Make<CoreWebView2EnvironmentOptions>();
 
+    const auto& startSettings = Config::Instance().GetSettings();
+    // GPU video enhancement. Chromium's video overlay asks the driver for
+    // super resolution and, on NVIDIA, SDR-to-HDR (RTX Video HDR) on its own
+    // when the driver offers them, except on battery power. Intel's super
+    // resolution sits behind a feature that is off by default, so it is
+    // switched on here. Turning the setting off uses Chromium's driver
+    // workaround switches to keep the video processor from doing either.
+    const bool videoEnhancement = startSettings.hardwareAcceleration && startSettings.videoEnhancement;
+    std::wstring features = L"PageDiscarding,Freezer";
+    if (videoEnhancement) features += L",IntelVpSuperResolution";
+
     // Inject pure hardware GPU pipeline, aggressive discard, and low-latency network flags
     std::wstring performanceArgs =
         L"--enable-gpu-rasterization "
         L"--enable-zero-copy "
         L"--enable-accelerated-video-decode "
-        L"--enable-features=PageDiscarding,Freezer "
+        L"--enable-features=" + features + L" "
         L"--enable-hardware-overlays=\"single-fullscreen,single-on-top,underlay\" "
         L"--enable-native-gpu-memory-buffers "
         L"--disk-cache-size=209715200 "
@@ -217,8 +228,10 @@ void WebViewManager::CreateEnvironment(HWND errorOwner, EnvironmentCallback done
     // NOTE: --host-resolver-rules was completely removed to prevent command-line parsing conflicts
     // and argument mismatch 0x8007139F errors with running processes. NativeRequestFilter handles all blocking.
 
-    if (!Config::Instance().GetSettings().hardwareAcceleration) {
+    if (!startSettings.hardwareAcceleration) {
         performanceArgs += L" --disable-gpu";
+    } else if (!videoEnhancement) {
+        performanceArgs += L" --disable_vp_super_resolution --disable_vp_auto_hdr";
     }
     performanceArgs += WarpManager::Instance().BrowserArguments();
     options->put_AdditionalBrowserArguments(performanceArgs.c_str());

@@ -87,6 +87,9 @@ async function load() {
       row("文本大小：", select("readerFontSize", [15, 17, 19, 21, 24, 28].map((n) => [n, n + " 像素"])))),
     section("advanced", "高级",
       row("使用硬件加速", sw("hardwareAcceleration"), "更改后需重新启动 UltraLightBrowser。"),
+      row("显卡视频增强", sw("videoEnhancement", !s.hardwareAcceleration),
+        "让显卡在播放视频时做超分辨率（NVIDIA RTX Video Super Resolution、Intel 显卡超分），NVIDIA 显卡另可把 SDR 视频转成 HDR（RTX Video HDR）。" +
+        "还需在 NVIDIA App →「系统 → 视频」里开启对应功能；HDR 还需 HDR 显示器并打开 Windows HDR。只在画面被放大且电脑接着电源时起作用，DRM 视频可能不支持。更改后需重新启动 UltraLightBrowser。"),
       row("预先载入链接", sw("preloadLinks", !s.preloadAvailable), "指针停在同一网站的链接上时提前下载该网页，点按后打开更快。对新标签页生效。" +
         (s.preloadAvailable ? "" : "当前不可用：使用 WARP 或 macOS 浏览器UA标识时浏览器内核不进行预先载入。")),
       row("版本：", el("span", { class: "muted", text: "UltraLightBrowser " + s.version })),
