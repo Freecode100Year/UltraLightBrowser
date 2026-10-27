@@ -133,18 +133,31 @@ std::size_t FindCI(const std::string& hay, const std::string& needle, std::size_
 }
 
 std::string AttrValue(const std::string& tag, const std::string& name) {
-    auto pos = FindCI(tag, name + "=", 0);
-    if (pos == std::string::npos) return {};
-    pos += name.size() + 1;
-    if (pos >= tag.size()) return {};
-    const char quote = tag[pos];
-    if (quote == '"' || quote == '\'') {
-        const auto end = tag.find(quote, pos + 1);
-        if (end == std::string::npos) return {};
-        return tag.substr(pos + 1, end - pos - 1);
+    constexpr const char* whitespace = " \t\r\n\f";
+    // Walk complete attributes, skipping quoted values so DATA-HREF and text
+    // such as TITLE="href=..." cannot be mistaken for the actual link.
+    auto pos = tag.find_first_of(whitespace);
+    while (pos != std::string::npos && pos < tag.size()) {
+        pos = tag.find_first_not_of(whitespace, pos);
+        if (pos == std::string::npos) break;
+        const auto start = pos;
+        pos = tag.find_first_of("= \t\r\n\f", pos);
+        if (pos == std::string::npos) break;
+        const auto attribute = Lower(tag.substr(start, pos - start));
+        pos = tag.find_first_not_of(whitespace, pos);
+        if (pos == std::string::npos) break;
+        if (tag[pos] != '=') continue; // Boolean attribute; parse the next one.
+        pos = tag.find_first_not_of(whitespace, pos + 1);
+        if (pos == std::string::npos) break;
+        const char quote = tag[pos];
+        const bool quoted = quote == '"' || quote == '\'';
+        const auto valueStart = pos + (quoted ? 1 : 0);
+        const auto end = quoted ? tag.find(quote, valueStart) : tag.find_first_of(whitespace, valueStart);
+        if (quoted && end == std::string::npos) break;
+        if (attribute == name) return tag.substr(valueStart, end == std::string::npos ? end : end - valueStart);
+        pos = end == std::string::npos ? end : end + (quoted ? 1 : 0);
     }
-    const auto end = tag.find_first_of(" >", pos);
-    return tag.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+    return {};
 }
 
 } // namespace
@@ -394,8 +407,25 @@ int Library::ImportNetscapeHtml(const std::string& html, std::int64_t now) {
     while (pos < html.size()) {
         const auto lt = html.find('<', pos);
         if (lt == std::string::npos) break;
-        const auto gt = html.find('>', lt);
-        if (gt == std::string::npos) break;
+        if (html.compare(lt, 4, "<!--") == 0) {
+            const auto end = html.find("-->", lt + 4);
+            if (end == std::string::npos) break;
+            pos = end + 3;
+            continue;
+        }
+        auto gt = lt + 1;
+        char quote = 0;
+        for (; gt < html.size(); ++gt) {
+            const char c = html[gt];
+            if (quote) {
+                if (c == quote) quote = 0;
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+            } else if (c == '>') {
+                break;
+            }
+        }
+        if (gt == html.size()) break;
         std::string tag = html.substr(lt + 1, gt - lt - 1);
         std::string name = Lower(tag.substr(0, tag.find_first_of(" \t\r\n")));
         pos = gt + 1;
@@ -403,6 +433,7 @@ int Library::ImportNetscapeHtml(const std::string& html, std::int64_t now) {
             const auto close = FindCI(html, "</h3>", pos);
             if (close == std::string::npos) break;
             pendingFolder = Clip(Trim(HtmlUnescape(html.substr(pos, close - pos))), 128);
+            if (Lower(AttrValue(tag, "personal_toolbar_folder")) == "true") pendingFolder = kFavoritesFolder;
             pos = close + 5;
         } else if (name == "dl") {
             folderStack.push_back(pendingFolder);
@@ -415,7 +446,7 @@ int Library::ImportNetscapeHtml(const std::string& html, std::int64_t now) {
             const std::string url = HtmlUnescape(AttrValue(tag, "href"));
             const std::string title = Trim(HtmlUnescape(html.substr(pos, close - pos)));
             pos = close + 4;
-            if (!IsWebUrl(url)) continue;
+            if (!IsWebUrl(url) || url.size() > kMaxUrl) continue;
             std::string folder = kBookmarksFolder;
             for (auto it = folderStack.rbegin(); it != folderStack.rend(); ++it) {
                 if (!it->empty()) { folder = *it; break; }
@@ -427,8 +458,7 @@ int Library::ImportNetscapeHtml(const std::string& html, std::int64_t now) {
             }
             AddFolder(folder);
             if (!existing.insert(folder + "\n" + url).second) continue;
-            AddBookmark(title, url, folder, now);
-            ++imported;
+            if (!AddBookmark(title, url, folder, now).empty()) ++imported;
         }
     }
     return imported;

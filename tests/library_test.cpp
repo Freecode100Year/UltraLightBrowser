@@ -7,10 +7,41 @@
 
 using namespace UltraLight;
 
+static void TestBookmarkImport(const std::filesystem::path& dir) {
+    struct Case { const char* name; std::string html; int count; std::string url; std::string folder; };
+    const Case cases[] = {
+        {"attribute whitespace", R"(<A HREF = 'https://space.example/'>Space</A>)", 1, "https://space.example/", kBookmarksFolder},
+        {"attribute boundary", R"(<A DATA-HREF="https://wrong.example/" HREF="https://right.example/">Right</A>)", 1, "https://right.example/", kBookmarksFolder},
+        {"quoted attribute content", R"(<A TITLE="href=https://wrong.example/" HREF="https://right.example/">Right</A>)", 1, "https://right.example/", kBookmarksFolder},
+        {"quoted tag delimiter", R"(<A TITLE="a > b" HREF="https://right.example/">Right</A>)", 1, "https://right.example/", kBookmarksFolder},
+        {"comment text is not markup", R"(<!-- User's <A HREF="https://wrong.example/">old link</A> --><A HREF="https://right.example/">Right</A>)", 1, "https://right.example/", kBookmarksFolder},
+        {"tab-delimited unquoted URL", "<A HREF=https://tab.example/\tADD_DATE=1>Tab</A>", 1, "https://tab.example/", kBookmarksFolder},
+        {"boolean and mixed-case attributes", R"(<A DISABLED HrEf="https://case.example/">Case</A>)", 1, "https://case.example/", kBookmarksFolder},
+        {"data attribute alone is not a link", R"(<A DATA-HREF="https://wrong.example/">Not a link</A>)", 0, "", kBookmarksFolder},
+        {"unterminated attribute rejected", R"(<A HREF="https://bad.example/>Bad</A>)", 0, "", kBookmarksFolder},
+        {"localized toolbar", R"(<H3 PERSONAL_TOOLBAR_FOLDER="true">Meine Favoriten</H3><DL><A HREF="https://bar.example/">Bar</A></DL>)", 1, "https://bar.example/", kFavoritesFolder},
+        {"non-toolbar folder preserved", R"(<H3 PERSONAL_TOOLBAR_FOLDER="false">Meine Favoriten</H3><DL><A HREF="https://folder.example/">Folder</A></DL>)", 1, "https://folder.example/", "Meine Favoriten"},
+        {"URL size boundary accepted", "<A HREF=\"https://large.example/" + std::string(8170, 'a') + "\">Large</A>", 1, "https://large.example/" + std::string(8170, 'a'), kBookmarksFolder},
+        {"oversized URL rejected", "<A HREF=\"https://large.example/" + std::string(8192, 'a') + "\">Large</A>", 0, "", kBookmarksFolder},
+    };
+    int failures = 0;
+    for (const auto& c : cases) {
+        Library lib(dir / "import-cases");
+        const int count = lib.ImportNetscapeHtml(c.html, 1);
+        if (count != c.count || lib.Bookmarks().size() != static_cast<std::size_t>(c.count) ||
+            (c.count && (lib.Bookmarks().front().url != c.url || lib.Bookmarks().front().folder != c.folder))) {
+            std::cerr << "FAIL: bookmark import " << c.name << '\n';
+            ++failures;
+        }
+    }
+    assert(failures == 0);
+}
+
 int main() {
     const auto dir = std::filesystem::temp_directory_path() / "ulb-library-test";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
+    TestBookmarkImport(dir);
     std::ofstream(dir / "history.json") << R"([{"url":"https://old.example/","title":"x","last":1,"visits":1}])";
     std::ofstream(dir / "session.json") << "[]";
     {
