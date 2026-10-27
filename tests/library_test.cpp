@@ -13,6 +13,8 @@ static void TestBookmarkImport(const std::filesystem::path& dir) {
         {"attribute whitespace", R"(<A HREF = 'https://space.example/'>Space</A>)", 1, "https://space.example/", kBookmarksFolder},
         {"attribute boundary", R"(<A DATA-HREF="https://wrong.example/" HREF="https://right.example/">Right</A>)", 1, "https://right.example/", kBookmarksFolder},
         {"quoted attribute content", R"(<A TITLE="href=https://wrong.example/" HREF="https://right.example/">Right</A>)", 1, "https://right.example/", kBookmarksFolder},
+        {"quoted tag delimiter", R"(<A TITLE="a > b" HREF="https://right.example/">Right</A>)", 1, "https://right.example/", kBookmarksFolder},
+        {"comment text is not markup", R"(<!-- User's <A HREF="https://wrong.example/">old link</A> --><A HREF="https://right.example/">Right</A>)", 1, "https://right.example/", kBookmarksFolder},
         {"tab-delimited unquoted URL", "<A HREF=https://tab.example/\tADD_DATE=1>Tab</A>", 1, "https://tab.example/", kBookmarksFolder},
         {"boolean and mixed-case attributes", R"(<A DISABLED HrEf="https://case.example/">Case</A>)", 1, "https://case.example/", kBookmarksFolder},
         {"data attribute alone is not a link", R"(<A DATA-HREF="https://wrong.example/">Not a link</A>)", 0, "", kBookmarksFolder},

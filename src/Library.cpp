@@ -407,8 +407,25 @@ int Library::ImportNetscapeHtml(const std::string& html, std::int64_t now) {
     while (pos < html.size()) {
         const auto lt = html.find('<', pos);
         if (lt == std::string::npos) break;
-        const auto gt = html.find('>', lt);
-        if (gt == std::string::npos) break;
+        if (html.compare(lt, 4, "<!--") == 0) {
+            const auto end = html.find("-->", lt + 4);
+            if (end == std::string::npos) break;
+            pos = end + 3;
+            continue;
+        }
+        auto gt = lt + 1;
+        char quote = 0;
+        for (; gt < html.size(); ++gt) {
+            const char c = html[gt];
+            if (quote) {
+                if (c == quote) quote = 0;
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+            } else if (c == '>') {
+                break;
+            }
+        }
+        if (gt == html.size()) break;
         std::string tag = html.substr(lt + 1, gt - lt - 1);
         std::string name = Lower(tag.substr(0, tag.find_first_of(" \t\r\n")));
         pos = gt + 1;
