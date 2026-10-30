@@ -198,7 +198,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 | 检测面 | macOS 模式下的值 |
 | :--- | :--- |
 | `User-Agent` 请求头 / `navigator.userAgent` | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) … Edg/<本机内核版本>`，只替换系统段，版本号与内核一致 |
-| Client Hints（`Sec-CH-UA-*`）/ `navigator.userAgentData` | 平台 `macOS`、版本 `26.2.0`、架构 `arm`、64 位；品牌列表和完整版本号取自本机 Edge 内核实测值（去掉 WebView2 特有的品牌项） |
+| Client Hints（`Sec-CH-UA-*`）/ `navigator.userAgentData` | 平台 `macOS`、版本 `27.2.0`（macOS 27.2）、架构 `arm`、64 位；品牌列表和 Edge 完整版本号取自本机 WebView2 内核实测值（去掉 WebView2 特有的品牌项） |
 | `navigator.platform` | `MacIntel` |
 | WebGL / WebGPU 显卡信息 | `ANGLE (Apple, ANGLE Metal Renderer: Apple M1)` / `apple` · `metal-3` |
 | 语音列表 | 隐藏 Windows 本地语音，只保留在线语音 |
@@ -210,7 +210,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 
 **自检**：菜单“⋯ → 浏览器UA标识 → 检查当前浏览器UA标识…”列出上述各项以及各类 Worker 中的实际取值，与 macOS 不一致的项标红。请求头与字体请另用 [BrowserLeaks](https://browserleaks.com/) 等站点核对。
 
-**系统版本号**：默认报告 macOS `26.2.0`，可在 `%LOCALAPPDATA%\UltraLightBrowser\config.json` 的 `settings.macPlatformVersion` 中修改（仅允许数字和点）。
+**系统版本号**：默认报告 macOS `27.2.0`，可在 `%LOCALAPPDATA%\UltraLightBrowser\config.json` 的 `settings.macPlatformVersion` 中修改（仅允许数字和点）。从旧版本升级时，原先保存的默认值 `26.2.0` 会自动迁移到 `27.2.0`，其他自定义值不变。
 
 **局限**：无法改变系统字体（字体探测可区分 Segoe UI / 微软雅黑 与 PingFang 等）、Emoji 和 Canvas / WebGL 的实际渲染结果，专业指纹检测仍可能识别出 Windows，而“伪装过”本身也是一种特征。非必要请保持默认的 Windows 模式。
 
@@ -294,6 +294,7 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 
 ## 最近更新
 
+- **v2.4.4**：macOS Edge 浏览器标识默认报告 macOS 27.2（Client Hints `27.2.0`）；旧版保存的默认版本自动迁移，自定义平台版本保留。
 - **v2.4.3**：移除机械罗盘图标外围白底与阴影，使用透明背景并收紧留白，重新生成各尺寸 Windows 程序图标。
 - **v2.4.2**：更新为新的机械罗盘程序图标，EXE、窗口和任务栏使用同一组多尺寸图标；同步项目展示图标。
 - **v2.4.1**：修复书签 HTML 导入：正确解析属性空格、制表符和完整属性名，避免把 DATA-HREF 或标题中的文字误当网址；按标准标记识别不同语言的收藏栏；超长网址不再虚报导入成功。新增覆盖以上情况的回归测试。

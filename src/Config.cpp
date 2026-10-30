@@ -71,7 +71,7 @@ void Config::Load() {
                 const auto v = s["macPlatformVersion"].get<std::string>();
                 const bool valid = !v.empty() && v.size() <= 16 && std::isdigit(static_cast<unsigned char>(v.front())) &&
                     v.find_first_not_of("0123456789.") == std::string::npos;
-                if (valid) m_settings.macPlatformVersion = v;
+                if (valid) m_settings.macPlatformVersion = MigrateMacPlatformVersion(v);
             }
             if (s.contains("hardwareAcceleration")) m_settings.hardwareAcceleration = s["hardwareAcceleration"];
             if (s.contains("videoEnhancement") && s["videoEnhancement"].is_boolean()) {

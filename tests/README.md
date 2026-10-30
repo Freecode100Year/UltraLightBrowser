@@ -70,7 +70,7 @@ compressor lookahead is checked too. This is not an end-to-end sound-quality tes
 
 ## UA profiles
 
-`g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/user_agent_test.cpp -o /tmp/ua-tests && /tmp/ua-tests` checks actual platform replacement, version preservation, default restoration and malformed UA rejection. Native settings application needs Windows verification.
+`g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/user_agent_test.cpp -o /tmp/ua-tests && /tmp/ua-tests` checks UA platform replacement, Edge version preservation, macOS 27.2 default, migration of the old default, preservation of custom platform versions, and malformed UA rejection. Native settings application needs Windows verification.
 
 ## Video diagnostics
 

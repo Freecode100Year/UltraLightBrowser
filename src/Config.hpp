@@ -8,6 +8,11 @@
 
 namespace UltraLight {
 
+inline constexpr char kDefaultMacPlatformVersion[] = "27.2.0";
+inline std::string MigrateMacPlatformVersion(const std::string& version) {
+    return version == "26.2.0" ? kDefaultMacPlatformVersion : version;
+}
+
 // Default home and new-tab page. The address bar shows it as the empty start page.
 inline constexpr const wchar_t* kDefaultHomeUrl = L"https://search.brave.com/?utm_source=freedom8964.com";
 inline bool IsDefaultHomeUrl(const std::wstring& url) { return url == kDefaultHomeUrl; }
@@ -15,7 +20,7 @@ inline bool IsDefaultHomeUrl(const std::wstring& url) { return url == kDefaultHo
 struct AppSettings {
     std::wstring startUrl = kDefaultHomeUrl;
     std::string userAgentProfile = "default"; // default / macos-edge
-    std::string macPlatformVersion = "26.2.0"; // Sec-CH-UA-Platform-Version in macOS mode
+    std::string macPlatformVersion = kDefaultMacPlatformVersion; // Sec-CH-UA-Platform-Version in macOS mode
     bool hardwareAcceleration = true;
     bool videoEnhancement = true;               // GPU video super resolution and RTX Video HDR
     bool enableAdBlock = true;
