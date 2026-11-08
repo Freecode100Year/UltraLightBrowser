@@ -4,6 +4,7 @@
 #include "Icons.hpp"
 #include "InternalPages.hpp"
 #include "MainWindow.hpp"
+#include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
 #include "StringUtils.hpp"
@@ -132,6 +133,11 @@ int AppShell::Run(HINSTANCE hInstance, int nCmdShow) {
     // Per-site ad-block exceptions ("此网站的设置").
     NativeRequestFilter::Instance().SetSiteAllowsAdsCallback([this](const std::wstring& topHost) {
         return !m_library->Site(StringUtils::WideToUtf8(topHost)).adblock;
+    });
+    ElementBlocker::Instance().SetDisabledHostsProvider([this]() {
+        std::vector<std::wstring> hosts;
+        for (const auto& host : m_library->HostsWithAdblockOff()) hosts.push_back(StringUtils::Utf8ToWide(host));
+        return hosts;
     });
 
     const auto& settings = Config::Instance().GetSettings();

@@ -32,6 +32,11 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/library_test.cpp src/Library.cpp -o library-tests
           ./library-tests
+      - name: Test ad and tracker blocking rules
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/adblock_rules_test.cpp src/AdBlockRules.cpp -o adblock-tests
+          ./adblock-tests
+          node tests/adblock_scripts_test.cjs
       - name: Check embedded built-in pages
         run: python3 tests/ui_resources_test.py
       - name: Test fullscreen and maximized client bounds

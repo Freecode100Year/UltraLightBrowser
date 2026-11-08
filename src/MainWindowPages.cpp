@@ -6,6 +6,7 @@
 #include "AppShell.hpp"
 #include "Config.hpp"
 #include "InternalPages.hpp"
+#include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
 #include "StringUtils.hpp"
 #include "WarpManager.hpp"
@@ -461,6 +462,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
             result = true;
         } else if (cmd == "clearSiteSettings") {
             lib.ClearSites();
+            ElementBlocker::Instance().UpdateAllRulesScripts();
             libraryChanged = true;
             result = true;
         } else if (cmd == "getTabs") {

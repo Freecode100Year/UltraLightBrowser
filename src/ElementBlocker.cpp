@@ -1,5 +1,7 @@
 #include "ElementBlocker.hpp"
+#include "AdBlockRules.hpp"
 #include "Config.hpp"
+#include "NativeRequestFilter.hpp"
 #include "StringUtils.hpp"
 #include <urlmon.h>
 #include <wininet.h>
@@ -47,13 +49,13 @@ void ElementBlocker::Unregister(ICoreWebView2* webView) {
     }
 }
 
-void ElementBlocker::UpdateAllRulesScripts() {
+void ElementBlocker::UpdateAllRulesScripts(ICoreWebView2* reloadWhenReady) {
     std::vector<ICoreWebView2*> views;
     for (const auto& [view, id] : m_injectedScriptIds) views.push_back(view);
-    for (auto* view : views) UpdateRulesScript(view);
+    for (auto* view : views) UpdateRulesScript(view, view == reloadWhenReady);
 }
 
-void ElementBlocker::UpdateRulesScript(ICoreWebView2* webView) {
+void ElementBlocker::UpdateRulesScript(ICoreWebView2* webView, bool reloadWhenReady) {
     if (!webView) return;
 
     // Remove previously registered script to prevent accumulation across updates
@@ -75,6 +77,12 @@ void ElementBlocker::UpdateRulesScript(ICoreWebView2* webView) {
 
     std::string rulesJsonStr = rulesObj.dump();
     std::wstring rulesJsonW = StringUtils::Utf8ToWide(rulesJsonStr);
+
+    // Built-in element hiding (generic ad markup, site rules, YouTube) follows the
+    // content blocker switch and the per-site exceptions.
+    const std::wstring cosmeticJs = AdBlock::CosmeticScript(
+        NativeRequestFilter::Instance().IsEnabled(),
+        m_disabledHosts ? m_disabledHosts() : std::vector<std::wstring>{});
 
     std::wstring initScript = LR"(
         (function() {
@@ -125,21 +133,25 @@ void ElementBlocker::UpdateRulesScript(ICoreWebView2* webView) {
                 document.addEventListener('DOMContentLoaded', applyRules, { once: true });
             }
         })();
-    )";
+    )" + cosmeticJs;
 
-    webView->AddScriptToExecuteOnDocumentCreated(
+    const HRESULT added = webView->AddScriptToExecuteOnDocumentCreated(
         initScript.c_str(),
         Microsoft::WRL::Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
-            [this, webView](HRESULT hr, LPCWSTR id) -> HRESULT {
+            [this, webView, reloadWhenReady](HRESULT hr, LPCWSTR id) -> HRESULT {
+                const auto it = m_injectedScriptIds.find(webView);
                 if (SUCCEEDED(hr) && id) {
-                    const auto it = m_injectedScriptIds.find(webView);
                     if (it != m_injectedScriptIds.end()) it->second = id;
                     else webView->RemoveScriptToExecuteOnDocumentCreated(id);  // tab closed meanwhile
                 }
+                if (reloadWhenReady && it != m_injectedScriptIds.end()) webView->Reload();
                 return S_OK;
             }
         ).Get()
     );
+    if (FAILED(added) && reloadWhenReady) webView->Reload();
+#else
+    if (reloadWhenReady) webView->Reload();
 #endif
 }
 

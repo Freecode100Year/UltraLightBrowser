@@ -85,3 +85,20 @@ compressor lookahead is checked too. This is not an end-to-end sound-quality tes
 ## Windows UI smoke test
 
 `tests/smoke-ui.ps1` (run by the manual "UI smoke" workflow) launches the Release build on a Windows runner, drives it with keyboard and mouse (tabs, menu, share, reader, find, sidebar, overview, history, bookmarks, settings, private window, close/restart persistence, macOS identity in several tabs) and uploads screenshots.
+
+## Ad and tracker blocking
+
+```sh
+g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/adblock_rules_test.cpp src/AdBlockRules.cpp -o /tmp/adblock-tests
+/tmp/adblock-tests
+node tests/adblock_scripts_test.cjs
+```
+
+The C++ test runs the production rules in `src/AdBlockRules.cpp`: host parsing,
+registrable domains, first-party exemptions, host+path rules, script surrogates,
+and that every blocked sample is routed by the WebView2 request filter patterns.
+The Node test executes the embedded page scripts (element hiding, per-site
+exceptions in frames, YouTube pruning and skip fallback, surrogates for ga, gtag,
+googletag and adsbygoogle) against small DOM stand-ins. On Windows, also check
+that YouTube plays without pre-roll ads, a news site shows no empty ad boxes, and
+switching "此网站的设置 → 内容拦截器" off brings ads back after the reload.

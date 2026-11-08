@@ -127,7 +127,12 @@ HMENU MainWindow::BuildBlockerMenu() {
         AppendMenuW(m, MF_STRING | (siteOn ? MF_CHECKED : 0) | (enabled ? 0 : MF_GRAYED), IDM_SITE_ADBLOCK,
                     (L"在“" + StringUtils::Utf8ToWide(host) + L"”上启用").c_str());
     }
-    AppendMenuW(m, MF_STRING | MF_GRAYED, 0, (L"已阻止 " + std::to_wstring(NativeRequestFilter::Instance().GetBlockedCount()) + L" 个跟踪器和广告请求").c_str());
+    const Tab* active = ActiveTab();
+    ICoreWebView2* activeView = active && active->view ? active->view->GetWebView() : nullptr;
+    if (activeView) {
+        AppendMenuW(m, MF_STRING | MF_GRAYED, 0, (L"此页已阻止 " + std::to_wstring(NativeRequestFilter::Instance().GetBlockedCount(activeView)) + L" 个请求").c_str());
+    }
+    AppendMenuW(m, MF_STRING | MF_GRAYED, 0, (L"本次共阻止 " + std::to_wstring(NativeRequestFilter::Instance().GetBlockedCount()) + L" 个跟踪器和广告请求").c_str());
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, IDM_BLOCKER_PICKER, L"隐藏干扰项目…\tCtrl+Shift+H");
     AppendMenuW(m, MF_STRING | (host.empty() ? MF_GRAYED : 0), IDM_BLOCKER_CLEAR_RULES, L"显示隐藏的项目");
@@ -375,7 +380,9 @@ bool MainWindow::HandleMenuCommand(WORD id) {
     case IDM_SITE_AUTO_READER: UpdateSite([](SiteSettings& s) { s.autoReader = !s.autoReader; }); return true;
     case IDM_SITE_ADBLOCK:
         UpdateSite([](SiteSettings& s) { s.adblock = !s.adblock; });
-        if (tab && tab->view) tab->view->Reload();
+        // Element hiding is baked into each tab's document script: reload once the
+        // updated script is in place so the page reflects the change right away.
+        ElementBlocker::Instance().UpdateAllRulesScripts(tab && tab->view ? tab->view->GetWebView() : nullptr);
         return true;
     case IDM_SITE_ZOOM_RESET:
         UpdateSite([](SiteSettings& s) { s.zoom = 0; });
@@ -395,8 +402,10 @@ bool MainWindow::HandleMenuCommand(WORD id) {
     case IDM_SITE_RESET: {
         const std::string host = ActiveHost();
         if (!host.empty()) {
+            const bool adblockWasOff = !AppShell::Instance().Lib().Site(host).adblock;
             AppShell::Instance().Lib().ClearSite(host);
             AppShell::Instance().SaveLibrarySoon();
+            if (adblockWasOff) ElementBlocker::Instance().UpdateAllRulesScripts();
             if (tab && tab->view) { tab->applyingZoom = true; tab->view->SetZoomFactor(1.0); tab->applyingZoom = false; }
         }
         return true;

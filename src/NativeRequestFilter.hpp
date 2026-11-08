@@ -26,15 +26,16 @@ public:
     using SiteAllowsAdsCallback = std::function<bool(const std::wstring& topHost)>;
     void SetSiteAllowsAdsCallback(SiteAllowsAdsCallback cb) { m_siteAllowsAds = std::move(cb); }
 
-    // Test whether an outgoing request URI should be intercepted and blocked
-    bool ShouldBlock(const std::wstring& uri);
+    // Test whether a request made by a page on topHost would be blocked
+    bool ShouldBlock(const std::wstring& uri, const std::wstring& topHost = L"") const;
 
     // Enable / disable native blocking
     void SetEnabled(bool enabled);
     bool IsEnabled() const { return m_enabled; }
 
-    // Intercepted request counter
+    // Blocked request counters: whole session, and the current page of one tab
     uint64_t GetBlockedCount() const { return m_blockedCount.load(); }
+    uint64_t GetBlockedCount(ICoreWebView2* webView) const;
     void ResetBlockedCount() { m_blockedCount.store(0); }
 
     // Main-frame navigation tracking to prevent false-positive blocking of top-level navigations
@@ -53,7 +54,7 @@ public:
     static std::wstring GetBaseDomain(const std::wstring& host);
     static bool IsThirdParty(const std::wstring& reqHost, const std::wstring& topHost);
 
-    const std::unordered_set<std::wstring>& GetBlockedDomainSet() const { return m_blockedDomainSet; }
+    const std::unordered_set<std::wstring>& GetBlockedDomainSet() const;
 
 private:
     NativeRequestFilter();
@@ -68,13 +69,11 @@ private:
     struct NavState {
         std::wstring pendingUri;
         std::wstring mainHost;
+        uint64_t blocked = 0;
     };
     mutable std::mutex m_navMutex;
     std::unordered_map<ICoreWebView2*, NavState> m_nav;
     SiteAllowsAdsCallback m_siteAllowsAds;
-
-    std::unordered_set<std::wstring> m_blockedDomainSet;
-    std::vector<std::wstring> m_blockedKeywords;
 };
 
 } // namespace UltraLight

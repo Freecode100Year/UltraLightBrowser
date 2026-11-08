@@ -130,6 +130,8 @@ public:
     void SetSite(const std::string& host, const SiteSettings& settings);
     void ClearSite(const std::string& host);
     void ClearSites();
+    // Hosts whose content blocker was switched off in "此网站的设置".
+    std::vector<std::string> HostsWithAdblockOff() const;
     std::size_t SiteCount() const { return m_sites.size(); }
 
     static std::string HostOf(const std::string& url);

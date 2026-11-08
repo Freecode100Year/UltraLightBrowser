@@ -699,4 +699,13 @@ void Library::ClearSites() {
     m_sites.clear();
 }
 
+std::vector<std::string> Library::HostsWithAdblockOff() const {
+    std::vector<std::string> hosts;
+    for (const auto& [host, settings] : m_sites) {
+        if (!settings.adblock) hosts.push_back(host);
+    }
+    std::sort(hosts.begin(), hosts.end());
+    return hosts;
+}
+
 } // namespace UltraLight

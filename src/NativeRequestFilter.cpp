@@ -1,8 +1,9 @@
 #include "NativeRequestFilter.hpp"
+#include "AdBlockRules.hpp"
 #include "Config.hpp"
+#include "ElementBlocker.hpp"
 #include <shlwapi.h>
-#include <algorithm>
-#include <cwctype>
+#include <cstring>
 
 namespace UltraLight {
 
@@ -11,242 +12,13 @@ NativeRequestFilter& NativeRequestFilter::Instance() {
     return s_instance;
 }
 
+// The rules themselves live in AdBlockRules.cpp (platform-independent and tested).
 NativeRequestFilter::NativeRequestFilter() {
     m_enabled = Config::Instance().GetSettings().enableAdBlock;
+}
 
-    // Fast domain match set (ad networks, trackers, telemetry)
-    // Sentry.io and Bugsnag.com removed per security/stability audit
-    m_blockedDomainSet = {
-        // Google Ads & Analytics
-        L"doubleclick.net",
-        L"google-analytics.com",
-        L"googletagmanager.com",
-        L"googlesyndication.com",
-        L"adservice.google.com",
-        L"pagead2.googlesyndication.com",
-        L"partner.googleadservices.com",
-        // Baidu Ads & Tracking
-        L"pos.baidu.com",
-        L"cpro.baidu.com",
-        L"hm.baidu.com",
-        L"dup.baidustatic.com",
-        L"cm.baidu.com",
-        L"sp1.baidu.com",
-        // Tencent & WeChat Ads
-        L"e.qq.com",
-        L"gdt.qq.com",
-        L"pgdt.gtimg.cn",
-        L"tajs.qq.com",
-        L"tmead.qq.com",
-        // Alibaba Ad / Tracking
-        L"alimama.com",
-        L"tanx.com",
-        L"ac.mmstat.com",
-        L"atanx.alicdn.com",
-        // Chinese Telemetry / Trackers
-        L"cnzz.com",
-        L"cnzz.net",
-        L"umeng.com",
-        L"umengcloud.com",
-        L"statcounter.com",
-        L"adpushup.com",
-        L"51.la",
-        L"miaozhen.com",
-        L"growingio.com",
-        // Global Ad Networks & Telemetry
-        L"scorecardresearch.com",
-        L"adnxs.com",
-        L"criteo.com",
-        L"outbrain.com",
-        L"taboola.com",
-        L"amazon-adsystem.com",
-        L"rubiconproject.com",
-        L"casalemedia.com",
-        L"pubmatic.com",
-        L"openx.net",
-        L"smartadserver.com",
-        L"hotjar.com",
-        L"clarity.ms",
-        L"segment.io",
-        L"mixpanel.com",
-        L"adroll.com",
-        L"yieldmo.com",
-        L"ads-twitter.com",
-        L"ads.tiktok.com",
-        L"analytics.tiktok.com",
-        L"connect.facebook.net",
-        L"amplitude.com",
-        L"log.byteoversea.com",
-        L"sensorsdata.cn",
-        L"app-measurement.com",
-        L"branch.io",
-        L"adjust.com",
-        L"appsflyer.com",
-        // Ad exchanges, DSPs and ad servers
-        L"googletagservices.com",
-        L"googleadservices.com",
-        L"2mdn.net",
-        L"adsrvr.org",
-        L"advertising.com",
-        L"adform.net",
-        L"adition.com",
-        L"adtech.de",
-        L"bidswitch.net",
-        L"contextweb.com",
-        L"indexww.com",
-        L"lijit.com",
-        L"sovrn.com",
-        L"sharethrough.com",
-        L"triplelift.com",
-        L"3lift.com",
-        L"teads.tv",
-        L"33across.com",
-        L"gumgum.com",
-        L"media.net",
-        L"yieldlab.net",
-        L"adkernel.com",
-        L"emxdgt.com",
-        L"spotxchange.com",
-        L"spotx.tv",
-        L"springserve.com",
-        L"smaato.net",
-        L"inmobi.com",
-        L"applovin.com",
-        L"onetag-sys.com",
-        L"richaudience.com",
-        L"improvedigital.com",
-        L"360yield.com",
-        L"serving-sys.com",
-        L"flashtalking.com",
-        L"mathtag.com",
-        L"criteo.net",
-        L"rfihub.com",
-        L"adgrx.com",
-        L"simpli.fi",
-        L"steelhousemedia.com",
-        L"dotomi.com",
-        L"ipredictive.com",
-        L"owneriq.net",
-        L"zemanta.com",
-        L"adsco.re",
-        L"adhigh.net",
-        L"yieldoptimizer.com",
-        L"ads.yahoo.com",
-        L"analytics.yahoo.com",
-        L"ads.linkedin.com",
-        L"px.ads.linkedin.com",
-        L"snap.licdn.com",
-        L"ct.pinterest.com",
-        L"tr.snapchat.com",
-        L"sc-static.net",
-        // Native / content-recommendation ads
-        L"revcontent.com",
-        L"mgid.com",
-        L"zergnet.com",
-        L"nativo.com",
-        L"adblade.com",
-        L"content.ad",
-        L"contentad.net",
-        // Ad verification
-        L"adsafeprotected.com",
-        L"moatads.com",
-        L"doubleverify.com",
-        L"iasds01.com",
-        // Data brokers, identity sync and analytics
-        L"quantserve.com",
-        L"quantcount.com",
-        L"chartbeat.com",
-        L"chartbeat.net",
-        L"nr-data.net",
-        L"bat.bing.com",
-        L"krxd.net",
-        L"bluekai.com",
-        L"exelator.com",
-        L"demdex.net",
-        L"omtrdc.net",
-        L"everesttech.net",
-        L"agkn.com",
-        L"tapad.com",
-        L"crwdcntrl.net",
-        L"rlcdn.com",
-        L"adsymptotic.com",
-        L"liadm.com",
-        L"id5-sync.com",
-        L"pippio.com",
-        L"eyeota.net",
-        L"lotame.com",
-        L"zeotap.com",
-        L"permutive.com",
-        L"permutive.app",
-        L"parsely.com",
-        L"fullstory.com",
-        L"mouseflow.com",
-        L"crazyegg.com",
-        L"luckyorange.com",
-        L"inspectlet.com",
-        L"heapanalytics.com",
-        L"kissmetrics.com",
-        L"imrworldwide.com",
-        L"browser-intake-datadoghq.com",
-        // Chinese ad networks and analytics
-        L"irs01.com",
-        L"irs01.net",
-        L"admaster.com.cn",
-        L"mediav.com",
-        L"ipinyou.com",
-        L"adsame.com",
-        L"allyes.com",
-        L"linezing.com",
-        L"gridsumdissector.com",
-        L"zhugeio.com",
-        L"talkingdata.com",
-        L"eclick.baidu.com",
-        L"nsclick.baidu.com",
-        L"mobads.baidu.com",
-        L"mobads-logs.baidu.com",
-        L"hmcdn.baidu.com",
-        L"sax.sina.com.cn",
-        L"beacon.sina.com.cn",
-        L"pangolin-sdk-toutiao.com",
-        L"pglstatp-toutiao.com",
-        // Russian ad networks and analytics
-        L"mc.yandex.ru",
-        L"an.yandex.ru",
-        L"yandexadexchange.net",
-        L"adfox.ru",
-        L"top-fwz1.mail.ru",
-        L"counter.yadro.ru",
-        // Pop-under and aggressive ad networks
-        L"popads.net",
-        L"propellerads.com",
-        L"propellerclick.com",
-        L"exoclick.com",
-        L"juicyads.com",
-        L"trafficjunky.net",
-        L"adcash.com",
-        L"hilltopads.net",
-        L"popcash.net",
-        L"adsterra.com",
-        L"a-ads.com",
-        L"clickadu.com",
-        L"onclickads.net",
-        L"zeropark.com"
-    };
-
-    // Specific ad/tracker path keywords (overbroad keywords removed)
-    m_blockedKeywords = {
-        L"/pagead/js/",
-        L"/pagead/show_ads.js",
-        L"/advert.js",
-        L"/ads.js",
-        L"/google-analytics.com/analytics.js",
-        L"/gtag/js?id=",
-        L"/gtm.js?id=",
-        L"/hm.js?",
-        L"/beacon.js",
-        L"/pixel.gif",
-        L"/pixel.png"
-    };
+const std::unordered_set<std::wstring>& NativeRequestFilter::GetBlockedDomainSet() const {
+    return AdBlock::Rules::Default().Domains();
 }
 
 void NativeRequestFilter::SetEnabled(bool enabled) {
@@ -254,123 +26,20 @@ void NativeRequestFilter::SetEnabled(bool enabled) {
     auto& settings = Config::Instance().GetSettings();
     settings.enableAdBlock = enabled;
     Config::Instance().Save();
+    // Element hiding follows the same switch.
+    ElementBlocker::Instance().UpdateAllRulesScripts();
 }
 
 std::wstring NativeRequestFilter::ExtractHost(const std::wstring& uri) {
-    size_t protoEnd = uri.find(L"://");
-    if (protoEnd == std::wstring::npos) return L"";
-
-    size_t authStart = protoEnd + 3;
-    // Authority ends at the first '/', '?', or '#'
-    size_t authEnd = uri.find_first_of(L"/?#", authStart);
-    if (authEnd == std::wstring::npos) {
-        authEnd = uri.length();
-    }
-    if (authStart >= authEnd) return L"";
-
-    // Handle userinfo (e.g. https://user:pass@example.com/)
-    size_t hostStart = authStart;
-    size_t atPos = uri.rfind(L'@', authEnd);
-    if (atPos != std::wstring::npos && atPos >= authStart) {
-        hostStart = atPos + 1;
-    }
-    if (hostStart >= authEnd) return L"";
-
-    std::wstring host;
-    // Handle IPv6 literal [2001:db8::1]
-    if (uri[hostStart] == L'[') {
-        size_t closeBracket = uri.find(L']', hostStart);
-        if (closeBracket != std::wstring::npos && closeBracket < authEnd) {
-            host = uri.substr(hostStart, closeBracket - hostStart + 1);
-        } else {
-            host = uri.substr(hostStart, authEnd - hostStart);
-        }
-    } else {
-        // Strip port (e.g. example.com:8080)
-        size_t colonPos = uri.find(L':', hostStart);
-        size_t hostEnd = (colonPos != std::wstring::npos && colonPos < authEnd) ? colonPos : authEnd;
-        host = uri.substr(hostStart, hostEnd - hostStart);
-    }
-
-    // Strip trailing dots (e.g. doubleclick.net. or FQDN trailing dot)
-    while (!host.empty() && host.back() == L'.') {
-        host.pop_back();
-    }
-
-    // Lowercase host only
-    for (auto& ch : host) {
-        ch = static_cast<wchar_t>(std::towlower(ch));
-    }
-    return host;
+    return AdBlock::ExtractHost(uri);
 }
-
-namespace {
-
-static const std::unordered_set<std::wstring> kPublicSuffixes = {
-    L"github.io", L"gitlab.io", L"gitee.io",
-    L"blogspot.com", L"wordpress.com",
-    L"pages.dev", L"workers.dev",
-    L"vercel.app", L"netlify.app", L"web.app", L"firebaseapp.com",
-    L"herokuapp.com", L"azurewebsites.net", L"cloudfront.net",
-    L"fastly.net", L"fly.dev", L"render.com", L"onrender.com",
-    L"myshopify.com", L"railway.app", L"glitch.me", L"surge.sh"
-};
-
-bool IsPublicSuffix(const std::wstring& sld, const std::wstring& tld) {
-    if (tld.length() == 2) {
-        if (sld == L"com" || sld == L"net" || sld == L"org" || sld == L"gov" ||
-            sld == L"gob" || sld == L"edu" || sld == L"co" || sld == L"ne" ||
-            sld == L"ac" || sld == L"go" || sld == L"or" || sld == L"re") {
-            return true;
-        }
-    }
-    std::wstring combined = sld + L"." + tld;
-    return kPublicSuffixes.find(combined) != kPublicSuffixes.end();
-}
-
-} // namespace
 
 std::wstring NativeRequestFilter::GetBaseDomain(const std::wstring& host) {
-    if (host.empty()) return L"";
-
-    std::vector<std::wstring> parts;
-    size_t start = 0;
-    while (start < host.length()) {
-        size_t dot = host.find(L'.', start);
-        if (dot == std::wstring::npos) {
-            parts.push_back(host.substr(start));
-            break;
-        }
-        parts.push_back(host.substr(start, dot - start));
-        start = dot + 1;
-    }
-
-    if (parts.size() <= 2) {
-        return host;
-    }
-
-    const auto& tld = parts[parts.size() - 1];
-    const auto& sld = parts[parts.size() - 2];
-
-    size_t takeParts = 2;
-    if (IsPublicSuffix(sld, tld)) {
-        takeParts = 3;
-    }
-
-    if (parts.size() < takeParts) return host;
-
-    std::wstring baseDomain;
-    for (size_t i = parts.size() - takeParts; i < parts.size(); ++i) {
-        if (!baseDomain.empty()) baseDomain += L".";
-        baseDomain += parts[i];
-    }
-    return baseDomain;
+    return AdBlock::BaseDomain(host);
 }
 
 bool NativeRequestFilter::IsThirdParty(const std::wstring& reqHost, const std::wstring& topHost) {
-    if (reqHost.empty() || topHost.empty()) return true;
-    if (reqHost == topHost) return false;
-    return GetBaseDomain(reqHost) != GetBaseDomain(topHost);
+    return AdBlock::IsThirdParty(reqHost, topHost);
 }
 
 void NativeRequestFilter::SetMainFrameNavigation(ICoreWebView2* webView, const std::wstring& uri) {
@@ -378,6 +47,7 @@ void NativeRequestFilter::SetMainFrameNavigation(ICoreWebView2* webView, const s
     auto& nav = m_nav[webView];
     nav.pendingUri = uri;
     nav.mainHost = ExtractHost(uri);
+    nav.blocked = 0;
 }
 
 void NativeRequestFilter::ClearMainFrameNavigation(ICoreWebView2* webView) {
@@ -401,47 +71,20 @@ std::wstring NativeRequestFilter::GetCurrentMainHost(ICoreWebView2* webView) con
     return it != m_nav.end() ? it->second.mainHost : std::wstring();
 }
 
+uint64_t NativeRequestFilter::GetBlockedCount(ICoreWebView2* webView) const {
+    std::lock_guard<std::mutex> lock(m_navMutex);
+    const auto it = m_nav.find(webView);
+    return it != m_nav.end() ? it->second.blocked : 0;
+}
+
 void NativeRequestFilter::Unregister(ICoreWebView2* webView) {
     std::lock_guard<std::mutex> lock(m_navMutex);
     m_nav.erase(webView);
 }
 
-bool NativeRequestFilter::ShouldBlock(const std::wstring& uri) {
-    if (!m_enabled || uri.empty()) return false;
-
-    // 1. Fast O(1) domain & parent subdomain matching
-    std::wstring host = ExtractHost(uri);
-    if (!host.empty()) {
-        if (m_blockedDomainSet.find(host) != m_blockedDomainSet.end()) {
-            return true;
-        }
-
-        size_t dotPos = host.find(L'.');
-        while (dotPos != std::wstring::npos) {
-            std::wstring parentDomain = host.substr(dotPos + 1);
-            if (m_blockedDomainSet.find(parentDomain) != m_blockedDomainSet.end()) {
-                return true;
-            }
-            dotPos = host.find(L'.', dotPos + 1);
-        }
-    }
-
-    // 2. Path keyword matching (targeted patterns only, no full-URI lowercase copy)
-    size_t protoEnd = uri.find(L"://");
-    size_t pathStart = (protoEnd != std::wstring::npos) ? uri.find(L'/', protoEnd + 3) : uri.find(L'/');
-    if (pathStart != std::wstring::npos) {
-        std::wstring path = uri.substr(pathStart);
-        for (auto& ch : path) {
-            ch = static_cast<wchar_t>(std::towlower(ch));
-        }
-        for (const auto& kw : m_blockedKeywords) {
-            if (path.find(kw) != std::wstring::npos) {
-                return true;
-            }
-        }
-    }
-
-    return false;
+bool NativeRequestFilter::ShouldBlock(const std::wstring& uri, const std::wstring& topHost) const {
+    if (!m_enabled) return false;
+    return AdBlock::Rules::Default().Evaluate(uri, topHost, AdBlock::Resource::Other).block;
 }
 
 void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Environment* environment) {
@@ -450,13 +93,18 @@ void NativeRequestFilter::Initialize(ICoreWebView2* webView, ICoreWebView2Enviro
 
     // Only requests that can possibly be blocked are routed to the browser: every
     // intercepted request costs a round trip to the UI thread, so a catch-all "*"
-    // filter slowed down every page load. The handler still applies the exact rules.
-    for (const auto& domain : m_blockedDomainSet) {
-        webView->AddWebResourceRequestedFilter((L"*://" + domain + L"/*").c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
-        webView->AddWebResourceRequestedFilter((L"*://*." + domain + L"/*").c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
-    }
-    for (const auto& keyword : m_blockedKeywords) {
-        webView->AddWebResourceRequestedFilter((L"*" + keyword + L"*").c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+    // filter slowed down every page load. One pattern per domain covers its
+    // subdomains too; the handler still applies the exact rules.
+    // Where supported, requests made by workers (service/shared/dedicated) are
+    // routed too, so trackers cannot slip out through a service worker.
+    wil::com_ptr<ICoreWebView2_22> webView22;
+    webView->QueryInterface(IID_PPV_ARGS(&webView22));
+    for (const auto& pattern : AdBlock::Rules::Default().RequestFilterPatterns()) {
+        if (!webView22 || FAILED(webView22->AddWebResourceRequestedFilterWithRequestSourceKinds(
+                pattern.c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL))) {
+            webView->AddWebResourceRequestedFilter(pattern.c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+        }
     }
 
     webView->add_WebResourceRequested(
@@ -483,11 +131,9 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, I
     wil::unique_cotaskmem_string uri;
     if (FAILED(request->get_Uri(&uri)) || !uri.get()) return S_OK;
 
-    // 1. If this request is for the main frame document navigation, ALWAYS allow directly!
-    if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) {
-        if (IsMainFrameNavigation(sender, uri.get())) {
-            return S_OK;
-        }
+    // The main frame document navigation is always allowed.
+    if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT && IsMainFrameNavigation(sender, uri.get())) {
+        return S_OK;
     }
 
     std::wstring topHost = GetCurrentMainHost(sender);
@@ -497,38 +143,48 @@ HRESULT NativeRequestFilter::HandleWebResourceRequested(ICoreWebView2* sender, I
             topHost = ExtractHost(topUri.get());
         }
     }
-    // Per-site exception ("此网站的设置 → 拦截广告" off).
+    // Per-site exception ("此网站的设置 → 内容拦截器" off).
     if (!topHost.empty() && m_siteAllowsAds && m_siteAllowsAds(topHost)) {
         return S_OK;
     }
-    const std::wstring reqHost = ExtractHost(uri.get());
 
-    // 2. For documents (subframes/iframes) and images (tracking pixels), only inspect third-party requests
-    if (context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE || context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) {
-        if (!topHost.empty() && !reqHost.empty() && !IsThirdParty(reqHost, topHost)) {
-            // First-party subframe or image: allow directly without blocking
-            return S_OK;
-        }
+    AdBlock::Resource kind = AdBlock::Resource::Other;
+    switch (context) {
+    case COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT: kind = AdBlock::Resource::Document; break;
+    case COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE: kind = AdBlock::Resource::Image; break;
+    case COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT: kind = AdBlock::Resource::Script; break;
+    default: break;
     }
 
-    if (ShouldBlock(uri.get())) {
-        wil::com_ptr<IStream> emptyStream;
-        emptyStream.attach(SHCreateMemStream(nullptr, 0));
-        wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+    const AdBlock::Decision decision = AdBlock::Rules::Default().Evaluate(uri.get(), topHost, kind);
+    if (!decision.block) return S_OK;
 
-        HRESULT hr = m_environment->CreateWebResourceResponse(
-            emptyStream.get(),
-            204,
-            L"No Content",
-            L"Content-Type: text/plain\r\n",
-            &response
-        );
-        if (SUCCEEDED(hr) && response) {
-            args->put_Response(response.get());
-            m_blockedCount.fetch_add(1);
-        }
+    // Blocked scripts with a known API get a harmless stand-in so the page keeps
+    // working (link clicks waiting on ga() callbacks, googletag.cmd queues, ...).
+    // Everything else gets an empty 204 response.
+    wil::com_ptr<IStream> body;
+    const wchar_t* status = L"No Content";
+    int code = 204;
+    const wchar_t* headers = L"Content-Type: text/plain\r\nCache-Control: no-store";
+    if (decision.surrogate) {
+        body.attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(decision.surrogate),
+                                      static_cast<UINT>(std::strlen(decision.surrogate))));
+        code = 200;
+        status = L"OK";
+        headers = L"Content-Type: text/javascript; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store";
+    } else {
+        body.attach(SHCreateMemStream(nullptr, 0));
     }
 
+    wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+    const HRESULT hr = m_environment->CreateWebResourceResponse(body.get(), code, status, headers, &response);
+    if (SUCCEEDED(hr) && response) {
+        args->put_Response(response.get());
+        m_blockedCount.fetch_add(1);
+        std::lock_guard<std::mutex> lock(m_navMutex);
+        const auto it = m_nav.find(sender);
+        if (it != m_nav.end()) ++it->second.blocked;
+    }
     return S_OK;
 }
 

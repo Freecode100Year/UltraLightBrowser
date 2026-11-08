@@ -97,6 +97,15 @@ int main() {
         assert(lib.Site("example.com").camera == "deny" && lib.Site("none.com").IsDefault());
         lib.SetSite("default.com", SiteSettings{});
         assert(lib.SiteCount() == 1);
+        assert(lib.HostsWithAdblockOff().empty());
+        SiteSettings noAds;
+        noAds.adblock = false;
+        lib.SetSite("news.example.org", noAds);
+        lib.SetSite("b.example.org", noAds);
+        assert((lib.HostsWithAdblockOff() == std::vector<std::string>{"b.example.org", "news.example.org"}));
+        lib.ClearSite("b.example.org");
+        lib.ClearSite("news.example.org");
+        assert(lib.SiteCount() == 1);
 
         lib.Save();
         assert(!lib.IsDirty());
