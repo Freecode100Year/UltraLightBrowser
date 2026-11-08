@@ -102,3 +102,19 @@ exceptions in frames, YouTube pruning and skip fallback, surrogates for ga, gtag
 googletag and adsbygoogle) against small DOM stand-ins. On Windows, also check
 that YouTube plays without pre-roll ads, a news site shows no empty ad boxes, and
 switching "此网站的设置 → 内容拦截器" off brings ads back after the reload.
+
+## Audio endpoint and room impulse
+
+```sh
+g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/audio_endpoint_test.cpp -o /tmp/endpoint-tests
+/tmp/endpoint-tests
+node tests/room_impulse_test.cjs
+```
+
+`audio_endpoint_test.cpp` checks headphone detection (`src/AudioEndpoint.hpp`):
+headphone form factors, and devices that report Speakers/LineLevel/Unknown but
+are named as headphones (Realtek jacks, USB DACs, Bluetooth). `room_impulse_test.cjs`
+runs the cinema preset's room impulse response: deterministic, decorrelated,
+damped highs, same energy as before. On Windows, with 声音 → 输出设备 → 自动检测
+and the cinema or standard preset on, plug in or connect headphones during
+playback: crossfeed should switch on within a second without a reload.

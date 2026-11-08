@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <mmdeviceapi.h>
+#include "AudioEndpoint.hpp"
 
 #pragma comment(lib, "propsys.lib")
 
@@ -1425,52 +1426,51 @@ static const PROPERTYKEY kPKeyDeviceFriendlyName = {
     14
 };
 
+// PKEY_DeviceInterface_FriendlyName: {026E516E-B814-414B-83CD-856D6FEF4822}, 2
+static const PROPERTYKEY kPKeyDeviceInterfaceFriendlyName = {
+    { 0x026e516e, 0xb814, 0x414b, { 0x83, 0xcd, 0x85, 0x6d, 0x6f, 0xef, 0x48, 0x22 } },
+    2
+};
+
+static std::wstring ReadStringProperty(IPropertyStore* props, const PROPERTYKEY& key) {
+    std::wstring value;
+    PROPVARIANT var;
+    PropVariantInit(&var);
+    if (SUCCEEDED(props->GetValue(key, &var)) && var.vt == VT_LPWSTR && var.pwszVal) value = var.pwszVal;
+    PropVariantClear(&var);
+    return value;
+}
+
 AudioEndpointType WebViewManager::GetDetectedAudioEndpoint() const {
-    AudioEndpointType result = AudioEndpointType::Speakers;
     wil::com_ptr<IMMDeviceEnumerator> pEnum;
     HRESULT hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
         IID_PPV_ARGS(&pEnum)
     );
-    if (FAILED(hr) || !pEnum) return result;
+    if (FAILED(hr) || !pEnum) return AudioEndpointType::Speakers;
 
     wil::com_ptr<IMMDevice> pDevice;
     hr = pEnum->GetDefaultAudioEndpoint(eRender, eMultimedia, &pDevice);
-    if (FAILED(hr) || !pDevice) return result;
+    if (FAILED(hr) || !pDevice) return AudioEndpointType::Speakers;
 
     wil::com_ptr<IPropertyStore> pProps;
     hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
-    if (FAILED(hr) || !pProps) return result;
+    if (FAILED(hr) || !pProps) return AudioEndpointType::Speakers;
 
+    long formFactor = -1;
     PROPVARIANT var;
     PropVariantInit(&var);
-    hr = pProps->GetValue(kPKeyAudioEndpointFormFactor, &var);
-    if (SUCCEEDED(hr) && var.vt == VT_UI4) {
-        // 3: Headphones, 5: Headset
-        if (var.ulVal == 3 || var.ulVal == 5) {
-            result = AudioEndpointType::Headphones;
-        } else {
-            result = AudioEndpointType::Speakers;
-        }
-    } else {
-        PropVariantClear(&var);
-        hr = pProps->GetValue(kPKeyDeviceFriendlyName, &var);
-        if (SUCCEEDED(hr) && var.vt == VT_LPWSTR && var.pwszVal) {
-            std::wstring name = var.pwszVal;
-            std::wstring lower;
-            for (wchar_t c : name) lower += towlower(c);
-            if (lower.find(L"headphone") != std::wstring::npos ||
-                lower.find(L"headset") != std::wstring::npos ||
-                lower.find(L"earphone") != std::wstring::npos ||
-                lower.find(L"airpods") != std::wstring::npos ||
-                lower.find(L"buds") != std::wstring::npos ||
-                lower.find(L"耳机") != std::wstring::npos) {
-                result = AudioEndpointType::Headphones;
-            }
-        }
+    if (SUCCEEDED(pProps->GetValue(kPKeyAudioEndpointFormFactor, &var)) && var.vt == VT_UI4) {
+        formFactor = static_cast<long>(var.ulVal);
     }
     PropVariantClear(&var);
-    return result;
+
+    // A non-headphone form factor is not conclusive (USB DACs, Bluetooth and
+    // rear-panel jacks often report Speakers/Unknown), so names are checked too.
+    const bool headphones = IsHeadphoneEndpoint(formFactor,
+        ReadStringProperty(pProps.get(), kPKeyDeviceFriendlyName),
+        ReadStringProperty(pProps.get(), kPKeyDeviceInterfaceFriendlyName));
+    return headphones ? AudioEndpointType::Headphones : AudioEndpointType::Speakers;
 }
 
 void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
@@ -1675,7 +1675,8 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
                     let loud = false;
                     for (let c = 0; c < channels; ++c) {
                         const src = input[c] || input[0];
-                        const v = src ? src[i] : 0;
+                        let v = src ? src[i] : 0;
+                        if (v !== v || v === Infinity || v === -Infinity) v = 0;  // NaN/Inf would stick in the history
                         hist[c][n & m] = v;
                         if (v > this.quiet || v < -this.quiet) loud = true;
                     }
@@ -1799,12 +1800,42 @@ void WebViewManager::InjectSurroundSoundScript(bool reloadPage) {
         const left = buf.getChannelData(0);
         const right = buf.getChannelData(1);
         const decay = 0.009;
-        for (let i = 0; i < numSamples; ++i) {
-            const env = Math.exp(-(i / rate) / decay);
-            const damp = 1.0 - (i / numSamples) * 0.45;
-            left[i] = (Math.random() * 2 - 1) * env * damp * 0.5;
-            right[i] = (Math.random() * 2 - 1) * env * damp * 0.5;
+        // Fixed seeds: every tab and every rebuild gets the same, decorrelated
+        // left/right room, not a new random one.
+        function noise(seed) {
+            let a = seed >>> 0;
+            return function() {
+                a = (a + 0x6D2B79F5) >>> 0;
+                let t = a;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296 * 2 - 1;
+            };
         }
+        const predelay = Math.round(rate * 0.0015);
+        function fill(data, seed) {
+            const rnd = noise(seed);
+            let lp = 0, lp2 = 0, energy = 0, target = 0;
+            for (let i = 0; i < numSamples; ++i) {
+                if (i < predelay) { data[i] = 0; continue; }
+                const t = (i - predelay) / rate;
+                const env = Math.exp(-t / decay) * 0.5;
+                // Walls absorb highs first: two one-pole lowpasses whose cutoff
+                // falls from 6 kHz to 1.5 kHz over the tail (white noise alone
+                // leaves a hiss after every transient).
+                const cutoff = 6000 * Math.pow(1500 / 6000, i / numSamples);
+                const k = 1 - Math.exp(-2 * Math.PI * cutoff / rate);
+                lp += k * (rnd() - lp);
+                lp2 += k * (lp - lp2);
+                data[i] = lp2 * env;
+                energy += data[i] * data[i];
+                target += env * env / 3;          // energy of the old white-noise room
+            }
+            const scale = energy > 0 ? Math.sqrt(target / energy) : 0;
+            for (let i = predelay; i < numSamples; ++i) data[i] *= scale;
+        }
+        fill(left, 0x51A7E5);
+        fill(right, 0x2C0FFEE);
         cachedReverbBuffer = buf;
         return buf;
     }

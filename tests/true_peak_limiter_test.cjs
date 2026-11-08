@@ -95,4 +95,15 @@ test('gain recovers after a loud burst', () => {
   assert(Math.abs(p - 0.3) < 0.003, `peak after release ${p}`);
 });
 
+test('a NaN or infinite input sample is silenced, not kept', () => {
+  const x = signal(0.5, (i) => 0.3 * Math.sin(2 * Math.PI * 440 * i / RATE));
+  x[1000] = NaN; x[2000] = Infinity; x[3000] = -Infinity;
+  const { out } = run([x]);
+  for (const v of out[0]) assert(Number.isFinite(v), 'finite output');
+  const tail = out[0].subarray(RATE * 0.25);
+  let p = 0;
+  for (const v of tail) p = Math.max(p, Math.abs(v));
+  assert(Math.abs(p - 0.3) < 0.003, `level after bad samples ${p}`);
+});
+
 if (failures) process.exitCode = 1;

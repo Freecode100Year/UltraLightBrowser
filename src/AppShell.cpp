@@ -4,6 +4,7 @@
 #include "Icons.hpp"
 #include "InternalPages.hpp"
 #include "MainWindow.hpp"
+#include "AudioEndpointWatcher.hpp"
 #include "ElementBlocker.hpp"
 #include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
@@ -145,6 +146,14 @@ int AppShell::Run(HINSTANCE hInstance, int nCmdShow) {
     if (settings.startupPage == "home" && !settings.startUrl.empty()) urls.push_back(settings.startUrl);
     if (!OpenWindow(false, urls)) return 1;
 
+    // Headphones plugged in or unplugged: re-detect the output device when the
+    // device mode is "自动检测" and the enhancer actually uses it.
+    AudioEndpointWatcher::Instance().Start(hInstance, [this]() {
+        const auto& s = Config::Instance().GetSettings();
+        if (s.audioDeviceMode != "auto" || !s.enableSurroundSound || s.systemAudioPassthrough) return;
+        for (const auto& w : m_windows) w->OnAudioEndpointChanged();
+    });
+
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         if (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN) {
@@ -169,6 +178,7 @@ int AppShell::Run(HINSTANCE hInstance, int nCmdShow) {
         CollectGarbage();
     }
 
+    AudioEndpointWatcher::Instance().Stop();
     Icons::ReleaseMenuBitmaps();
     if (m_gdiplusToken) Gdiplus::GdiplusShutdown(m_gdiplusToken);
     return static_cast<int>(msg.wParam);

@@ -73,6 +73,7 @@ public:
     ICoreWebView2* ActiveWebView() const;
     UINT32 BrowserProcessId() const;
     void OnLibraryChanged();
+    void OnAudioEndpointChanged();  // default output device changed ("自动检测")
     void OpenInNewTab(const std::wstring& url, bool activate);
     void FocusWindow();
 

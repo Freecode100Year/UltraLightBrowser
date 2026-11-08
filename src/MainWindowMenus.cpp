@@ -369,6 +369,12 @@ void MainWindow::ShowAboutDialog() {
     }
 }
 
+void MainWindow::OnAudioEndpointChanged() {
+    // Re-detects headphones vs. speakers; the page rebuilds its audio graph
+    // with a short fade, without reloading.
+    for (auto& t : m_tabs) if (t->view) t->view->UpdateAudioEnhancer(false);
+}
+
 bool MainWindow::HandleMenuCommand(WORD id) {
     auto& settings = Config::Instance().GetSettings();
     Tab* tab = ActiveTab();
