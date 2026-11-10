@@ -192,6 +192,8 @@ target_link_libraries(UltraLightBrowser PRIVATE
     crypt32.lib
     bcrypt.lib
     comdlg32.lib
+    ntdll.lib
+    userenv.lib
 )
 
 # Embed Manifest
