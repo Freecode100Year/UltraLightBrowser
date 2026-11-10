@@ -9,14 +9,18 @@
 # 与 warp/rotate.go 完全一致。浏览器依次尝试本周期、上一周期的地址，最后才用链接里的固定地址。
 #
 # 用法 Usage（需要 root）：
-#   sudo bash ulb-line-ipv6.sh install --uuid <线路UUID> --prefix 2001:db8:1:2::/64 [--dev he-ipv6] [--port 443]
+#   sudo bash ulb-line-ipv6.sh install --uuid <线路UUID> --prefix 2001:db8:1:2::/64 [--dev he-ipv6] [--port 443] [--dnat-to <固定地址>]
 #   sudo bash ulb-line-ipv6.sh status
 #   sudo bash ulb-line-ipv6.sh apply        （定时器每小时自动运行这一步）
 #   sudo bash ulb-line-ipv6.sh uninstall
 #   bash ulb-line-ipv6.sh show --uuid <UUID> --prefix <前缀/64> [--period N]   只计算地址，不改系统
 #
-# 要求：服务器有一个路由到本机的 IPv6 /64（例如 Hurricane Electric 隧道的 Routed /64），
-#       Xray 监听 [::]:端口（所有地址），而不是某一个固定地址。
+# 要求：服务器有一个路由到本机的 IPv6 /64（例如 Hurricane Electric 隧道的 Routed /64）。
+# 两种方式让 Xray 收到发往新地址的连接：
+#   1. Xray 入站监听 [::]（所有地址）：脚本把三个周期的地址加到网卡上即可。
+#   2. --dnat-to <线路原来的固定地址>：Xray 只监听那个固定地址（例如同一端口上还有别的线路）时用。
+#      脚本用独立的 nftables 表 ulb_line，把发往三个周期地址的连接转到固定地址，不改 Xray、不重启 Xray，
+#      也不动其他防火墙规则。整段 /64 已经路由到本机（ip -6 route show table local 里有 local <前缀>）时不再加地址。
 set -euo pipefail
 
 CONF=/etc/ulb-line-ipv6.conf
@@ -28,7 +32,7 @@ PERIOD_SECONDS=259200
 die() { echo "错误 Error: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
-UUID="" PREFIX="" DEV="" PORT=443 PERIOD=""
+UUID="" PREFIX="" DEV="" PORT=443 PERIOD="" DNAT_TO=""
 parse_args() {
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -37,6 +41,7 @@ parse_args() {
 		--dev) DEV=$2; shift 2 ;;
 		--port) PORT=$2; shift 2 ;;
 		--period) PERIOD=$2; shift 2 ;;
+		--dnat-to) DNAT_TO=$2; shift 2 ;;
 		*) die "未知参数 unknown option: $1" ;;
 		esac
 	done
@@ -75,8 +80,44 @@ detect_dev() {
 	ip -6 -o addr show scope global | awk -v p="$first:" 'index($4, p) == 1 {print $2; exit}'
 }
 
+# 整段前缀是否已经路由到本机（AnyIP）
+prefix_is_local() {
+	local first
+	first=$(prefix_groups)
+	ip -6 route show table local | grep -qiE "^local ${first}::/64 "
+}
+
+# 写入（整表替换）转发规则；nft -f 是原子的，出错时原有规则不变
+apply_dnat() {
+	local set
+	set=$(echo "$1" | paste -sd, -)
+	nft -f - <<NFT
+table ip6 ulb_line
+delete table ip6 ulb_line
+table ip6 ulb_line {
+	chain prerouting {
+		type nat hook prerouting priority dstnat; policy accept;
+		ip6 daddr { $set } tcp dport $PORT dnat to [$DNAT_TO]:$PORT
+	}
+	chain output {
+		type nat hook output priority -100; policy accept;
+		ip6 daddr { $set } tcp dport $PORT dnat to [$DNAT_TO]:$PORT
+	}
+}
+NFT
+}
+
 check_listen() {
 	local out
+	if [ -n "${DNAT_TO:-}" ]; then
+		if ss -ltnH "sport = :$PORT" 2>/dev/null | awk '{print $4}' | grep -qiF "[$DNAT_TO]:$PORT"; then
+			echo "  ✓ 固定地址 [$DNAT_TO]:$PORT 有程序在监听，转发目标可用"
+		else
+			echo "  ! [$DNAT_TO]:$PORT 没有程序在监听，转发过去也连不上（Xray 没运行？地址写错？）"
+		fi
+		nft list table ip6 ulb_line >/dev/null 2>&1 && echo "  ✓ 转发规则已生效（nft list table ip6 ulb_line 查看）" || echo "  ! 转发规则不存在"
+		return
+	fi
 	out=$(ss -ltnH "sport = :$PORT" 2>/dev/null || true)
 	if [ -z "$out" ]; then
 		echo "  ! 没有程序在监听 TCP $PORT（Xray 没运行？）"
@@ -96,10 +137,15 @@ apply() {
 	want=$(for p in $((n - 1)) "$n" $((n + 1)); do addr_for "$p"; done)
 	mkdir -p "$(dirname "$STATE")"
 	touch "$STATE"
-	for a in $want; do
-		# replace：已有就保持，没有就添加（重复运行不会报错）
-		ip -6 addr replace "$a/128" dev "$DEV" nodad
-	done
+	if [ -n "${DNAT_TO:-}" ] && prefix_is_local; then
+		: # 整段 /64 已归本机，不用加地址
+	else
+		for a in $want; do
+			# replace：已有就保持，没有就添加（重复运行不会报错）
+			ip -6 addr replace "$a/128" dev "$DEV" nodad
+		done
+	fi
+	[ -z "${DNAT_TO:-}" ] || apply_dnat "$want"
 	# 删除以前由本脚本添加、现在已过期的地址（不碰其他地址）
 	while read -r cur; do
 		[ -n "$cur" ] || continue
@@ -115,10 +161,10 @@ status() {
 	load_conf
 	local n
 	n=$(now_period)
-	echo "网卡 dev: $DEV   前缀 prefix: $PREFIX   端口 port: $PORT"
+	echo "网卡 dev: $DEV   前缀 prefix: $PREFIX   端口 port: $PORT${DNAT_TO:+   转发到 dnat-to: [$DNAT_TO]:$PORT}"
 	echo "本周期 current ($n):  $(addr_for "$n")"
 	echo "下周期 next ($((n + 1))): $(addr_for $((n + 1)))  （$(date -d @$(((n + 1) * PERIOD_SECONDS)) '+%F %T %Z') 起）"
-	echo "网卡上由本脚本管理的地址 managed:"
+	echo "由本脚本管理的地址 managed:"
 	sed 's/^/  /' "$STATE" 2>/dev/null || echo "  （无）"
 	check_listen
 	systemctl --no-pager --quiet is-active "$UNIT.timer" && echo "  ✓ 定时器运行中 timer active" || echo "  ! 定时器未运行 timer inactive"
@@ -132,9 +178,13 @@ install_all() {
 	[ -n "$DEV" ] || DEV=$(detect_dev)
 	[ -n "$DEV" ] || die "找不到持有该前缀地址的网卡，请用 --dev 指定（HE 隧道一般是 he-ipv6）"
 	ip link show "$DEV" >/dev/null 2>&1 || die "网卡 $DEV 不存在"
+	if [ -n "$DNAT_TO" ]; then
+		command -v nft >/dev/null || die "--dnat-to 需要 nftables（apt install nftables）"
+		[[ "$DNAT_TO" == *:* ]] || die "--dnat-to 要写 IPv6 地址"
+	fi
 	install -m 755 "$0" "$SELF"
 	umask 077
-	printf 'UUID=%q\nPREFIX=%q\nDEV=%q\nPORT=%q\n' "$UUID" "$PREFIX" "$DEV" "$PORT" >"$CONF"
+	printf 'UUID=%q\nPREFIX=%q\nDEV=%q\nPORT=%q\nDNAT_TO=%q\n' "$UUID" "$PREFIX" "$DEV" "$PORT" "$DNAT_TO" >"$CONF"
 	cat >/etc/systemd/system/$UNIT.service <<EOF
 [Unit]
 Description=UltraLightBrowser line: rotate the IPv6 entry address every 3 days
@@ -169,6 +219,7 @@ uninstall_all() {
 	if [ -r "$CONF" ]; then
 		load_conf
 		while read -r a; do [ -n "$a" ] && ip -6 addr del "$a/128" dev "$DEV" 2>/dev/null || true; done <"$STATE" 2>/dev/null || true
+		nft delete table ip6 ulb_line 2>/dev/null || true
 	fi
 	rm -f /etc/systemd/system/$UNIT.service /etc/systemd/system/$UNIT.timer "$SELF" "$CONF" "$STATE"
 	systemctl daemon-reload
