@@ -1,4 +1,6 @@
 #pragma once
+#include "MacDeviceProfile.hpp"
+#include <string>
 namespace UltraLight {
 // Injected into every document (AddScriptToExecuteOnDocumentCreated) and every
 // dedicated/service worker (Runtime.evaluate before the worker starts) in macOS mode.
@@ -26,7 +28,8 @@ inline constexpr const wchar_t* kMacStealthScript = LR"js((() => {
   };
   // WebGL: unmasked GPU strings as reported by Chromium on Apple Silicon.
   const VENDOR = "Google Inc. (Apple)";
-  const RENDERER = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)";
+  const RENDERER = "__ULB_MAC_GPU_RENDERER__";
+  const HARDWARE_CONCURRENCY = __ULB_MAC_HARDWARE_CONCURRENCY__;
   for (const C of [G.WebGLRenderingContext, G.WebGL2RenderingContext]) {
     hookMethod(C && C.prototype, "getParameter", (t, self, args) =>
       args[0] === 0x9245 ? VENDOR : args[0] === 0x9246 ? RENDERER : Reflect.apply(t, self, args));
@@ -41,7 +44,10 @@ inline constexpr const wchar_t* kMacStealthScript = LR"js((() => {
   }
   // The DevTools override does not always reach navigator.platform in documents that
   // share a renderer with earlier pages; pin it here as well.
-  if (G.Navigator && !G.WorkerNavigator) hookGetter(G.Navigator.prototype, "platform", "MacIntel");
+  if (G.Navigator) {
+    hookGetter(G.Navigator.prototype, "platform", "MacIntel");
+    hookGetter(G.Navigator.prototype, "hardwareConcurrency", HARDWARE_CONCURRENCY);
+  }
   // Workers are outside Emulation.setUserAgentOverride's navigator.platform reach,
   // and service workers also keep the real navigator.userAgent.
   if (G.WorkerNavigator) {
@@ -50,6 +56,7 @@ inline constexpr const wchar_t* kMacStealthScript = LR"js((() => {
     hookGetter(P, "platform", "MacIntel");
     hookGetter(P, "userAgent", UA);
     hookGetter(P, "appVersion", UA.slice(UA.indexOf("/") + 1));
+    hookGetter(P, "hardwareConcurrency", HARDWARE_CONCURRENCY);
   }
   // Shared workers are browser-level targets this page's DevTools session cannot
   // reach, so they would report the real OS; hide the constructor instead.
@@ -60,4 +67,19 @@ inline constexpr const wchar_t* kMacStealthScript = LR"js((() => {
       Reflect.apply(t, self, args).filter((v) => !v.localService));
   }
 })();)js";
+
+inline std::wstring BuildMacStealthScript(const MacDeviceProfile& profile) {
+    std::wstring source = kMacStealthScript;
+    const auto replaceAll = [&source](const std::wstring& placeholder, const std::wstring& value) {
+        std::size_t pos = 0;
+        while ((pos = source.find(placeholder, pos)) != std::wstring::npos) {
+            source.replace(pos, placeholder.size(), value);
+            pos += value.size();
+        }
+    };
+    std::wstring renderer(profile.renderer.begin(), profile.renderer.end());
+    replaceAll(L"__ULB_MAC_GPU_RENDERER__", renderer);
+    replaceAll(L"__ULB_MAC_HARDWARE_CONCURRENCY__", std::to_wstring(profile.hardwareConcurrency));
+    return source;
+}
 }

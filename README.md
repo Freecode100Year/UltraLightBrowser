@@ -207,7 +207,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 | `User-Agent` 请求头 / `navigator.userAgent` | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) … Edg/<本机内核版本>`，只替换系统段，版本号与内核一致 |
 | Client Hints（`Sec-CH-UA-*`）/ `navigator.userAgentData` | 平台 `macOS`、版本 `27.2.0`（macOS 27.2）、架构 `arm`、64 位；品牌列表和 Edge 完整版本号取自本机 WebView2 内核实测值（去掉 WebView2 特有的品牌项） |
 | `navigator.platform` | `MacIntel` |
-| WebGL / WebGPU 显卡信息 | `ANGLE (Apple, ANGLE Metal Renderer: Apple M1)` / `apple` · `metal-3` |
+| WebGL / WebGPU 显卡信息 | macOS 模式下从 M1/8、M2/8、M3/8、M4/10 的配套画像中按进程随机选择 WebGL 显卡标签与 `navigator.hardwareConcurrency`；WebGPU 报告 `apple` · `metal-3` |
 | 语音列表 | 隐藏 Windows 本地语音，只保留在线语音 |
 | 滚动条 | 隐藏（与 macOS 默认的悬浮滚动条一致，不占布局宽度） |
 | 跨进程 iframe、Dedicated Worker、Service Worker | 同样改写 UA、Client Hints 和 `platform` |
@@ -219,7 +219,9 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 
 **系统版本号**：默认报告 macOS `27.2.0`，可在 `%LOCALAPPDATA%\UltraLightBrowser\config.json` 的 `settings.macPlatformVersion` 中修改（仅允许数字和点）。从旧版本升级时，原先保存的默认值 `26.2.0` 会自动迁移到 `27.2.0`，其他自定义值不变。
 
-**局限**：无法改变系统字体（字体探测可区分 Segoe UI / 微软雅黑 与 PingFang 等）、Emoji 和 Canvas / WebGL 的实际渲染结果，专业指纹检测仍可能识别出 Windows，而“伪装过”本身也是一种特征。非必要请保持默认的 Windows 模式。
+**会话画像**：选择 macOS Edge 身份后，本次浏览器进程的所有标签页共用同一 GPU/核心数画像；重新启动时从四种配置中重新抽取，因此不同会话也可能抽到相同配置。Canvas / WebGL 像素、音频读回和真实宿主 GPU 渲染保持原样，自检页会说明这些值可能暴露 Windows 宿主。
+
+**局限**：无法改变系统字体（字体探测可区分 Segoe UI / 微软雅黑 与 PingFang 等）、Emoji、Canvas / WebGL 的实际渲染结果、音频读回、网络连接指纹或真实屏幕参数。专业指纹检测仍可能识别出 Windows，而“伪装过”本身也是一种特征。非必要请保持默认的 Windows 模式。
 
 ## 快捷键
 

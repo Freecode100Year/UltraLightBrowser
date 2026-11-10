@@ -169,6 +169,7 @@ target_link_libraries(UltraLightBrowser PRIVATE
     propsys.lib
     gdiplus.lib
     crypt32.lib
+    bcrypt.lib
     comdlg32.lib
 )
 
