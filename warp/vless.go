@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,9 +32,18 @@ import (
 
 // Line is a private VLESS + REALITY server (a "vless://" share link). Every
 // connection, including name resolution, goes through it; there is no direct path.
+//
+// With a rotation prefix (see rotate.go) the line has several candidate links,
+// best first; the one in use is replaced when it stops working, and the line
+// moves back to the best candidate when a new rotation period starts.
 type Line struct {
+	mu     sync.Mutex
 	inst   *core.Instance
 	server string
+	link   string // the link as given
+	prefix string // rotation prefix, or ""
+	cands  []string
+	cur    string // candidate in use
 	up     atomic.Bool
 }
 
@@ -112,7 +122,21 @@ func parseLink(link string) (*core.Config, string, error) {
 	return cfg, net.JoinHostPort(u.Hostname(), u.Port()), nil
 }
 
-func StartLine(link string) (*Line, string, error) {
+// StartLine starts the line. prefix is an IPv6 rotation prefix or "".
+func StartLine(link, prefix string) (*Line, string, error) {
+	if _, _, err := parseLink(link); err != nil {
+		return nil, "", err
+	}
+	l := &Line{link: link, prefix: prefix, cands: lineCandidates(link, prefix, time.Now())}
+	inst, server, err := startInst(l.cands[0])
+	if err != nil {
+		return nil, "", err
+	}
+	l.inst, l.server, l.cur = inst, server, l.cands[0]
+	return l, server, nil
+}
+
+func startInst(link string) (*core.Instance, string, error) {
 	cfg, server, err := parseLink(link)
 	if err != nil {
 		return nil, "", err
@@ -124,19 +148,97 @@ func StartLine(link string) (*Line, string, error) {
 	if err := inst.Start(); err != nil {
 		return nil, "", err
 	}
-	return &Line{inst: inst, server: server}, server, nil
+	return inst, server, nil
 }
 
 func (l *Line) Dial(ctx context.Context, host string, port int) (net.Conn, error) {
-	return core.Dial(ctx, l.inst, xnet.TCPDestination(xnet.ParseAddress(host), xnet.Port(port)))
+	l.mu.Lock()
+	inst := l.inst
+	l.mu.Unlock()
+	return core.Dial(ctx, inst, xnet.TCPDestination(xnet.ParseAddress(host), xnet.Port(port)))
+}
+
+// retire closes an instance that is no longer in use, after a grace period so
+// connections already open through it can finish.
+func retire(inst *core.Instance) {
+	go func() {
+		time.Sleep(2 * time.Minute)
+		inst.Close()
+	}()
+}
+
+// pick checks the given candidates at the same time (at most ~15 s in all) and
+// switches to the first one in list order that works. The instance in use is
+// reused for its own candidate. It returns false, changing nothing, when none works.
+func (l *Line) pick(cands []string) bool {
+	l.mu.Lock()
+	curInst, cur := l.inst, l.cur
+	l.mu.Unlock()
+	type trial struct {
+		inst   *core.Instance
+		server string
+		ok     bool
+	}
+	trials := make([]trial, len(cands))
+	var wg sync.WaitGroup
+	for i, c := range cands {
+		wg.Add(1)
+		go func(i int, c string) {
+			defer wg.Done()
+			var inst *core.Instance
+			var server string
+			if c == cur {
+				inst = curInst
+			} else {
+				var err error
+				if inst, server, err = startInst(c); err != nil {
+					return
+				}
+			}
+			trials[i] = trial{inst, server, checkInst(inst) == nil}
+		}(i, c)
+	}
+	wg.Wait()
+	chosen := -1
+	for i, t := range trials {
+		if t.ok {
+			chosen = i
+			break
+		}
+	}
+	for i, t := range trials {
+		if i != chosen && t.inst != nil && t.inst != curInst {
+			t.inst.Close()
+		}
+	}
+	if chosen < 0 {
+		return false
+	}
+	if cands[chosen] == cur {
+		return true
+	}
+	t := trials[chosen]
+	l.mu.Lock()
+	l.inst, l.server, l.cur = t.inst, t.server, cands[chosen]
+	l.mu.Unlock()
+	retire(curInst)
+	status("LINE %s", t.server)
+	return true
 }
 
 // check fetches a 204 page through the line; core.Dial alone succeeds without
 // reaching the server.
 func (l *Line) check() error {
+	l.mu.Lock()
+	inst := l.inst
+	l.mu.Unlock()
+	return checkInst(inst)
+}
+
+func checkInst(inst *core.Instance) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	c, err := l.Dial(ctx, "cp.cloudflare.com", 80)
+	c, err := core.Dial(ctx, inst, xnet.TCPDestination(xnet.ParseAddress("cp.cloudflare.com"), xnet.Port(80)))
 	if err != nil {
 		return err
 	}
@@ -160,11 +262,14 @@ func (l *Line) check() error {
 // route to an IPv6 server, "unreachable" when the server does not answer, or
 // "handshake" when it answers but the tunnel does not come up.
 func (l *Line) reason() string {
-	if c, err := net.DialTimeout("tcp", l.server, 8*time.Second); err == nil {
+	l.mu.Lock()
+	server := l.server
+	l.mu.Unlock()
+	if c, err := net.DialTimeout("tcp", server, 8*time.Second); err == nil {
 		c.Close()
 		return "handshake"
 	}
-	host, _, _ := net.SplitHostPort(l.server)
+	host, _, _ := net.SplitHostPort(server)
 	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil && !routesIPv6(ip) {
 		return "noipv6"
 	}
@@ -185,10 +290,33 @@ func routesIPv6(ip net.IP) bool {
 }
 
 // Monitor reports STATE up/down; it checks every 20 s while down, 2 min while up.
+// With rotation it also fails over between candidates and, while up on a fallback,
+// tries the best candidate again when a new period starts and once an hour.
 func (l *Line) Monitor() {
 	first := true
+	lastBest := time.Now()
 	for {
-		err := l.check()
+		if c := lineCandidates(l.link, l.prefix, time.Now()); !sameList(c, l.candidates()) {
+			l.mu.Lock()
+			l.cands = c
+			l.mu.Unlock()
+			lastBest = time.Time{} // new period: move to its address now
+		}
+		var err error
+		if first && len(l.candidates()) > 1 {
+			// Start-up: check every candidate at once rather than one after another.
+			if !l.pick(l.candidates()) {
+				err = l.check()
+			}
+		} else if err = l.check(); err != nil && len(l.candidates()) > 1 && l.pick(l.candidates()) {
+			err = nil
+		}
+		if err == nil {
+			if cands := l.candidates(); l.current() != cands[0] && time.Since(lastBest) > time.Hour {
+				lastBest = time.Now()
+				l.pick(cands[:1])
+			}
+		}
 		if err == nil != l.up.Load() || first {
 			l.up.Store(err == nil)
 			if err == nil {
@@ -206,4 +334,28 @@ func (l *Line) Monitor() {
 			time.Sleep(20 * time.Second)
 		}
 	}
+}
+
+func (l *Line) candidates() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.cands
+}
+
+func (l *Line) current() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.cur
+}
+
+func sameList(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

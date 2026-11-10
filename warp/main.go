@@ -18,7 +18,13 @@
 // With a vless:// link in the ULB_LINE environment variable the helper uses that
 // private VLESS + REALITY server instead of WARP (-state is then not needed):
 // every connection and name lookup goes through it, never direct. It prints
-// PORT, STATE and ERROR lines, plus "LINE <host:port>" once the core is running.
+// PORT, STATE and ERROR lines, plus "LINE <host:port>" once the core is running
+// and whenever it moves to another server address. ULB_LINE_ROTATE, an IPv6 /64
+// prefix, makes the line follow a server address that changes every 3 days
+// (see rotate.go).
+//
+// A WARP device is replaced by a newly registered one every 3 days, which changes
+// the exit IPv6 address; "ROTATE <device v6>" is printed when that happens.
 package main
 
 import (
@@ -27,6 +33,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -54,7 +61,15 @@ func status(format string, args ...any) {
 func main() {
 	flag.Parse()
 	link := os.Getenv("ULB_LINE")
+	rotatePrefix := os.Getenv("ULB_LINE_ROTATE")
 	os.Unsetenv("ULB_LINE")
+	os.Unsetenv("ULB_LINE_ROTATE")
+	if rotatePrefix == "" {
+		// An imported server can opt in with "&rotate6=<its /64>" in its link.
+		if u, err := url.Parse(strings.TrimSpace(link)); err == nil {
+			rotatePrefix = u.Query().Get("rotate6")
+		}
+	}
 	if *statePath == "" && link == "" {
 		status("ERROR missing -state")
 		os.Exit(2)
@@ -72,7 +87,7 @@ func main() {
 
 	t := &Tunnel{}
 	if link != "" {
-		l, server, err := StartLine(link)
+		l, server, err := StartLine(link, rotatePrefix)
 		if err != nil {
 			status("ERROR line: %v", err)
 			os.Exit(1)

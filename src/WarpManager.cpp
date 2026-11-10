@@ -90,6 +90,11 @@ std::string ServerOf(const std::string& link) {
     return rest;
 }
 
+// The public line server answers on a new address in this /64 every 3 days; the
+// helper derives the address (warp/rotate.go, server/ulb-line-ipv6.sh) and falls
+// back to the fixed address in the link while the server has not switched.
+constexpr wchar_t kPublicLineRotate[] = L"2001:470:1f07:5f5::/64";
+
 // The built-in public line, used while no link is imported. Assembled from
 // parts so scrapers that collect share links from GitHub pass it over.
 std::string PublicLine() {
@@ -279,12 +284,17 @@ bool WarpManager::Launch(int port) {
     if (m_lineMode) {
         if (wchar_t* block = GetEnvironmentStringsW()) {
             for (const wchar_t* p = block; *p; p += wcslen(p) + 1) {
-                if (_wcsnicmp(p, L"ULB_LINE=", 9) != 0) env.append(p).push_back(L'\0');
+                if (_wcsnicmp(p, L"ULB_LINE=", 9) != 0 && _wcsnicmp(p, L"ULB_LINE_ROTATE=", 16) != 0) env.append(p).push_back(L'\0');
             }
             FreeEnvironmentStringsW(block);
         }
         env += L"ULB_LINE=" + StringUtils::Utf8ToWide(m_link);
         env.push_back(L'\0');
+        // Only the built-in line rotates; an imported server keeps its own address.
+        if (m_link == PublicLine()) {
+            env += std::wstring(L"ULB_LINE_ROTATE=") + kPublicLineRotate;
+            env.push_back(L'\0');
+        }
         env.push_back(L'\0');
     }
 
