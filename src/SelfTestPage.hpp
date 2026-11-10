@@ -20,7 +20,16 @@ const render = () => { document.getElementById("t").innerHTML = rows.map(([k, v,
   `<tr><td>${k}</td><td class="${ok ? "" : "warn"}">${v.replace(/</g, "&lt;")}</td></tr>`).join(""); };
 const mac = (s) => /Mac/.test(s);
 const probe = `navigator.userAgentData.getHighEntropyValues(["platformVersion","architecture","fullVersionList"])
-  .then(h => [navigator.userAgent, navigator.platform, navigator.appVersion, navigator.userAgentData.platform, h.platformVersion, h.architecture, navigator.hardwareConcurrency])`;
+  .then(h => {
+    let renderer = null;
+    try {
+      const gl = new OffscreenCanvas(1, 1).getContext("webgl");
+      const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
+      if (ext) renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+    } catch (_) {}
+    return [navigator.userAgent, navigator.platform, navigator.appVersion, navigator.userAgentData.platform,
+      h.platformVersion, h.architecture, navigator.hardwareConcurrency, renderer];
+  })`;
 const fromWorker = (make) => new Promise((resolve) => {
   setTimeout(() => resolve(null), 3000);
   try { make(resolve); } catch (e) { resolve(String(e)); }
@@ -66,6 +75,8 @@ const fromWorker = (make) => new Promise((resolve) => {
     wk.onmessage = (e) => done(e.data);
   });
   add("Dedicated Worker", w || "超时", !!w && mac(w[0]) && w[1] === "MacIntel" && w[3] === "macOS" && w[6] === navigator.hardwareConcurrency);
+  add("Dedicated Worker GPU", w && w[7] ? w[7] : "OffscreenCanvas/WebGL 不可用，未验证",
+    !!w && !!w[7] && w[7] === renderer);
   render();
   const s = await fromWorker(async (done) => {
     const reg = await navigator.serviceWorker.register("sw.js");

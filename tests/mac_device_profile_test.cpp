@@ -3,8 +3,39 @@
 #include <array>
 #include <cassert>
 #include <iostream>
+#include <cstdint>
+
+namespace {
+void testProcessProfileUsesOneRandomSelection() {
+    using namespace UltraLight;
+    unsigned calls = 0;
+    const auto randomSource = [&calls](std::uint32_t& value) {
+        ++calls;
+        value = 2;
+        return true;
+    };
+    const auto& first = SessionMacDeviceProfileFor(randomSource);
+    const auto& second = SessionMacDeviceProfileFor(randomSource);
+    assert(&first == &second);
+    assert(first.renderer.find("Apple M3") != std::string_view::npos);
+    assert(calls == 1);
+}
+
+void testProcessProfileFallsBackWhenRandomSourceFails() {
+    using namespace UltraLight;
+    const auto failingRandomSource = [](std::uint32_t& value) {
+        value = 3;
+        return false;
+    };
+    const auto& profile = SessionMacDeviceProfileFor(failingRandomSource);
+    assert(profile.renderer.find("Apple M1") != std::string_view::npos);
+    assert(profile.hardwareConcurrency == 8);
+}
+}
 
 int main() {
+    testProcessProfileUsesOneRandomSelection();
+    testProcessProfileFallsBackWhenRandomSourceFails();
     using namespace UltraLight;
     constexpr std::array<unsigned, 4> cores{8, 8, 8, 10};
     constexpr std::array<const char*, 4> chips{"Apple M1", "Apple M2", "Apple M3", "Apple M4"};

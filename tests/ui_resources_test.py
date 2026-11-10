@@ -13,6 +13,7 @@ assert set(cpp_entries.values()) == on_disk, set(cpp_entries.values()) ^ on_disk
 self_test = Path('src/SelfTestPage.hpp').read_text(encoding='utf-8')
 assert 'navigator.hardwareConcurrency' in self_test
 assert 'w[6]' in self_test and 's[6]' in self_test
+assert 'OffscreenCanvas' in self_test and 'w[7] === renderer' in self_test
 assert 'Canvas' in self_test and '音频' in self_test and '原生' in self_test
 assert '不同会话可能重复' in self_test
 for name in cpp_entries.values():

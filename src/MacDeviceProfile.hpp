@@ -31,4 +31,14 @@ inline std::size_t MacDeviceProfileIndex(bool rngSucceeded, std::uint32_t random
     return rngSucceeded ? randomValue % kMacDeviceProfiles.size() : 0;
 }
 
+template <typename RandomSource>
+inline const MacDeviceProfile& SessionMacDeviceProfileFor(RandomSource&& randomSource) {
+    static const std::size_t profileIndex = [&randomSource] {
+        std::uint32_t randomValue = 0;
+        const bool succeeded = randomSource(randomValue);
+        return MacDeviceProfileIndex(succeeded, randomValue);
+    }();
+    return MacDeviceProfileForIndex(profileIndex);
+}
+
 } // namespace UltraLight

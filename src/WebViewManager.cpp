@@ -69,16 +69,15 @@ void ShowWebView2InitError(HWND hWnd, const wchar_t* stage, HRESULT hr) {
 }
 
 const MacDeviceProfile& SessionMacDeviceProfile() {
-    static const std::size_t profileIndex = [] {
-        std::uint32_t randomValue = 0;
+    const auto randomSource = [](std::uint32_t& randomValue) {
         const NTSTATUS status = BCryptGenRandom(
             nullptr,
             reinterpret_cast<PUCHAR>(&randomValue),
             static_cast<ULONG>(sizeof(randomValue)),
             BCRYPT_USE_SYSTEM_PREFERRED_RNG);
-        return MacDeviceProfileIndex(BCRYPT_SUCCESS(status), randomValue);
-    }();
-    return MacDeviceProfileForIndex(profileIndex);
+        return BCRYPT_SUCCESS(status) != 0;
+    };
+    return SessionMacDeviceProfileFor(randomSource);
 }
 
 } // namespace
