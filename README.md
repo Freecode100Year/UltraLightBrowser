@@ -200,7 +200,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 
 ## macOS Edge 伪装
 
-切换到 macOS 后，网站从请求头和 JavaScript 看到的都是一台 Apple Silicon Mac 上的 Edge，各项数值彼此一致。改写通过 DevTools 协议在内核层完成，首个请求发出前就已生效。
+切换到 macOS 身份后，Edge UA、Client Hints、`navigator.platform`、WebGL 显卡标签和逻辑线程数使用同一套会话画像。改写通过 DevTools 协议在内核层完成，首个页面请求发出前就已生效；宿主的真实渲染和网络信号仍保留，见下方局限。
 
 | 检测面 | macOS 模式下的值 |
 | :--- | :--- |
@@ -210,12 +210,12 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 | WebGL / WebGPU 显卡信息 | macOS 模式下从 M1/8、M2/8、M3/8、M4/10 的配套画像中按进程随机选择 WebGL 显卡标签与 `navigator.hardwareConcurrency`；WebGPU 报告 `apple` · `metal-3` |
 | 语音列表 | 隐藏 Windows 本地语音，只保留在线语音 |
 | 滚动条 | 隐藏（与 macOS 默认的悬浮滚动条一致，不占布局宽度） |
-| 跨进程 iframe、Dedicated Worker、Service Worker | 同样改写 UA、Client Hints 和 `platform` |
+| 跨进程 iframe、Dedicated Worker、Service Worker | 同样改写 UA、Client Hints 和 `platform`；Worker 的逻辑线程数与页面画像一致 |
 | SharedWorker | 无法改写，macOS 模式下隐藏该接口 |
 
 被改写的函数调用 `toString()` 时仍显示为原生代码（`[native code]`）。macOS 模式下停用预先载入，因为预取请求不经过伪装，会暴露 Windows 和 WebView2。
 
-**自检**：菜单“⋯ → 浏览器UA标识 → 检查当前浏览器UA标识…”列出上述各项以及各类 Worker 中的实际取值，与 macOS 不一致的项标红。请求头与字体请另用 [BrowserLeaks](https://browserleaks.com/) 等站点核对。
+**自检**：菜单“⋯ → 浏览器UA标识 → 检查当前浏览器UA标识…”列出上述各项以及 Dedicated/Service Worker 中的实际取值，并在 OffscreenCanvas/WebGL 可用时比较 Dedicated Worker 与页面的 GPU 标签；不一致项或不可验证项会标出。请求头与字体请另用 [BrowserLeaks](https://browserleaks.com/) 等站点核对。
 
 **系统版本号**：默认报告 macOS `27.2.0`，可在 `%LOCALAPPDATA%\UltraLightBrowser\config.json` 的 `settings.macPlatformVersion` 中修改（仅允许数字和点）。从旧版本升级时，原先保存的默认值 `26.2.0` 会自动迁移到 `27.2.0`，其他自定义值不变。
 
