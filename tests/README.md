@@ -72,6 +72,8 @@ compressor lookahead is checked too. This is not an end-to-end sound-quality tes
 
 `g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/user_agent_test.cpp -o /tmp/ua-tests && /tmp/ua-tests` checks UA platform replacement, Edge version preservation, macOS 27.2 default, migration of the old default, preservation of custom platform versions, and malformed UA rejection. Native settings application needs Windows verification.
 
+`g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/mac_device_profile_test.cpp -o /tmp/mac-device-profile-tests && /tmp/mac-device-profile-tests` checks the session profile catalog, RNG-failure fallback selection, and deterministic script binding for GPU and hardware concurrency without perturbing Canvas or audio readbacks.
+
 ## Video diagnostics
 
 `node tests/video_diagnostics_test.cjs` executes the shipped script with deterministic media boundaries and checks frame deltas, drop percentage, buffer range, reset and unsupported stats. It does not play video.

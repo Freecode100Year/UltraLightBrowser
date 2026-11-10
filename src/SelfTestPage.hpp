@@ -11,6 +11,7 @@ td:first-child{width:220px;color:#666;white-space:nowrap}.warn{color:#c00;font-w
 </style></head><body>
 <h2>浏览器标识自检</h2>
 <p>标红项与 macOS 不一致（Windows 模式下标红属正常）。请求头与字体请另用 browserleaks.com 等站点核对。</p>
+<p>GPU 字符串与逻辑线程数按本次进程生成的画像配对；不同会话可能重复。Canvas/WebGL 像素、音频读回和宿主 GPU/字体保持原生，仍来自实际运行环境，可能暴露宿主环境。</p>
 <table id="t"></table>
 <script>
 const rows = [];
@@ -19,7 +20,7 @@ const render = () => { document.getElementById("t").innerHTML = rows.map(([k, v,
   `<tr><td>${k}</td><td class="${ok ? "" : "warn"}">${v.replace(/</g, "&lt;")}</td></tr>`).join(""); };
 const mac = (s) => /Mac/.test(s);
 const probe = `navigator.userAgentData.getHighEntropyValues(["platformVersion","architecture","fullVersionList"])
-  .then(h => [navigator.userAgent, navigator.platform, navigator.appVersion, navigator.userAgentData.platform, h.platformVersion, h.architecture])`;
+  .then(h => [navigator.userAgent, navigator.platform, navigator.appVersion, navigator.userAgentData.platform, h.platformVersion, h.architecture, navigator.hardwareConcurrency])`;
 const fromWorker = (make) => new Promise((resolve) => {
   setTimeout(() => resolve(null), 3000);
   try { make(resolve); } catch (e) { resolve(String(e)); }
@@ -38,6 +39,10 @@ const fromWorker = (make) => new Promise((resolve) => {
   const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : "n/a";
   add("WebGL vendor", ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : "n/a");
   add("WebGL renderer", renderer, /Apple/.test(renderer));
+  const model = renderer.match(/Apple M([1-4])\b/);
+  const expectedCores = model ? ({1: 8, 2: 8, 3: 8, 4: 10})[model[1]] : 0;
+  add("GPU / hardwareConcurrency", `${renderer} / ${navigator.hardwareConcurrency}`,
+    expectedCores !== 0 && navigator.hardwareConcurrency === expectedCores);
   if (navigator.gpu) {
     const a = await navigator.gpu.requestAdapter().catch(() => null);
     if (a && a.info) add("WebGPU adapter", `${a.info.vendor} / ${a.info.architecture}`, a.info.vendor === "apple");
@@ -60,7 +65,7 @@ const fromWorker = (make) => new Promise((resolve) => {
     const wk = new Worker(URL.createObjectURL(new Blob([`${probe}.then(postMessage)`])));
     wk.onmessage = (e) => done(e.data);
   });
-  add("Dedicated Worker", w || "超时", !!w && mac(w[0]) && w[1] === "MacIntel" && w[3] === "macOS");
+  add("Dedicated Worker", w || "超时", !!w && mac(w[0]) && w[1] === "MacIntel" && w[3] === "macOS" && w[6] === navigator.hardwareConcurrency);
   render();
   const s = await fromWorker(async (done) => {
     const reg = await navigator.serviceWorker.register("sw.js");
@@ -68,7 +73,7 @@ const fromWorker = (make) => new Promise((resolve) => {
     navigator.serviceWorker.onmessage = (e) => done(e.data);
     (reg.active || reg.waiting || reg.installing).postMessage(1);
   });
-  add("Service Worker", s || "超时", !!s && Array.isArray(s) && mac(s[0]) && s[1] === "MacIntel" && s[3] === "macOS");
+  add("Service Worker", s || "超时", !!s && Array.isArray(s) && mac(s[0]) && s[1] === "MacIntel" && s[3] === "macOS" && s[6] === navigator.hardwareConcurrency);
   render();
 })().catch((e) => { add("错误", String(e), false); render(); });
 </script></body></html>
@@ -79,7 +84,7 @@ self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("message", (e) => {
   navigator.userAgentData.getHighEntropyValues(["platformVersion", "architecture"]).then((h) =>
     e.source.postMessage([navigator.userAgent, navigator.platform, navigator.appVersion,
-      navigator.userAgentData.platform, h.platformVersion, h.architecture]));
+      navigator.userAgentData.platform, h.platformVersion, h.architecture, navigator.hardwareConcurrency]));
 });
 )js";
 }

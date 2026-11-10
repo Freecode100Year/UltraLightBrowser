@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <bcrypt.h>
 #include <mmdeviceapi.h>
 #include "AudioEndpoint.hpp"
 
@@ -65,6 +66,19 @@ void ShowWebView2InitError(HWND hWnd, const wchar_t* stage, HRESULT hr) {
     }
 
     MessageBoxW(hWnd, msg.c_str(), L"WebView2 内核启动失败", MB_OK | MB_ICONERROR);
+}
+
+const MacDeviceProfile& SessionMacDeviceProfile() {
+    static const std::size_t profileIndex = [] {
+        std::uint32_t randomValue = 0;
+        const NTSTATUS status = BCryptGenRandom(
+            nullptr,
+            reinterpret_cast<PUCHAR>(&randomValue),
+            static_cast<ULONG>(sizeof(randomValue)),
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+        return MacDeviceProfileIndex(BCRYPT_SUCCESS(status), randomValue);
+    }();
+    return MacDeviceProfileForIndex(profileIndex);
 }
 
 } // namespace
@@ -1113,7 +1127,7 @@ void WebViewManager::EnableMacSpoof(const std::string& capturedJson) {
         {"platform", "MacIntel"},
         {"userAgentMetadata", meta}};
     m_macOverrideParams = ov.dump();
-    m_stealthSource = kMacStealthScript;
+    m_stealthSource = BuildMacStealthScript(SessionMacDeviceProfile());
     const std::wstring quotedUa = StringUtils::Utf8ToWide(ov["userAgent"].dump());
     const auto at = m_stealthSource.find(kMacUaPlaceholder);
     if (at != std::wstring::npos) m_stealthSource.replace(at, wcslen(kMacUaPlaceholder), quotedUa);
