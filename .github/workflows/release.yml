@@ -27,6 +27,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+
       - name: Setup NuGet
         uses: nuget/setup-nuget@17d6beb0142f0371858976c178033f915525e692 # v2.0.1
 

@@ -1,9 +1,8 @@
 #pragma once
 
-// Pure, platform-independent ad/tracker matching rules. Kept free of Win32 and
-// WebView2 so the exact production rules are unit-tested on Linux
-// (tests/adblock_rules_test.cpp). NativeRequestFilter adapts WebView2 events to
-// this module; ElementBlocker embeds CosmeticScript() into every document.
+// C++ bridge to the platform-independent Rust ad/tracker rule engine. The bridge
+// preserves the WebView2-facing API; CosmeticScript() remains C++ because it
+// embeds page scripts. Rust rules and the production bridge are tested on Linux.
 
 #include <string>
 #include <unordered_set>
@@ -47,17 +46,7 @@ public:
 private:
     Rules();
 
-    struct HostPath {
-        std::wstring host;   // matches host and its subdomains
-        std::wstring prefix; // lowercase path prefix, starts with '/'
-    };
-
-    bool MatchPathKeyword(const std::wstring& lowerPath) const;
-    bool MatchHostPath(const std::wstring& host, const std::wstring& lowerPath) const;
-
     std::unordered_set<std::wstring> m_domains;
-    std::vector<std::wstring> m_keywords;
-    std::vector<HostPath> m_hostPaths;
 };
 
 // Self-contained page script: generic and site-specific element hiding plus the

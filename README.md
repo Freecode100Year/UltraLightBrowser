@@ -257,7 +257,7 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 
 ## 从源码构建
 
-需要 Windows、Visual Studio 2022（C++ 桌面开发）、NuGet、CMake 3.25+ 和 Go（版本见 `warp/go.mod`）。
+需要 Windows、Visual Studio 2022（C++ 桌面开发）、NuGet、CMake 3.25+、Rust stable（Cargo）和 Go（版本见 `warp/go.mod`）。
 
 ```powershell
 .\build-windows.ps1          # 输出 dist\Release\UltraLightBrowser.exe
@@ -290,7 +290,8 @@ src/
 ├── Icons.*                  线条图标（标题栏与菜单）
 ├── WebViewManager.*         WebView2 环境与标签页、痕迹清除、音频增强、标识切换
 ├── WarpManager.*            启动和监控 WARP 组件
-├── AdBlockRules.*           拦截规则、广告位隐藏与 YouTube 脚本、替身脚本（与平台无关，有单元测试）
+├── AdBlockRules.*           Rust 规则引擎的 C++ 桥接、广告位隐藏与页面脚本
+rust/adblock/                Rust 广告 / 跟踪规则、URL 匹配和请求路由模式
 ├── NativeRequestFilter.*    广告 / 跟踪请求拦截（WebView2 接入）
 ├── ElementBlocker.*         元素隐藏
 ├── PowerManager.*           后台节能与 EcoQoS

@@ -97,6 +97,27 @@ set(SOURCE_FILES
 
 add_executable(UltraLightBrowser WIN32 ${SOURCE_FILES})
 
+# Build the platform-independent request-matching engine as a Rust static library.
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+if(WIN32)
+    set(ADBLOCK_RUST_LIBRARY "${CMAKE_BINARY_DIR}/rust/release/ulb_adblock.lib")
+else()
+    set(ADBLOCK_RUST_LIBRARY "${CMAKE_BINARY_DIR}/rust/release/libulb_adblock.a")
+endif()
+add_custom_command(
+    OUTPUT "${ADBLOCK_RUST_LIBRARY}"
+    COMMAND "${CARGO_EXECUTABLE}" build --release --locked
+            --manifest-path "${CMAKE_CURRENT_SOURCE_DIR}/rust/adblock/Cargo.toml"
+            --target-dir "${CMAKE_BINARY_DIR}/rust"
+    DEPENDS rust/adblock/Cargo.toml rust/adblock/Cargo.lock rust/adblock/src/lib.rs rust/adblock/domains.txt
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Building Rust ad and tracker rules"
+    VERBATIM
+)
+add_custom_target(ulb_adblock_build DEPENDS "${ADBLOCK_RUST_LIBRARY}")
+add_dependencies(UltraLightBrowser ulb_adblock_build)
+target_link_libraries(UltraLightBrowser PRIVATE "${ADBLOCK_RUST_LIBRARY}")
+
 # NuGet Package directory fallback for Microsoft.Web.WebView2 & WIL
 set(NUGET_PACKAGES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/packages" CACHE PATH "Path to restored NuGet packages")
 file(GLOB WEBVIEW2_DIRS "${NUGET_PACKAGES_DIR}/Microsoft.Web.WebView2.*")

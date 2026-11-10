@@ -81,3 +81,6 @@ dist/
 # WARP helper build output
 warp/bin/
 !warp/go.mod
+
+# Rust build artifacts
+rust/adblock/target/

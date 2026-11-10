@@ -2,7 +2,7 @@ param([ValidateSet('Release','Debug')][string]$Configuration = 'Release')
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
-    foreach ($tool in @('nuget','cmake','go')) {
+    foreach ($tool in @('nuget','cmake','go','cargo')) {
         if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
             throw "Install $tool and add it to PATH. Also install Visual Studio 2022 Desktop development with C++."
         }

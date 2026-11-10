@@ -32,9 +32,13 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/library_test.cpp src/Library.cpp -o library-tests
           ./library-tests
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
       - name: Test ad and tracker blocking rules
         run: |
-          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/adblock_rules_test.cpp src/AdBlockRules.cpp -o adblock-tests
+          cargo test --manifest-path rust/adblock/Cargo.toml --locked
+          cargo build --release --manifest-path rust/adblock/Cargo.toml --locked
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/adblock_rules_test.cpp src/AdBlockRules.cpp rust/adblock/target/release/libulb_adblock.a -ldl -lpthread -lm -o adblock-tests
           ./adblock-tests
           node tests/adblock_scripts_test.cjs
       - name: Check embedded built-in pages
@@ -66,6 +70,7 @@ jobs:
         configuration: [Debug, Release]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
       - uses: nuget/setup-nuget@17d6beb0142f0371858976c178033f915525e692 # v2.0.1
       - name: Restore packages
         run: nuget restore packages.config -PackagesDirectory packages
