@@ -35,6 +35,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,7 @@ func main() {
 	if *parentPID != 0 {
 		go watchParent(*parentPID)
 	}
+	go releaseMemory()
 
 	ln, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
@@ -197,6 +199,18 @@ func readCommands(t *Tunnel) {
 		case "RESCAN":
 			go t.Optimize()
 		}
+	}
+}
+
+// releaseMemory hands unused heap back to Windows once a minute. A large
+// download or a video grows the heap to 100 MB or more, and Go returns that
+// memory only slowly; without this the helper keeps it long after the transfer
+// ends. Limiting the heap instead (GOMEMLIMIT) was measured to slow transfers
+// down, so nothing is capped: this only releases what is no longer used.
+func releaseMemory() {
+	for {
+		time.Sleep(time.Minute)
+		debug.FreeOSMemory()
 	}
 }
 
