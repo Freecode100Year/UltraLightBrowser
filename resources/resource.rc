@@ -28,6 +28,8 @@ IDI_APP_ICON ICON "app.ico"
 3023 RCDATA "..\\ui\\vendor\\Readability.js"
 3024 RCDATA "..\\ui\\vendor\\Readability-readerable.js"
 4001 RCDATA "..\\warp\\bin\\ulb-warp.exe"
+// freedom8964.com offline snapshot, made by tools/pack_f8964.py before the build
+4002 RCDATA "f8964.pack"
 
 // Manifest resource
 1 24 "app.manifest"

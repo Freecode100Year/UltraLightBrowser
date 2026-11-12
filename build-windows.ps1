@@ -12,6 +12,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'WARP helper build failed.' }
     nuget restore packages.config -PackagesDirectory packages
     if ($LASTEXITCODE -ne 0) { throw 'NuGet restore failed.' }
+    python tools/pack_f8964.py resources/f8964.pack   # freedom8964.com offline snapshot (start page entry)
+    if ($LASTEXITCODE -ne 0) { throw 'freedom8964.com snapshot failed' }
     cmake -B build -S . -G 'Visual Studio 17 2022' -A x64
     if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
     cmake --build build --config $Configuration --parallel

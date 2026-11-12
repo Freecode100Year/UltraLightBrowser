@@ -17,6 +17,8 @@ jobs:
       - name: Build WARP helper
         shell: pwsh
         run: go build -C warp -trimpath -ldflags "-s -w -buildid=" -o bin/ulb-warp.exe .
+      - name: Offline freedom8964.com snapshot (start page entry)
+        run: python tools/pack_f8964.py resources/f8964.pack
       - run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64
       - run: cmake --build build --config Release --parallel
       - name: Drive the UI

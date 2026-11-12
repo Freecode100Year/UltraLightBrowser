@@ -3,6 +3,8 @@
 #include "StringUtils.hpp"
 
 #include <wil/com.h>
+#include <cctype>
+#include <cstdint>
 #include <fstream>
 #include <iterator>
 #include <string_view>
@@ -65,6 +67,56 @@ std::string_view ResourceByName(const char* name) {
     return {};
 }
 
+constexpr int kMemorialPack = 4002; // resources/f8964.pack
+
+uint32_t ReadU32(std::string_view d, size_t& i, bool& ok) {
+    if (i + 4 > d.size()) { ok = false; return 0; }
+    const auto* p = reinterpret_cast<const unsigned char*>(d.data() + i);
+    i += 4;
+    return p[0] | (p[1] << 8) | (p[2] << 16) | (static_cast<uint32_t>(p[3]) << 24);
+}
+
+// Names come from our own build, but are checked anyway: plain relative paths only.
+bool SafeName(std::string_view n) {
+    if (n.empty() || n.size() > 200 || n.front() == '/' || n.back() == '/') return false;
+    size_t start = 0;
+    for (size_t i = 0; i <= n.size(); ++i) {
+        if (i == n.size() || n[i] == '/') {
+            const auto part = n.substr(start, i - start);
+            if (part.empty() || part == "." || part == "..") return false;
+            start = i + 1;
+            continue;
+        }
+        const char c = n[i];
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_' || c == '-')) return false;
+    }
+    return true;
+}
+
+// Unpacks "ULBPACK1" (see tools/pack_f8964.py) into dir, replacing what was there.
+void ExtractPack(std::string_view d, const std::filesystem::path& dir) {
+    std::error_code ec;
+    if (d.size() < 8 || d.substr(0, 8) != "ULBPACK1") return;
+    std::filesystem::remove_all(dir, ec);
+    size_t i = 8;
+    bool ok = true;
+    while (ok && i < d.size()) {
+        const uint32_t nlen = ReadU32(d, i, ok);
+        if (!ok || i + nlen > d.size()) break;
+        const std::string_view name = d.substr(i, nlen);
+        i += nlen;
+        const uint32_t len = ReadU32(d, i, ok);
+        if (!ok || i + len > d.size()) break;
+        if (SafeName(name)) {
+            const auto path = dir / std::filesystem::path(StringUtils::Utf8ToWide(std::string(name)));
+            std::filesystem::create_directories(path.parent_path(), ec);
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            out.write(d.data() + i, len);
+        }
+        i += len;
+    }
+}
+
 std::wstring WrapScript(std::initializer_list<const char*> parts, std::string_view tail) {
     std::string js = "(() => {\n";
     for (const char* p : parts) {
@@ -106,6 +158,10 @@ std::filesystem::path Folder() {
     return Config::Instance().GetAppDataPath() / "ui";
 }
 
+std::filesystem::path MemorialFolder() {
+    return Folder() / "f8964";
+}
+
 std::filesystem::path FaviconCacheDir() {
     return Folder() / "cache" / "fav";
 }
@@ -118,6 +174,7 @@ void Extract() {
     // Skip rewriting the pages when this build already extracted them.
     std::string stamp = ULB_VERSION;
     for (const auto& f : kUiFiles) stamp += "|" + std::to_string(Resource(f.id).size());
+    stamp += "|f8964:" + std::to_string(Resource(kMemorialPack).size());
     {
         std::ifstream in(root / ".stamp", std::ios::binary);
         std::string existing((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -126,6 +183,7 @@ void Extract() {
             if (!complete) break;
             complete = std::filesystem::exists(root / std::filesystem::path(StringUtils::Utf8ToWide(f.name)), ec);
         }
+        if (complete && !Resource(kMemorialPack).empty()) complete = std::filesystem::exists(MemorialFolder() / "index.html", ec);
         if (complete) return;
     }
     for (const auto& f : kUiFiles) {
@@ -135,6 +193,7 @@ void Extract() {
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         out.write(data.data(), static_cast<std::streamsize>(data.size()));
     }
+    ExtractPack(Resource(kMemorialPack), MemorialFolder());
     std::ofstream(root / ".stamp", std::ios::binary | std::ios::trunc) << stamp;
 }
 
@@ -159,6 +218,8 @@ void MapToWebView(ICoreWebView2* webView) {
     wil::com_ptr<ICoreWebView2_3> webView3;
     if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView3))) && webView3) {
         webView3->SetVirtualHostNameToFolderMapping(kHost, Folder().wstring().c_str(),
+            COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY);
+        webView3->SetVirtualHostNameToFolderMapping(kMemorialHost, MemorialFolder().wstring().c_str(),
             COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY);
     }
 }

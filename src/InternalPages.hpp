@@ -13,9 +13,16 @@ namespace UltraLight::InternalPages {
 inline constexpr const wchar_t* kHost = L"ulb.internal";
 inline constexpr const wchar_t* kOrigin = L"https://ulb.internal/";
 
+// Offline snapshot of freedom8964.com ("六四事件（离线版）" on the start page), built by
+// tools/pack_f8964.py and embedded as one pack. It has its own host so that, unlike
+// the built-in pages, it cannot send messages to the browser (IsInternal is false).
+inline constexpr const wchar_t* kMemorialHost = L"f8964.internal";
+inline constexpr const wchar_t* kMemorialStart = L"https://f8964.internal/index.html";
+
 void Extract();                                   // write the embedded files (startup)
 std::filesystem::path Folder();
 std::filesystem::path FaviconCacheDir();
+std::filesystem::path MemorialFolder();             // extracted freedom8964.com snapshot
 std::wstring Url(const std::wstring& page);       // page relative to the origin
 bool IsInternal(const std::wstring& uri);
 std::wstring PageName(const std::wstring& uri);   // "start.html" for https://ulb.internal/start.html#x

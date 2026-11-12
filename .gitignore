@@ -84,3 +84,4 @@ warp/bin/
 
 # Rust build artifacts
 rust/adblock/target/
+resources/f8964.pack

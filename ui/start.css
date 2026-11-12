@@ -20,3 +20,11 @@ body.bg-plain{background:#1e2026}
 .read-card:hover{background:#ffffff16}
 .foot{text-align:center;font-size:12px;margin-top:10px}
 .hidden{display:none}
+.memorial{display:flex;align-items:center;gap:16px;margin:0 0 34px;padding:16px 20px;border-radius:14px;background:linear-gradient(90deg,#3a2a14ee,#2a2420dd);border:1px solid #b8860b88;color:#f4ede1;text-decoration:none;box-shadow:0 4px 18px #0006}
+.memorial:hover{background:linear-gradient(90deg,#4a3518ee,#332b24dd);border-color:#d4a23a}
+.memorial-candle{flex:none;width:14px;height:38px;border-radius:3px;background:linear-gradient(#f6efe2,#d9cdb6);position:relative;margin-left:6px}
+.memorial-candle::before{content:"";position:absolute;left:50%;top:-16px;width:10px;height:15px;transform:translateX(-50%);border-radius:50% 50% 45% 45%;background:radial-gradient(circle at 50% 70%,#fff6c8 0%,#ffc54a 45%,#e8761e 100%);box-shadow:0 0 14px 4px #ffb34755}
+.memorial-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.memorial-text b{font-size:18px;letter-spacing:.5px}
+.memorial-text small{font-size:12.5px;color:#d8cdb8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.memorial-go{margin-left:auto;font-size:26px;color:#d4a23a}

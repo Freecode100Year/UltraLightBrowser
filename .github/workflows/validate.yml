@@ -42,7 +42,9 @@ jobs:
           ./adblock-tests
           node tests/adblock_scripts_test.cjs
       - name: Check embedded built-in pages
-        run: python3 tests/ui_resources_test.py
+        run: |
+          python3 tests/ui_resources_test.py
+          python3 tests/f8964_pack_test.py
       - name: Test fullscreen and maximized client bounds
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/window_geometry_test.cpp -o geometry-tests
@@ -84,6 +86,8 @@ jobs:
           go vet -C warp ./...
           go test -C warp ./...
           go build -C warp -trimpath -ldflags "-s -w -buildid=" -o bin/ulb-warp.exe .
+      - name: Offline freedom8964.com snapshot (start page entry)
+        run: python tools/pack_f8964.py resources/f8964.pack
       - name: Configure native Windows application
         run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64
       - name: Compile and link with real Windows SDK and WebView2
