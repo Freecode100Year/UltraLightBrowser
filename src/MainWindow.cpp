@@ -675,6 +675,14 @@ void MainWindow::OnCommand(WORD id) {
     case IDM_ZOOM_RESET: if (tab && tab->view) tab->view->ZoomReset(); return;
     case IDM_BOOKMARKS: OpenInternalPage(L"bookmarks.html", true); return;
     case IDM_HISTORY: OpenInternalPage(L"history.html", true); return;
+    case IDM_MEMORIAL: {
+        // Reuse a tab that shows nothing of its own (start page, blank, default home); otherwise open a new one.
+        const bool reuse = tab && tab->view && (InternalPages::PageName(tab->url) == L"start.html" || tab->url == L"about:blank" ||
+                                                tab->url.empty() || IsDefaultHomeUrl(tab->url));
+        if (reuse) tab->view->Navigate(InternalPages::kMemorialStart);
+        else NewTab(InternalPages::kMemorialStart, true, m_activeId);
+        return;
+    }
     case IDM_SETTINGS: OpenInternalPage(L"settings.html", true); return;
     case IDM_READING_LIST: ToggleSidebar(L"reading"); return;
     case IDM_SIDEBAR: ToggleSidebar(); return;

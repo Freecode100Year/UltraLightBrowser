@@ -232,6 +232,9 @@ void MainWindow::ShowMainMenu() {
     const Tab* tab = ActiveTab();
     const bool webPage = tab && !DisplayUrl(*tab).empty();
     HMENU m = CreatePopupMenu();
+    // Offline snapshot of freedom8964.com, always at the top of the menu.
+    AppendItem(m, IDM_MEMORIAL, L"六四事件（离线版）", Icon::Globe);
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendItem(m, IDM_NEW_TAB, L"新建标签页\tCtrl+T", Icon::Plus);
     AppendItem(m, IDM_NEW_WINDOW, L"新建窗口\tCtrl+N", Icon::Window);
     AppendItem(m, IDM_NEW_PRIVATE_WINDOW, L"新建无痕浏览窗口\tCtrl+Shift+N", Icon::Private);

@@ -92,6 +92,7 @@ enum AppCommandID : WORD {
     IDM_WARP_RESCAN         = 2241,
     IDM_NET_DIRECT          = 2242,
     IDM_NET_LINE            = 2243,
+    IDM_MEMORIAL            = 2244,  // 六四事件（离线版）
 
     // Site settings
     IDM_SITE_AUTO_READER    = 2300,
