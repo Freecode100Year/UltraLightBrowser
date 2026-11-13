@@ -194,6 +194,8 @@ target_link_libraries(UltraLightBrowser PRIVATE
     comdlg32.lib
     ntdll.lib
     userenv.lib
+    # Rust's std (ulb_adblock) uses WaitOnAddress / WakeByAddress* since late-2026 stable releases
+    synchronization.lib
 )
 
 # Embed Manifest
