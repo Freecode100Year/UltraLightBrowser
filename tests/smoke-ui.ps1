@@ -225,3 +225,66 @@ Remove-Item Env:ULB_LINE
 Start-Sleep 30
 Stop-Process $h -Force -ErrorAction SilentlyContinue
 "LINE-REASON " + ((Get-Content line-helper.txt | Select-String '^REASON ') -join ' ')
+
+# v2.8.0: a pre-installed extension and user script run on a local page, and the
+# settings page can list extensions, import lines (checked by the helper) and list them.
+$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+$cfg.settings | Add-Member -NotePropertyName warpEnabled -NotePropertyValue $false -Force
+$cfg.settings.useLine = $false
+$cfg | ConvertTo-Json -Depth 8 | Set-Content $cfgPath -Encoding utf8NoBOM
+$app = "$env:LOCALAPPDATA\UltraLightBrowser"
+New-Item -ItemType Directory -Force "$app\extensions\smoketest", "$app\userscripts", site | Out-Null
+'{"manifest_version":3,"name":"Smoke Test","version":"1.0","content_scripts":[{"matches":["http://127.0.0.1/*"],"js":["c.js"],"run_at":"document_end"}],"action":{"default_popup":"popup.html"}}' | Set-Content "$app\extensions\smoketest\manifest.json" -Encoding utf8NoBOM
+'document.documentElement.dataset.ext = "ran";' | Set-Content "$app\extensions\smoketest\c.js" -Encoding utf8NoBOM
+'<!doctype html><title>popup</title><p>popup ok</p>' | Set-Content "$app\extensions\smoketest\popup.html" -Encoding utf8NoBOM
+'{"extensions":[{"dir":"smoketest","enabled":true}]}' | Set-Content "$app\extensions\index.json" -Encoding utf8NoBOM
+@'
+// ==UserScript==
+// @name smoke
+// @match http://127.0.0.1/*
+// @run-at document-end
+// ==/UserScript==
+document.title = "script-ran"; GM_addStyle("body{outline:1px solid red}"); GM_setValue("k", 7); document.documentElement.dataset.gm = GM_getValue("k");
+'@ | Set-Content "$app\userscripts\u1.user.js" -Encoding utf8NoBOM
+'{"scripts":[{"id":"u1","name":"smoke","enabled":true}]}' | Set-Content "$app\userscripts\index.json" -Encoding utf8NoBOM
+'<!doctype html><title>plain</title><body>test page</body>' | Set-Content site\t.html -Encoding utf8NoBOM
+$web = Start-Process python -ArgumentList '-m','http.server','8099','--bind','127.0.0.1','--directory','site' -PassThru -WindowStyle Hidden
+$p = Start-Process $Exe -PassThru
+Start-Sleep 14
+@'
+const WS = require('ws');
+const open = async (pred) => {
+  const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
+  const t = list.find(pred);
+  const ws = new WS(t.webSocketDebuggerUrl); await new Promise(r => ws.on('open', r));
+  let n = 0; const pend = new Map();
+  ws.on('message', m => { const d = JSON.parse(m); if (pend.has(d.id)) { pend.get(d.id)(d.result); pend.delete(d.id); } });
+  const send = (method, params = {}) => new Promise(r => { const id = ++n; pend.set(id, r); ws.send(JSON.stringify({id, method, params})); });
+  const ev = async (e) => { const r = await send('Runtime.evaluate', {expression: e, awaitPromise: true, returnByValue: true}); return r.exceptionDetails ? 'EXC ' + JSON.stringify(r.exceptionDetails).slice(0, 300) : r.result.value; };
+  return { send, ev, ws };
+};
+(async () => {
+  const page = await open(t => t.type === 'page' && t.url.includes('start.html'));
+  await page.send('Page.navigate', {url: 'http://127.0.0.1:8099/t.html'});
+  await new Promise(r => setTimeout(r, 6000));
+  console.log('SMOKE-PAGE', await page.ev('JSON.stringify({title: document.title, ext: document.documentElement.dataset.ext || null, gm: document.documentElement.dataset.gm || null, style: [...document.querySelectorAll("style")].some(s => s.textContent.includes("outline"))})'));
+  await page.send('Page.navigate', {url: 'https://ulb.internal/settings.html#lines'});
+  await new Promise(r => setTimeout(r, 4000));
+  console.log('SMOKE-EXT', await page.ev('ULB.call("getExtensions").then(r => JSON.stringify(r))'));
+  const links = ['trojan://pw@example.com:443?sni=example.com#t1', 'ss://YWVzLTI1Ni1nY206cHc@192.0.2.1:8388#s1', 'vless://00000000-0000-4000-8000-000000000000@example.com:443?type=grpc#bad'].join('\n');
+  console.log('SMOKE-ADDLINES', await page.ev(`ULB.call("addLines", {text: ${JSON.stringify(links)}}).then(r => JSON.stringify(r))`));
+  console.log('SMOKE-LINES', await page.ev('ULB.call("getLines").then(r => JSON.stringify(r))'));
+  console.log('SMOKE-SCRIPTS', await page.ev('ULB.call("getScripts").then(r => JSON.stringify(r.map(s => [s.name, s.enabled, s.sites])))'));
+  console.log('SMOKE-SECTIONS', await page.ev('[...document.querySelectorAll("section h2")].map(h => h.textContent).join(",")'));
+  console.log('SMOKE-OPENEXT', await page.ev('ULB.call("openExtensionPage", {dir: "smoketest", page: "popup"}).then(r => r, e => "ERR " + e.message)'));
+  await new Promise(r => setTimeout(r, 3000));
+  const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
+  console.log('SMOKE-TARGETS', list.map(t => t.type + ' ' + t.url).join(' | '));
+  process.exit(0);
+})().catch(e => { console.log('CDP-ERR', e.message); process.exit(0); });
+'@ | Set-Content v280.js
+node v280.js
+Shot "20-v280-settings"
+Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
+Stop-Process $web -Force -ErrorAction SilentlyContinue
+"SMOKE-LINESFILE " + (Test-Path "$app\warp\lines.dat") + " old line.dat " + (Test-Path "$app\warp\line.dat")

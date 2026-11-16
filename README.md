@@ -41,7 +41,8 @@ UltraLightBrowser 把这些问题放在一个约 21MB 的 exe 里解决：**双�
 | :--- | :--- | :--- |
 | **安装** | 单个约 21MB 的 exe，双击运行，不要管理员权限，程序本身不写注册表；exe 可放在 U 盘里到别的电脑上运行（资料存在那台电脑的 `%LOCALAPPDATA%`） | 需要安装，占用数百 MB，后台常驻更新服务 |
 | **账号** | 没有账号，不登录任何服务 | 鼓励登录 Google 账号，同步书签、历史、密码 |
-| **上网线路** | 内置 Cloudflare WARP（默认开启）和 VLESS + REALITY 线路，只有浏览器走线路，其他程序不受影响 | 没有内置线路，只能用系统代理或另装 VPN（通常接管整台电脑） |
+| **上网线路** | 内置 Cloudflare WARP（默认开启）和公共线路；可添加自己的线路和订阅（VLESS / Trojan / VMess / Shadowsocks），可自动选最快；只有浏览器走线路，其他程序不受影响 | 没有内置线路，只能用系统代理或另装 VPN（通常接管整台电脑） |
+| **扩展和脚本** | 可加载 Chrome / Edge 扩展（文件夹或 .crx / .zip），可导入油猴用户脚本 | 扩展要从商店安装 |
 | **线路断开时** | 我的线路断开一律不联网；WARP 可设为断开时阻止联网 | 代理断开就直接连接，不会提醒 |
 | **DNS** | 开启线路时域名在线路内解析，运营商看不到你访问了哪些域名；解析不到也不会退回本机 DNS | 使用系统 DNS，或可选的“安全 DNS” |
 | **WebRTC** | 只走线路，网页拿不到真实 IP | 用系统代理时，WebRTC 可能绕过代理暴露真实 IP |
@@ -57,12 +58,12 @@ UltraLightBrowser 把这些问题放在一个约 21MB 的 exe 里解决：**双�
 
 ## 网络怎么用
 
-浏览器有三种上网方式，在 **菜单“⋯ → 网络线路”** 里选择（也可在“设置 → 隐私 → 网络线路”），**选完重新启动浏览器生效**。
+浏览器有三种上网方式，在 **菜单“⋯ → 网络线路”** 里选择（也可在“设置 → 网络”），**选完重新启动浏览器生效**。
 
 | 方式 | 网站看到的地址 | 域名谁来解析 | 线路不通时 | 适合 |
 | :--- | :--- | :--- | :--- | :--- |
 | **Cloudflare WARP**（默认） | Cloudflare 的地址 | Cloudflare DNS（在隧道内） | 默认改为直接连接；可设为阻止联网 | 日常上网，隐藏真实 IP 和 DNS |
-| **我的线路**（VLESS + REALITY） | 线路服务器的出口地址 | 线路服务器 | **一律不联网**，从不直连 | WARP 被封锁或限速的网络 |
+| **我的线路**（公共线路或你添加的线路） | 线路服务器的出口地址 | 线路服务器 | **一律不联网**，从不直连 | WARP 被封锁或限速的网络 |
 | **直接连接** | 你的真实 IP | 本机 / 运营商 DNS | — | 访问只在本地网络可用的网站 |
 
 无论哪种方式，**只有这个浏览器走线路**，其他程序和系统网络不受影响。
@@ -87,9 +88,18 @@ UltraLightBrowser 把这些问题放在一个约 21MB 的 exe 里解决：**双�
 - 出口经 Cloudflare WARP，网站看不到服务器的真实地址。
 - 服务器不记录访问日志，不允许 BT 下载和发送邮件。
 
-**换成自己的服务器：** “设置 → 隐私 → 我的线路 → 导入链接…”，粘贴 `vless://` 开头的链接（仅支持 REALITY，TCP 传输，可带 `flow=xtls-rprx-vision`），再在“网络线路”中选“我的线路”并重新启动。
+**添加自己的线路或订阅（v2.8.0）：** 菜单“⋯ → 网络线路 → 管理我的线路…”（或“设置 → 我的线路”）：
 
-- 链接用 Windows DPAPI 加密保存在本机，只有当前 Windows 账户能解密，不写入设置文件；可随时“移除”，移除后回到公共线路。
+- **导入链接…**：一次粘贴多条分享链接，每行一条。支持：
+  - 协议：`vless://`、`trojan://`、`vmess://`、`ss://`（含 Shadowsocks 2022）
+  - 传输：TCP、WebSocket、HTTPUpgrade、XHTTP
+  - 安全：TLS、REALITY、无
+  - 不支持：gRPC（会让程序大 7 MB）、Hysteria2、Shadowsocks 插件、跳过证书验证（allowInsecure）的链接。导入时逐条检查，不能用的会列出原因。
+- **添加订阅…**：粘贴订阅地址（通用 / v2rayN 的 Base64 格式；不支持 Clash YAML），自动导入其中的全部线路，点“更新”重新下载。浏览器正在联网时，订阅先经当前线路下载，失败再直接下载。
+- **全部测速 / 测速**：同时测试每条线路，显示延迟或“不可用”。
+- **选择使用哪条**：在“设置 → 网络 → 我的线路使用”里选内置公共线路、某一条线路，或 **自动选择**：启动时同时测试前 20 条，用最快的；它断开时自动换到另一条，每小时重新比较一次。
+- 选好后在“网络线路”中选“我的线路”并重新启动。
+- 线路和订阅地址用 Windows DPAPI 加密保存在本机（`warp\lines.dat`），只有当前 Windows 账户能解密；旧版本导入的那条链接会自动迁移过来。
 - 网页和域名解析全部由服务器完成，WebRTC 也只走线路。
 - **自己的服务器也想每 3 天换地址：** 服务器要有一个路由到本机的 IPv6 /64（例如 Hurricane Electric 隧道的 Routed /64），Xray 入站监听 `::`（所有地址）。在服务器上运行一次：
 
@@ -218,6 +228,26 @@ gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrows
 **浏览器UA标识**
 - Microsoft Edge — Windows（默认）/ Microsoft Edge — macOS，对所有标签页生效，详见下文
 
+## 扩展程序和用户脚本（v2.8.0）
+
+菜单 **“⋯ → 扩展和脚本…”**（或“设置 → 扩展程序 / 用户脚本”）。
+
+**扩展程序（Chrome / Edge 扩展）**
+- **加载已解压的扩展…**：选择里面有 `manifest.json` 的文件夹。
+- **安装 .crx / .zip…**：选择扩展安装包。
+- 有弹出页或选项页的扩展，可在列表里点“打开”“选项”，在新标签页中打开；可随时停用、删除。
+- 扩展只在普通窗口运行，不在无痕窗口运行。
+- 浏览器每次关闭都会删除网页数据（见“关闭即清除”），所以**扩展自己保存的设置和数据也会在关闭时清除**，扩展本身保留，下次启动自动重新加载。
+- 由微软 WebView2 运行扩展，部分扩展用到 WebView2 不支持的功能，可能无法加载，列表里会显示原因。
+
+**用户脚本（油猴 / Tampermonkey 脚本）**
+- **导入脚本文件…** 或 **粘贴脚本…**：支持带 `==UserScript==` 头的 `.user.js`，也可以是普通 JavaScript（导入时填写在哪些网站运行，例如 `https://example.com/*`）。
+- 支持 `@match`、`@include`、`@exclude`、`@run-at`、`@noframes`，以及常用的 `GM_addStyle`、`GM_getValue` / `GM_setValue`、`GM_xmlhttpRequest`、`GM_openInTab`、`GM_setClipboard` 和 `GM.*`。
+- 不支持 `@require`、`@resource`（不会从网上下载代码）；`GM_xmlhttpRequest` 受网站跨域限制。
+- 每个脚本单独运行，一个脚本出错不影响其他脚本和网页；浏览器自己的页面（设置、起始页等）不会运行脚本。新装或停用后刷新网页生效。
+
+**只安装你信任的扩展和脚本**：它们能读取和修改你打开的网页。
+
 ## macOS Edge 伪装
 
 切换到 macOS 身份后，Edge UA、Client Hints、`navigator.platform`、WebGL 显卡标签和逻辑线程数使用同一套会话画像。改写通过 DevTools 协议在内核层完成，首个页面请求发出前就已生效；宿主的真实渲染和网络信号仍保留，见下方局限。
@@ -309,7 +339,11 @@ src/
 ├── InternalPages.*          内置页面资源、阅读器与查找脚本
 ├── Icons.*                  线条图标（标题栏与菜单）
 ├── WebViewManager.*         WebView2 环境与标签页、痕迹清除、音频增强、标识切换
-├── WarpManager.*            启动和监控 WARP 组件
+├── WarpManager.*            启动和监控 WARP 组件，线路加密保存
+├── LineStore.*              我的线路：线路列表、订阅、选择（可单元测试）
+├── UserScripts.*            用户脚本：元数据、网址规则、注入脚本（可单元测试）
+├── ExtensionPackage.*       扩展包：manifest.json、.crx 解析（可单元测试）
+├── Extensions.*             扩展程序：安装、每次启动重新加载（WebView2）
 ├── AdBlockRules.*           Rust 规则引擎的 C++ 桥接、广告位隐藏与页面脚本
 rust/adblock/                Rust 广告 / 跟踪规则、URL 匹配和请求路由模式
 ├── NativeRequestFilter.*    广告 / 跟踪请求拦截（WebView2 接入）
@@ -317,7 +351,7 @@ rust/adblock/                Rust 广告 / 跟踪规则、URL 匹配和请求路
 ├── PowerManager.*           后台节能与 EcoQoS
 ├── UserAgent.hpp / MacStealth.hpp / SelfTestPage.hpp   macOS 标识
 └── Config.*                 设置读写
-warp/                        网络组件（Go）：WARP 注册与 3 天换号、WireGuard 隧道、IP 优选、私人线路（Xray）与入口地址轮换（rotate.go）、本机 SOCKS5
+warp/                        网络组件（Go）：WARP 注册与 3 天换号、WireGuard 隧道、IP 优选、线路（Xray，links.go 解析分享链接）、自动选择与入口地址轮换（rotate.go）、测速与订阅（modes.go）、本机 SOCKS5
 server/ulb-line-ipv6.sh      线路服务器脚本：每 3 天更换入口 IPv6 地址（systemd 定时器）
 ui/                          内置页面（起始页、历史、书签、设置、总览、边栏、阅读器）
 ui/vendor/                   Mozilla Readability（Apache-2.0）
@@ -326,6 +360,13 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 ```
 
 ## 最近更新
+
+- **v2.8.0**：
+  - **自定义网络线路**：可添加多条线路，支持 VLESS / Trojan / VMess / Shadowsocks（含 2022），传输 TCP / WebSocket / HTTPUpgrade / XHTTP，安全 TLS / REALITY；支持订阅、一键测速、自动选择最快线路（断开时自动切换）。线路加密保存，旧版导入的线路自动迁移。网络组件体积 17.8 → 19.8 MB。
+  - **Chrome / Edge 扩展**：加载解压后的扩展文件夹，或安装 .crx / .zip；每次启动自动重新加载。
+  - **用户脚本**：导入油猴脚本或普通 JavaScript，按网址规则自动运行，提供常用 GM_* 接口。
+  - 修复书签、个人收藏、新建文件夹等对话框里输入框显示成 “[object HTMLLabelElement]” 文字的问题。
+  - 菜单新增“扩展和脚本…”和“网络线路 → 管理我的线路…”。
 
 - **v2.7.3**：日常维护：WARP 隧道组件 wireguard-go 升级到最新版，包含作者的两个修复（握手时的一个竞态问题、接收数据包时一个长度计算溢出）。同时把内置公共线路服务器的 Xray 升级到 v26.11.9，固定地址和 3 天轮换地址都已实测可用。
 
