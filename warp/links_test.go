@@ -19,6 +19,7 @@ func TestParseLinkAccepts(t *testing.T) {
 		"vless ws tls":  "vless://" + testUUID + "@example.com:443?security=tls&type=ws&path=%2Fws%3Fed%3D2048&host=cdn.example.com",
 		"vless xhttp":   "vless://" + testUUID + "@example.com:443?security=tls&type=xhttp&path=%2Fx&mode=packet-up",
 		"vless hu":      "vless://" + testUUID + "@192.0.2.1:80?security=none&type=httpupgrade&path=%2Fhu",
+		"vless grpc":    "vless://" + testUUID + "@example.com:443?security=tls&type=grpc&serviceName=x",
 		"trojan":        "trojan://secret@example.com:443?sni=example.com#t",
 		"trojan ws":     "trojan://secret@example.com:443?type=ws&path=%2Ft",
 		"vmess ws tls":  vmessLink(`{"v":"2","add":"example.com","port":443,"id":"` + testUUID + `","aid":"0","net":"ws","path":"/v","tls":"tls","sni":"example.com"}`),
@@ -35,7 +36,6 @@ func TestParseLinkAccepts(t *testing.T) {
 
 func TestParseLinkRejects(t *testing.T) {
 	bad := map[string]string{
-		"grpc":          "vless://" + testUUID + "@example.com:443?security=tls&type=grpc&serviceName=x",
 		"allowInsecure": "trojan://secret@example.com:443?allowInsecure=1",
 		"plugin":        "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-256-gcm:pw")) + "@192.0.2.1:8388?plugin=obfs-local",
 		"old cipher":    "ss://" + base64.RawURLEncoding.EncodeToString([]byte("rc4-md5:pw")) + "@192.0.2.1:8388",
@@ -55,7 +55,7 @@ func TestParseLinkRejects(t *testing.T) {
 
 func TestSubscriptionLinks(t *testing.T) {
 	good := "trojan://secret@example.com:443#1\nss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:pw")) + "@192.0.2.1:8388#2"
-	bad := "vless://" + testUUID + "@example.com:443?type=grpc"
+	bad := "vless://" + testUUID + "@example.com:80?type=tcp&headerType=http"
 	for name, body := range map[string]string{
 		"plain":  good + "\n" + bad + "\n\n# comment\n",
 		"base64": base64.StdEncoding.EncodeToString([]byte(good + "\r\n" + bad)),

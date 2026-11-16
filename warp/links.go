@@ -69,7 +69,8 @@ func parseLink(link string) (*core.Config, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		return nil, net.JoinHostPort(p.server, strconv.Itoa(int(p.port))), nil
+		cfg, server := hysteriaConfig(p)
+		return cfg, server, nil
 	}
 	if strings.EqualFold(strings.SplitN(link, "://", 2)[0], "wireguard") {
 		return parseWireGuardLink(strings.TrimSpace(link))

@@ -124,8 +124,8 @@ function linesSection() {
       el("div", { class: "list" }, subs, items),
       L.lines.length || L.subs.length ? null : el("div", { class: "empty", text: "还没有线路。点“导入链接…”粘贴分享链接，或“添加订阅…”。" }),
       el("small", { class: "muted", style: { display: "block", padding: "10px 4px 0" },
-        text: "支持 vless://、trojan://、vmess://、ss:// 分享链接，传输方式 TCP / WebSocket / HTTPUpgrade / XHTTP，安全 TLS / REALITY。" +
-          "暂不支持 gRPC、Hysteria2、跳过证书验证的链接。线路和订阅经 Windows 加密保存在本机，只有当前 Windows 账户能读取。" + restartNote + "。" })));
+        text: "支持 vless://、trojan://、vmess://、ss:// 分享链接，传输方式 TCP / WebSocket / HTTPUpgrade / XHTTP / gRPC，安全 TLS / REALITY。" +
+          "也支持 hysteria2:// / hy2://（可带 Salamander 混淆）和 gRPC 传输。暂不支持 TUIC、跳过证书验证的链接。线路和订阅经 Windows 加密保存在本机，只有当前 Windows 账户能读取。" + restartNote + "。" })));
 }
 
 async function importLinks() {

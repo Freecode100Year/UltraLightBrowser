@@ -82,9 +82,6 @@ func StartAuto(links []string) (*Line, string, error) {
 }
 
 func startInst(link string) (lineEngine, string, error) {
-	if profile, err := parseQUICLine(link); err == nil {
-		return startSingBoxLine(profile)
-	}
 	cfg, server, err := lineConfigForStart(link)
 	if err != nil {
 		return nil, "", err

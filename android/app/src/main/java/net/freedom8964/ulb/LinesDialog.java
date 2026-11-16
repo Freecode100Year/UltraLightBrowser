@@ -64,9 +64,9 @@ final class LinesDialog {
         scroll.addView(list);
         col.addView(scroll, new LinearLayout.LayoutParams(-1, dp(380)));
         TextView hint = new TextView(act);
-        hint.setText("支持 VLESS、Trojan、VMess、Shadowsocks、Hysteria2（hysteria2:// / hy2://）、TUIC；gRPC 是传输方式。" +
-            "现有线路支持 TCP / WebSocket / HTTPUpgrade / XHTTP / gRPC，TLS / REALITY 按线路类型启用。Hysteria2 与 TUIC 使用安全 TLS 校验。" +
-            "WireGuard 仅导入单 Peer wg-quick .conf，必须填写 DNS 且 DNS 地址需在 AllowedIPs 内；网页 DNS 经隧道。Hysteria2 / TUIC / WireGuard 的服务器域名由设备 DNS 解析。" +
+        hint.setText("支持 VLESS、Trojan、VMess、Shadowsocks、Hysteria2（hysteria2:// / hy2://）；不支持 TUIC。" +
+            "传输支持 TCP / WebSocket / HTTPUpgrade / XHTTP / gRPC，安全 TLS / REALITY；证书校验始终开启。" +
+            "WireGuard 仅导入单 Peer wg-quick .conf，必须填写 DNS 且 DNS 地址需在 AllowedIPs 内；网页 DNS 经隧道。Hysteria2 / WireGuard 的服务器域名由设备 DNS 解析。" +
             "订阅支持通用分享链接，不支持 WireGuard 文件或 Clash YAML。线路保存在本应用私有存储中。");
         hint.setTextSize(12);
         hint.setAlpha(0.7f);

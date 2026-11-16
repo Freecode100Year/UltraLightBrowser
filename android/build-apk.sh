@@ -11,7 +11,7 @@ rm -rf "$LIBS"
 build() { # abi goarch [goarm]
     mkdir -p "$LIBS/$1"
     # Plain Linux binaries run on Android; no NDK needed. See warp/dns.go.
-    CGO_ENABLED=0 GOOS=linux GOARCH=$2 GOARM=${3:-} go build -C ../warp -tags with_quic -trimpath -ldflags "-s -w -buildid=" -o "$PWD/$LIBS/$1/libulbwarp.so" .
+    CGO_ENABLED=0 GOOS=linux GOARCH=$2 GOARM=${3:-} go build -C ../warp -trimpath -ldflags "-s -w -buildid=" -o "$PWD/$LIBS/$1/libulbwarp.so" .
 }
 build arm64-v8a arm64
 build armeabi-v7a arm 7
