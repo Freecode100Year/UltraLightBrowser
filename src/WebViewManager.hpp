@@ -71,6 +71,8 @@ public:
     void GoForward();
     void Reload();
     HRESULT ApplyUserAgentProfile(const std::string& profile, bool reloadPage = false);
+    // Registers these user scripts for new documents, replacing the previous set.
+    void ApplyUserScripts(const std::vector<std::wstring>& sources);
     void OpenIdentitySelfTest();
     void Stop();
 
@@ -153,6 +155,8 @@ private:
     bool m_hasBounds = false;
 
     std::uint64_t m_audioScriptGeneration = 0;
+    std::vector<std::wstring> m_userScriptIds;
+    std::uint64_t m_userScriptGeneration = 0;
     unsigned m_pendingAudioScriptRegistrations = 0;
     bool m_audioReloadPending = false;
     std::wstring m_audioScriptId;

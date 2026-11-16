@@ -1,4 +1,5 @@
 #include "AppShell.hpp"
+#include "UserScripts.hpp"
 #include "Commands.hpp"
 #include "Config.hpp"
 #include "Icons.hpp"
@@ -277,6 +278,27 @@ void AppShell::WhenEnvironmentReady(HWND errorOwner, std::function<void(ICoreWeb
         m_envWaiters.clear();
         for (auto& w : waiters) w(m_environment.get());
     });
+}
+
+std::filesystem::path AppShell::UserScriptDir() {
+    return Config::Instance().GetAppDataPath() / "userscripts";
+}
+
+const std::vector<std::wstring>& AppShell::UserScriptSources() {
+    if (!m_userScriptsLoaded) {
+        m_userScriptsLoaded = true;
+        UserScriptStore store(UserScriptDir());
+        store.Load();
+        m_userScripts.clear();
+        for (const auto& js : store.InjectionScripts()) m_userScripts.push_back(StringUtils::Utf8ToWide(js));
+    }
+    return m_userScripts;
+}
+
+void AppShell::UserScriptsChanged() {
+    m_userScriptsLoaded = false;
+    UserScriptSources();
+    for (const auto& w : m_windows) w->ApplyUserScripts();
 }
 
 void AppShell::LibraryChanged() {

@@ -10,12 +10,23 @@
 #include "NativeRequestFilter.hpp"
 #include "StringUtils.hpp"
 #include "WarpManager.hpp"
+#include "UserScripts.hpp"
+#include "Extensions.hpp"
+
+#include <shobjidl.h>
 
 #include <commdlg.h>
 #include <fstream>
+#include <filesystem>
+#include <iterator>
+#include <map>
 #include <set>
 #include <sstream>
 #include <nlohmann/json.hpp>
+
+#include <mutex>
+#include <sstream>
+#include <thread>
 
 #pragma comment(lib, "comdlg32.lib")
 
@@ -63,7 +74,108 @@ bool IsWebOrAbout(const std::string& url) {
     return Library::IsWebUrl(url) || url.rfind("about:", 0) == 0 || url.rfind("file:", 0) == 0;
 }
 
+// Line store edits come from the UI thread and from worker threads (tests,
+// subscriptions); each load-change-save runs under this lock.
+std::mutex g_linesMutex;
+
+json LinesJson() {
+    std::lock_guard<std::mutex> lock(g_linesMutex);
+    const LineStore store = WarpManager::LoadStore();
+    json lines = json::array();
+    for (const auto& l : store.Lines()) {
+        lines.push_back({{"id", l.id}, {"name", l.name}, {"proto", LineStore::ProtocolOf(l.link)},
+                         {"server", LineStore::ServerOf(l.link)}, {"sub", l.sub}});
+    }
+    json subs = json::array();
+    for (const auto& sub : store.Subs()) {
+        subs.push_back({{"id", sub.id}, {"name", sub.name}, {"updated", sub.updated}, {"count", sub.count}});
+    }
+    return {{"lines", lines}, {"subs", subs}, {"selected", store.Selected()}, {"autoMax", LineStore::kAutoMax}};
+}
+
+std::vector<std::string> SplitLines(const std::string& text) {
+    std::vector<std::string> out;
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos) out.push_back(line.substr(start));
+    }
+    return out;
+}
+
+// Results of "-probe": index -> milliseconds (>= 0), or the reason it failed.
+std::map<size_t, std::string> ParseProbe(const std::string& output) {
+    std::map<size_t, std::string> results;
+    for (const auto& line : SplitLines(output)) {
+        if (line.rfind("PROBE ", 0) != 0) continue;
+        const size_t sp = line.find(' ', 6);
+        if (sp == std::string::npos) continue;
+        results[std::strtoul(line.c_str() + 6, nullptr, 10)] = line.substr(sp + 1);
+    }
+    return results;
+}
+
+// Downloads a subscription through the helper; throws with the reason on failure.
+std::vector<std::string> FetchSubscription(const std::string& url, int& skipped) {
+    std::wstring args = L"-fetch";
+    if (const int port = WarpManager::Instance().Port(); port > 0) args += L" -socks 127.0.0.1:" + std::to_wstring(port);
+    const std::string out = WarpManager::RunTool(args, {{L"ULB_FETCH", W(url)}}, 70000);
+    std::vector<std::string> links;
+    skipped = 0;
+    std::string error;
+    bool done = false;
+    for (const auto& line : SplitLines(out)) {
+        if (line.rfind("LINK ", 0) == 0) links.push_back(line.substr(5));
+        else if (line.rfind("FETCHED ", 0) == 0) { done = true; skipped = std::atoi(line.c_str() + line.rfind(' ') + 1); }
+        else if (line.rfind("ERROR ", 0) == 0) error = line.substr(6);
+    }
+    if (!done) throw std::runtime_error(error.empty() ? "订阅下载失败" : "订阅下载失败：" + error);
+    return links;
+}
+
+// A folder chosen in the system dialog, or empty.
+std::filesystem::path PickFolder(HWND owner) {
+    wil::com_ptr<IFileOpenDialog> dlg;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg))) || !dlg) return {};
+    DWORD opts = 0;
+    dlg->GetOptions(&opts);
+    dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR);
+    dlg->SetTitle(L"选择解压后的扩展文件夹（里面有 manifest.json）");
+    if (FAILED(dlg->Show(owner))) return {};
+    wil::com_ptr<IShellItem> item;
+    wil::unique_cotaskmem_string path;
+    if (FAILED(dlg->GetResult(&item)) || !item || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) || !path) return {};
+    return path.get();
+}
+
+json ExtensionsJson() {
+    json list = json::array();
+    for (const auto& e : Extensions::Instance().List()) {
+        list.push_back({{"dir", e.dir}, {"name", e.name}, {"version", e.version}, {"description", e.description},
+                        {"enabled", e.enabled}, {"loaded", !e.id.empty()}, {"error", e.error},
+                        {"popup", !e.popup.empty()}, {"options", !e.options.empty()}});
+    }
+    return list;
+}
+
 } // namespace
+
+void MainWindow::ReplyLater(ICoreWebView2* source, const std::string& idJson, std::function<std::string()> work) {
+    wil::com_ptr<ICoreWebView2> target(source);
+    const HWND hwnd = m_hWnd;
+    std::thread([hwnd, target, idJson, work = std::move(work)]() {
+        std::string reply;
+        try {
+            reply = "{\"id\":" + idJson + ",\"result\":" + work() + "}";
+        } catch (const std::exception& e) {
+            reply = "{\"id\":" + idJson + ",\"error\":" + json(e.what()).dump(-1, ' ', false, json::error_handler_t::replace) + "}";
+        }
+        auto* r = new PageReply{target, W(reply)};
+        if (!IsWindow(hwnd) || !PostMessageW(hwnd, MainWindow::WM_APP_PAGE_REPLY, 0, reinterpret_cast<LPARAM>(r))) delete r;
+    }).detach();
+}
 
 std::string MainWindow::TabsJson(bool withThumbs) const {
     json arr = json::array();
@@ -92,6 +204,13 @@ void MainWindow::BroadcastToInternalPages(const char* event, const std::string& 
     }
     if (m_spare && m_spare->view && m_spare->view->GetWebView()) PostEvent(m_spare->view->GetWebView(), event, dataJson);
     if (m_sidebar.ready) PostEvent(m_sidebar.webView.get(), event, dataJson);
+}
+
+void MainWindow::ApplyUserScripts() {
+    const auto& sources = AppShell::Instance().UserScriptSources();
+    for (const auto& t : m_tabs) {
+        if (t->view) t->view->ApplyUserScripts(sources);
+    }
 }
 
 void MainWindow::OnLibraryChanged() {
@@ -397,11 +516,188 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
             libraryChanged = true;
         } else if (cmd == "warpRescan") {
             result = WarpManager::Instance().Rescan();
-        } else if (cmd == "setLine") {
-            result = WarpManager::SetLine(Arg(args, "link"));
-        } else if (cmd == "clearLine") {
-            WarpManager::ClearLine();  // back to the public line
+        } else if (cmd == "getScripts") {
+            UserScriptStore store(AppShell::UserScriptDir());
+            store.Load();
+            json list = json::array();
+            for (const auto& sc : store.Scripts()) {
+                std::vector<std::string> sites = sc.matches;
+                sites.insert(sites.end(), sc.includes.begin(), sc.includes.end());
+                list.push_back({{"id", sc.id}, {"name", sc.name}, {"version", sc.version}, {"description", sc.description},
+                                {"sites", sites}, {"enabled", sc.enabled}, {"ignored", sc.ignored}, {"runAt", sc.runAt}});
+            }
+            result = list;
+        } else if (cmd == "importScriptFile") {
+            wchar_t file[MAX_PATH] = L"";
+            OPENFILENAMEW ofn{sizeof(ofn)};
+            ofn.hwndOwner = m_hWnd;
+            ofn.lpstrFilter = L"用户脚本 (*.js)\0*.js\0所有文件 (*.*)\0*.*\0";
+            ofn.lpstrFile = file;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_DONTADDTORECENT;
+            if (!GetOpenFileNameW(&ofn)) {
+                result = nullptr;
+            } else {
+                std::ifstream in(file, std::ios::binary);
+                std::string code((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                if (code.size() > UserScriptStore::kMaxSize) throw std::runtime_error("脚本超过 2 MB");
+                if (code.rfind("\xEF\xBB\xBF", 0) == 0) code.erase(0, 3);  // UTF-8 BOM
+                std::string name = U8(std::filesystem::path(file).filename().wstring());
+                UserScript meta;
+                std::string error;
+                if (!UserScriptStore::ParseMeta(code, meta, error)) {
+                    // Plain JavaScript: the page asks which sites it is for, then installs it.
+                    result = {{"needSites", true}, {"name", name}, {"code", code}};
+                } else {
+                    UserScriptStore store(AppShell::UserScriptDir());
+                    store.Load();
+                    store.Install(code, name, "");
+                    if (!store.Save()) throw std::runtime_error("无法保存脚本");
+                    AppShell::Instance().UserScriptsChanged();
+                    result = {{"installed", meta.name.empty() ? name : meta.name}, {"ignored", meta.ignored}};
+                }
+            }
+        } else if (cmd == "installScript") {
+            UserScriptStore store(AppShell::UserScriptDir());
+            store.Load();
+            store.Install(Arg(args, "code"), Arg(args, "name"), Arg(args, "sites"));
+            if (!store.Save()) throw std::runtime_error("无法保存脚本");
+            AppShell::Instance().UserScriptsChanged();
             result = true;
+        } else if (cmd == "setScriptEnabled" || cmd == "removeScript") {
+            UserScriptStore store(AppShell::UserScriptDir());
+            store.Load();
+            const bool ok = cmd == "removeScript" ? store.Remove(Arg(args, "id")) : store.SetEnabled(Arg(args, "id"), args.value("enabled", true));
+            if (ok && !store.Save()) throw std::runtime_error("无法保存脚本");
+            if (ok) AppShell::Instance().UserScriptsChanged();
+            result = ok;
+        } else if (cmd == "getExtensions") {
+            result = {{"list", ExtensionsJson()}, {"private", m_private}};
+        } else if (cmd == "installExtensionFolder" || cmd == "installExtensionFile") {
+            std::filesystem::path chosen;
+            if (cmd == "installExtensionFolder") {
+                chosen = PickFolder(m_hWnd);
+            } else {
+                wchar_t file[MAX_PATH] = L"";
+                OPENFILENAMEW ofn{sizeof(ofn)};
+                ofn.hwndOwner = m_hWnd;
+                ofn.lpstrFilter = L"扩展包 (*.crx;*.zip)\0*.crx;*.zip\0所有文件 (*.*)\0*.*\0";
+                ofn.lpstrFile = file;
+                ofn.nMaxFile = MAX_PATH;
+                ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_DONTADDTORECENT;
+                if (GetOpenFileNameW(&ofn)) chosen = file;
+            }
+            if (chosen.empty()) {
+                result = nullptr;
+            } else {
+                const std::string name = cmd == "installExtensionFolder" ? Extensions::Instance().InstallFolder(chosen)
+                                                                         : Extensions::Instance().InstallPackage(chosen);
+                result = {{"installed", name}};
+            }
+        } else if (cmd == "setExtensionEnabled") {
+            result = Extensions::Instance().SetEnabled(Arg(args, "dir"), args.value("enabled", true));
+        } else if (cmd == "removeExtension") {
+            result = Extensions::Instance().Remove(Arg(args, "dir"));
+        } else if (cmd == "openExtensionPage") {
+            const std::wstring url = Extensions::Instance().PageUrl(Arg(args, "dir"), Arg(args, "page") == "options");
+            if (url.empty()) throw std::runtime_error("扩展还没有加载，或没有这个页面");
+            if (m_private) throw std::runtime_error("无痕窗口不运行扩展，请在普通窗口打开");
+            NewTab(url, true);
+            result = true;
+        } else if (cmd == "getLines") {
+            result = LinesJson();
+        } else if (cmd == "addLines") {
+            // Checked by the helper itself, so the browser accepts exactly what it can run.
+            const std::vector<std::string> links = SplitLines(Arg(args, "text"));
+            if (links.empty()) throw std::runtime_error("没有找到链接");
+            if (links.size() > 64) throw std::runtime_error("一次最多导入 64 条，订阅请用“添加订阅”");
+            ReplyLater(source, id.dump(), [links]() {
+                std::string text;
+                for (const auto& l : links) text += l + "\n";
+                const auto probe = ParseProbe(WarpManager::RunTool(L"-probe -parse-only", {{L"ULB_PROBE", W(text)}}, 15000));
+                std::vector<std::string> good;
+                json invalid = json::array();
+                for (size_t i = 0; i < links.size(); ++i) {
+                    const auto it = probe.find(i);
+                    if (it != probe.end() && it->second == "ok") good.push_back(links[i]);
+                    else invalid.push_back({{"name", LineStore::NameOf(links[i])},
+                                            {"reason", it == probe.end() ? "无法检查" : it->second.substr(it->second.find(' ') + 1)}});
+                }
+                std::lock_guard<std::mutex> lock(g_linesMutex);
+                LineStore store = WarpManager::LoadStore();
+                const size_t added = store.Add(good);
+                if (added && !WarpManager::SaveStore(store)) throw std::runtime_error("无法保存线路");
+                return json{{"added", added}, {"duplicate", good.size() - added}, {"invalid", invalid}}.dump();
+            });
+            return;
+        } else if (cmd == "removeLine" || cmd == "renameLine" || cmd == "selectLine" || cmd == "removeSub") {
+            bool ok;
+            {
+                std::lock_guard<std::mutex> lock(g_linesMutex);
+                LineStore store = WarpManager::LoadStore();
+                const std::string target = Arg(args, "id");
+                ok = cmd == "removeLine" ? store.Remove(target)
+                   : cmd == "renameLine" ? store.Rename(target, Arg(args, "name"))
+                   : cmd == "selectLine" ? store.Select(target)
+                   : store.RemoveSub(target);
+                if (ok && !WarpManager::SaveStore(store)) throw std::runtime_error("无法保存线路");
+            }
+            if (ok && cmd == "selectLine") {
+                // Choosing a line also switches the network to "我的线路".
+                settings.warpEnabled = true;
+                settings.useLine = true;
+                Config::Instance().Save();
+            }
+            result = ok;
+        } else if (cmd == "probeLines") {
+            std::vector<std::pair<std::string, std::string>> targets;  // id, link
+            {
+                std::lock_guard<std::mutex> lock(g_linesMutex);
+                const LineStore store = WarpManager::LoadStore();
+                if (args.contains("ids") && args["ids"].is_array()) {
+                    for (const auto& v : args["ids"]) {
+                        if (!v.is_string()) continue;
+                        if (const LineEntry* l = store.Find(v.get<std::string>()); l && targets.size() < 64) targets.emplace_back(l->id, l->link);
+                    }
+                }
+            }
+            ReplyLater(source, id.dump(), [targets]() {
+                std::string text;
+                for (const auto& t : targets) text += t.second + "\n";
+                const auto probe = ParseProbe(WarpManager::RunTool(L"-probe", {{L"ULB_PROBE", W(text)}}, 90000));
+                json out = json::object();
+                for (size_t i = 0; i < targets.size(); ++i) {
+                    const auto it = probe.find(i);
+                    if (it == probe.end()) out[targets[i].first] = {{"error", "超时"}};
+                    else if (it->second.rfind("fail ", 0) == 0) out[targets[i].first] = {{"error", it->second.substr(5)}};
+                    else out[targets[i].first] = {{"ms", std::atoi(it->second.c_str())}};
+                }
+                return out.dump(-1, ' ', false, json::error_handler_t::replace);
+            });
+            return;
+        } else if (cmd == "addSub" || cmd == "updateSub") {
+            std::string url = Arg(args, "url"), name = Arg(args, "name"), subId = Arg(args, "id");
+            if (cmd == "updateSub") {
+                std::lock_guard<std::mutex> lock(g_linesMutex);
+                const LineStore store = WarpManager::LoadStore();
+                for (const auto& sub : store.Subs()) if (sub.id == subId) url = sub.url;
+                if (url.empty()) throw std::runtime_error("订阅不存在");
+            } else if (url.rfind("https://", 0) != 0 && url.rfind("http://", 0) != 0) {
+                throw std::runtime_error("订阅地址要以 https:// 开头");
+            }
+            ReplyLater(source, id.dump(), [url, name, subId]() {
+                int skipped = 0;
+                const std::vector<std::string> links = FetchSubscription(url, skipped);
+                std::lock_guard<std::mutex> lock(g_linesMutex);
+                LineStore store = WarpManager::LoadStore();
+                const std::string target = subId.empty() ? store.AddSub(name, url) : subId;
+                if (!store.ReplaceSub(target, links, AppShell::NowMs())) throw std::runtime_error("订阅不存在");
+                if (!WarpManager::SaveStore(store)) throw std::runtime_error("无法保存线路");
+                size_t count = 0;
+                for (const auto& l : store.Lines()) count += l.sub == target;
+                return json{{"count", count}, {"skipped", skipped}}.dump();
+            });
+            return;
         } else if (cmd == "getSettings") {
             result = {{"startupPage", settings.startupPage}, {"newTabPage", settings.newTabPage}, {"homeUrl", U8(settings.startUrl)},
                       {"searchEngine", settings.searchEngine}, {"tabSuspendMinutes", settings.tabSuspendMinutes},
@@ -411,7 +707,7 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                       {"readerTheme", settings.readerTheme}, {"readerFont", settings.readerFont}, {"readerFontSize", settings.readerFontSize},
                       {"hardwareAcceleration", settings.hardwareAcceleration}, {"videoEnhancement", settings.videoEnhancement}, {"preloadLinks", settings.preloadLinks}, {"preloadAvailable", WebViewManager::PrefetchAllowed()}, {"warpFailClosed", settings.warpFailClosed},
                       {"networkMode", !settings.warpEnabled ? "direct" : settings.useLine ? "line" : "warp"},
-                      {"lineImported", WarpManager::LineImported()}, {"lineMode", WarpManager::Instance().LineMode()},
+                      {"lineMode", WarpManager::Instance().LineMode()},
                       {"warpStatus", U8(WarpManager::Instance().StatusText() + (WarpManager::Instance().EndpointText().empty() ? std::wstring() : L"，入口 " + WarpManager::Instance().EndpointText()))}, {"siteCount", lib.SiteCount()}, {"version", ULB_VERSION}};
         } else if (cmd == "setSetting") {
             const std::string key = Arg(args, "key");

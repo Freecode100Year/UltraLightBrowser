@@ -5,6 +5,7 @@
 #include <WebView2.h>
 #include <wil/com.h>
 #include <atomic>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -37,6 +38,11 @@ public:
     void WhenEnvironmentReady(HWND errorOwner, std::function<void(ICoreWebView2Environment*)> callback);
 
     Library& Lib() { return *m_library; }
+
+    // User scripts (UserScripts.hpp), stored in %APPDATA%\...\userscripts.
+    static std::filesystem::path UserScriptDir();
+    const std::vector<std::wstring>& UserScriptSources();  // what every tab registers
+    void UserScriptsChanged();                              // reload and re-register in every tab
     void LibraryChanged();                     // refresh built-in pages in every window
     void SaveLibrarySoon();     // serialize now, write on a background thread
     void SaveLibraryNow();      // synchronous (exit)
@@ -66,6 +72,8 @@ private:
     bool m_environmentRequested = false;
     bool m_environmentFailed = false;
     std::vector<std::function<void(ICoreWebView2Environment*)>> m_envWaiters;
+    std::vector<std::wstring> m_userScripts;
+    bool m_userScriptsLoaded = false;
     std::map<std::string, std::string> m_articles;
     std::vector<std::string> m_articleOrder;
     std::uint64_t m_articleCounter = 0;

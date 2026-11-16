@@ -89,6 +89,14 @@ set(SOURCE_FILES
     src/PowerManager.hpp
     src/WarpManager.cpp
     src/WarpManager.hpp
+    src/LineStore.cpp
+    src/LineStore.hpp
+    src/UserScripts.cpp
+    src/UserScripts.hpp
+    src/ExtensionPackage.cpp
+    src/ExtensionPackage.hpp
+    src/Extensions.cpp
+    src/Extensions.hpp
     src/Config.cpp
     src/Config.hpp
     src/StringUtils.hpp

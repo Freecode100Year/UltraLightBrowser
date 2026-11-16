@@ -93,6 +93,8 @@ enum AppCommandID : WORD {
     IDM_NET_DIRECT          = 2242,
     IDM_NET_LINE            = 2243,
     IDM_MEMORIAL            = 2244,  // 六四事件（离线版）
+    IDM_EXTENSIONS          = 2245,  // 设置 → 扩展程序 / 用户脚本
+    IDM_MANAGE_LINES        = 2246,  // 设置 → 我的线路
 
     // Site settings
     IDM_SITE_AUTO_READER    = 2300,

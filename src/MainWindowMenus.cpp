@@ -197,6 +197,7 @@ HMENU MainWindow::BuildWarpMenu() {
     AppendMenuW(m, MF_STRING, IDM_WARP_TOGGLE, L"Cloudflare WARP");
     AppendMenuW(m, MF_STRING, IDM_NET_LINE, L"我的线路");
     CheckMenuRadioItem(m, IDM_WARP_TOGGLE, IDM_NET_LINE, chosen, MF_BYCOMMAND);
+    AppendMenuW(m, MF_STRING, IDM_MANAGE_LINES, L"管理我的线路…");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING | (settings.warpFailClosed ? MF_CHECKED : 0) | (settings.warpEnabled && !settings.useLine ? 0 : MF_GRAYED),
                 IDM_WARP_FAIL_CLOSED, L"WARP 断开时阻止联网");
@@ -268,6 +269,7 @@ void MainWindow::ShowMainMenu() {
     AppendSubmenu(m, BuildPowerMenu(), std::wstring(L"节能\t") + (minutes > 0 ? L"后台标签自动挂起" : L"关闭"), Icon::Bolt);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendItem(m, IDM_TOGGLE_FULLSCREEN, m_isFullScreen ? L"退出全屏幕\tF11" : L"进入全屏幕\tF11", Icon::Fullscreen);
+    AppendItem(m, IDM_EXTENSIONS, L"扩展和脚本…", Icon::Gear);
     AppendItem(m, IDM_SETTINGS, L"设置…\tCtrl+,", Icon::Gear);
     AppendItem(m, IDM_ABOUT, L"关于 UltraLightBrowser", Icon::Info);
     TrackMenu(m, m_rcMenuBtn, true);

@@ -11,6 +11,7 @@
 #include "NativeRequestFilter.hpp"
 #include "PowerManager.hpp"
 #include "WarpManager.hpp"
+#include "Extensions.hpp"
 #include "StringUtils.hpp"
 #include <cwchar>
 #include <iostream>
@@ -249,6 +250,9 @@ void WebViewManager::CreateEnvironment(HWND errorOwner, EnvironmentCallback done
     }
     performanceArgs += WarpManager::Instance().BrowserArguments();
     options->put_AdditionalBrowserArguments(performanceArgs.c_str());
+    // Always on (every process sharing the profile must use the same options);
+    // nothing is loaded unless the user installs an extension (Extensions.hpp).
+    options->put_AreBrowserExtensionsEnabled(TRUE);
 
     const std::wstring userDataDirStr = userDataDir.wstring();
     const HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
@@ -336,6 +340,8 @@ void WebViewManager::OnControllerCreated(ICoreWebView2Controller* controller) {
 
     // Built-in pages (start page, history, reader...) live on https://ulb.internal/.
     InternalPages::MapToWebView(m_webView.get());
+    ApplyUserScripts(AppShell::Instance().UserScriptSources());
+    if (!m_inPrivate) Extensions::Instance().LoadAll(m_webView.get());
 
     const auto uaResult = ApplyUserAgentProfile(Config::Instance().GetSettings().userAgentProfile);
     if (FAILED(uaResult) && Config::Instance().GetSettings().userAgentProfile != "default") {
@@ -485,6 +491,24 @@ UINT32 WebViewManager::BrowserProcessId() const {
     UINT32 pid = 0;
     if (m_webView) m_webView->get_BrowserProcessId(&pid);
     return pid;
+}
+
+void WebViewManager::ApplyUserScripts(const std::vector<std::wstring>& sources) {
+    if (!m_webView) return;
+    // Registration completes later; a newer call makes older results stale.
+    const auto generation = ++m_userScriptGeneration;
+    for (const auto& id : m_userScriptIds) m_webView->RemoveScriptToExecuteOnDocumentCreated(id.c_str());
+    m_userScriptIds.clear();
+    for (const auto& source : sources) {
+        m_webView->AddScriptToExecuteOnDocumentCreated(source.c_str(),
+            Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+                [this, generation](HRESULT result, LPCWSTR id) -> HRESULT {
+                    if (FAILED(result) || !id || !m_webView || m_closed) return S_OK;
+                    if (generation != m_userScriptGeneration) m_webView->RemoveScriptToExecuteOnDocumentCreated(id);
+                    else m_userScriptIds.emplace_back(id);
+                    return S_OK;
+                }).Get());
+    }
 }
 
 void WebViewManager::ClearProfileData(ICoreWebView2* webView) {

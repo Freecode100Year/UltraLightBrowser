@@ -85,6 +85,9 @@ const ULB = (() => {
         let input;
         if (f.options) {
           input = el("select", {}, f.options.map((o) => el("option", { value: o, selected: o === f.value }, o)));
+        } else if (f.multiline) {
+          input = el("textarea", { rows: f.rows || 6, placeholder: f.placeholder || "", required: f.required, spellcheck: "false" });
+          input.value = f.value || "";
         } else {
           input = el("input", { type: f.type || "text", value: f.value || "", placeholder: f.placeholder || "", required: f.required });
         }
@@ -94,9 +97,9 @@ const ULB = (() => {
       el("div", { class: "actions" },
         el("button", { type: "button", onclick: () => close(null) }, "取消"),
         el("button", { type: "submit", class: "primary" }, okText)));
-    const bg = el("div", { class: "modal-bg", onmousedown: (e) => { if (e.target === bg) close(null); } }, el("div", { class: "modal" }, form));
+    const bg = el("div", { class: "modal-bg", onmousedown: (e) => { if (e.target === bg) close(null); } }, el("div", { class: "modal" + (fields.some((f) => f.multiline) ? " wide" : "") }, form));
     document.body.append(bg);
-    const first = form.querySelector("input,select");
+    const first = form.querySelector("input,select,textarea");
     if (first) first.focus();
     bg.addEventListener("keydown", (e) => { if (e.key === "Escape") close(null); });
   });

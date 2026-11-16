@@ -46,6 +46,13 @@ struct ThumbnailMessage {
     std::function<void()> done;
 };
 
+// Reply to a built-in page, computed on a worker thread and posted back with
+// WM_APP_PAGE_REPLY (line tests and subscriptions take seconds).
+struct PageReply {
+    wil::com_ptr<ICoreWebView2> target;
+    std::wstring json;
+};
+
 // Lightweight WebView2 host for built-in panels (sidebar, tab overview).
 struct PanelView {
     wil::com_ptr<ICoreWebView2Controller> controller;
@@ -73,6 +80,7 @@ public:
     ICoreWebView2* ActiveWebView() const;
     UINT32 BrowserProcessId() const;
     void OnLibraryChanged();
+    void ApplyUserScripts();  // re-register the user scripts in every tab
     void OnAudioEndpointChanged();  // default output device changed ("自动检测")
     void OpenInNewTab(const std::wstring& url, bool activate);
     void FocusWindow();
@@ -170,6 +178,9 @@ private:
     void EnsurePanel(PanelView& panel, const std::wstring& page, std::function<void()> onReady);
     void LayoutPanels();
     void HandlePageMessage(ICoreWebView2* source, const std::wstring& json);
+    // Runs work on a worker thread and replies to page message idJson with what it
+    // returns (JSON text), or with the message of an exception it throws.
+    void ReplyLater(ICoreWebView2* source, const std::string& idJson, std::function<std::string()> work);
     void PostEvent(ICoreWebView2* target, const char* event, const std::string& dataJson);
     void BroadcastToInternalPages(const char* event, const std::string& dataJson);
     std::string TabsJson(bool withThumbs) const;
@@ -292,6 +303,7 @@ private:
     static constexpr UINT_PTR IDT_IDLE_WORK = 5011;
     static constexpr UINT_PTR IDT_PREFETCH = 5012;
     static constexpr UINT WM_APP_THUMBNAIL = WM_APP + 1;
+    static constexpr UINT WM_APP_PAGE_REPLY = WM_APP + 2;
 
     // Toolbar paint cache
     HBITMAP m_paintBitmap = nullptr;

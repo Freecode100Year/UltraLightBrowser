@@ -32,6 +32,16 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/library_test.cpp src/Library.cpp -o library-tests
           ./library-tests
+      - name: Test lines, user scripts and extension packages
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/line_store_test.cpp src/LineStore.cpp -o line-tests
+          ./line-tests
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/user_scripts_test.cpp src/UserScripts.cpp -o userscript-tests
+          mkdir -p userscript-inject
+          ./userscript-tests userscript-inject
+          node tests/user_scripts_inject_test.cjs userscript-inject
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/extension_package_test.cpp src/ExtensionPackage.cpp -o extension-tests
+          ./extension-tests
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
       - name: Test ad and tracker blocking rules

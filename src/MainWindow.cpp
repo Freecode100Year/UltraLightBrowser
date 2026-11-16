@@ -684,6 +684,8 @@ void MainWindow::OnCommand(WORD id) {
         return;
     }
     case IDM_SETTINGS: OpenInternalPage(L"settings.html", true); return;
+    case IDM_EXTENSIONS: OpenInternalPage(L"settings.html#extensions", true); return;
+    case IDM_MANAGE_LINES: OpenInternalPage(L"settings.html#lines", true); return;
     case IDM_READING_LIST: ToggleSidebar(L"reading"); return;
     case IDM_SIDEBAR: ToggleSidebar(); return;
     case IDM_OVERVIEW: ToggleOverview(); return;
@@ -1149,6 +1151,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             OnThumbnailReady(r->tabId, std::move(r->dataUrl));
             if (r->done) r->done();
         }
+        return 0;
+    }
+
+    case WM_APP_PAGE_REPLY: {
+        std::unique_ptr<PageReply> r(reinterpret_cast<PageReply*>(lParam));
+        if (r && r->target && !m_closing) r->target->PostWebMessageAsJson(r->json.c_str());
         return 0;
     }
 

@@ -3,34 +3,20 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/xtls/xray-core/app/dispatcher"
-	applog "github.com/xtls/xray-core/app/log"
-	"github.com/xtls/xray-core/app/proxyman"
 	_ "github.com/xtls/xray-core/app/proxyman/outbound"
 	xnet "github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/protocol"
-	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/proxy/vless"
-	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
-	"github.com/xtls/xray-core/transport/internet"
-	"github.com/xtls/xray-core/transport/internet/reality"
 	_ "github.com/xtls/xray-core/transport/internet/tcp"
 )
 
-// Line is a private VLESS + REALITY server (a "vless://" share link). Every
+// Line is a private server given as a share link (see links.go). Every
 // connection, including name resolution, goes through it; there is no direct path.
 //
 // With a rotation prefix (see rotate.go) the line has several candidate links,
@@ -44,82 +30,8 @@ type Line struct {
 	prefix string // rotation prefix, or ""
 	cands  []string
 	cur    string // candidate in use
+	auto   bool   // cands are independent servers: use the fastest that works
 	up     atomic.Bool
-}
-
-// parseLink reads vless://uuid@host:port?security=reality&sni=..&pbk=..&sid=..&fp=..&flow=..
-func parseLink(link string) (*core.Config, string, error) {
-	u, err := url.Parse(strings.TrimSpace(link))
-	if err != nil || u.Scheme != "vless" || u.User == nil {
-		return nil, "", fmt.Errorf("not a vless:// link")
-	}
-	q := u.Query()
-	if q.Get("security") != "reality" {
-		return nil, "", fmt.Errorf("only REALITY links are supported")
-	}
-	if t := q.Get("type"); t != "" && t != "tcp" && t != "raw" {
-		return nil, "", fmt.Errorf("unsupported transport %q", t)
-	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil || port <= 0 || port > 65535 {
-		return nil, "", fmt.Errorf("bad port")
-	}
-	flow := q.Get("flow")
-	if flow != "" && flow != vless.XRV {
-		return nil, "", fmt.Errorf("unsupported flow %q", flow)
-	}
-	pbk, err := base64.RawURLEncoding.DecodeString(q.Get("pbk"))
-	if err != nil || len(pbk) != 32 {
-		return nil, "", fmt.Errorf("bad public key")
-	}
-	sid := make([]byte, 8)
-	if s := q.Get("sid"); len(s) > 16 {
-		return nil, "", fmt.Errorf("bad short id")
-	} else if _, err := hex.Decode(sid, []byte(s)); err != nil {
-		return nil, "", fmt.Errorf("bad short id")
-	}
-	fp := q.Get("fp")
-	if fp == "" {
-		fp = "chrome"
-	}
-	spx := q.Get("spx")
-	if spx == "" || spx[0] != '/' {
-		spx = "/"
-	}
-
-	rc := &reality.Config{
-		Fingerprint: fp,
-		ServerName:  q.Get("sni"),
-		PublicKey:   pbk,
-		ShortId:     sid,
-		SpiderX:     spx,
-		SpiderY:     make([]int64, 10),
-	}
-	account := &vless.Account{Id: u.User.Username(), Flow: flow, Encryption: "none"}
-	out := &vlessout.Config{Vnext: &protocol.ServerEndpoint{
-		Address: xnet.NewIPOrDomain(xnet.ParseAddress(u.Hostname())),
-		Port:    uint32(port),
-		User:    &protocol.User{Account: serial.ToTypedMessage(account)},
-	}}
-	cfg := &core.Config{
-		App: []*serial.TypedMessage{
-			// No logs: they would name every site visited.
-			serial.ToTypedMessage(&applog.Config{ErrorLogType: applog.LogType_None, AccessLogType: applog.LogType_None}),
-			serial.ToTypedMessage(&dispatcher.Config{}),
-			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
-		},
-		Outbound: []*core.OutboundHandlerConfig{{
-			SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{
-				StreamSettings: &internet.StreamConfig{
-					ProtocolName:     "tcp",
-					SecurityType:     serial.GetMessageType(rc),
-					SecuritySettings: []*serial.TypedMessage{serial.ToTypedMessage(rc)},
-				},
-			}),
-			ProxySettings: serial.ToTypedMessage(out),
-		}},
-	}
-	return cfg, net.JoinHostPort(u.Hostname(), u.Port()), nil
 }
 
 // StartLine starts the line. prefix is an IPv6 rotation prefix or "".
@@ -133,6 +45,27 @@ func StartLine(link, prefix string) (*Line, string, error) {
 		return nil, "", err
 	}
 	l.inst, l.server, l.cur = inst, server, l.cands[0]
+	return l, server, nil
+}
+
+// StartAuto starts a line over several servers, tried at the same time on the
+// first check; the fastest that works is used. Links that cannot be used are dropped.
+func StartAuto(links []string) (*Line, string, error) {
+	var ok []string
+	for _, l := range links {
+		if _, _, err := parseLink(l); err == nil {
+			ok = append(ok, l)
+		}
+	}
+	if len(ok) == 0 {
+		return nil, "", fmt.Errorf("no usable link")
+	}
+	l := &Line{link: ok[0], cands: ok, auto: true}
+	inst, server, err := startInst(ok[0])
+	if err != nil {
+		return nil, "", err
+	}
+	l.inst, l.server, l.cur = inst, server, ok[0]
 	return l, server, nil
 }
 
@@ -178,6 +111,7 @@ func (l *Line) pick(cands []string) bool {
 		inst   *core.Instance
 		server string
 		ok     bool
+		took   time.Duration
 	}
 	trials := make([]trial, len(cands))
 	var wg sync.WaitGroup
@@ -195,15 +129,24 @@ func (l *Line) pick(cands []string) bool {
 					return
 				}
 			}
-			trials[i] = trial{inst, server, checkInst(inst) == nil}
+			start := time.Now()
+			ok := checkInst(inst) == nil
+			trials[i] = trial{inst, server, ok, time.Since(start)}
 		}(i, c)
 	}
 	wg.Wait()
 	chosen := -1
 	for i, t := range trials {
-		if t.ok {
+		if !t.ok {
+			continue
+		}
+		if chosen < 0 {
 			chosen = i
-			break
+			if !l.auto {
+				break // rotation candidates: the first in list order wins
+			}
+		} else if t.took < trials[chosen].took {
+			chosen = i
 		}
 	}
 	for i, t := range trials {
@@ -296,7 +239,7 @@ func (l *Line) Monitor() {
 	first := true
 	lastBest := time.Now()
 	for {
-		if c := lineCandidates(l.link, l.prefix, time.Now()); !sameList(c, l.candidates()) {
+		if c := lineCandidates(l.link, l.prefix, time.Now()); !l.auto && !sameList(c, l.candidates()) {
 			l.mu.Lock()
 			l.cands = c
 			l.mu.Unlock()
@@ -311,8 +254,12 @@ func (l *Line) Monitor() {
 		} else if err = l.check(); err != nil && len(l.candidates()) > 1 && l.pick(l.candidates()) {
 			err = nil
 		}
-		if err == nil {
-			if cands := l.candidates(); l.current() != cands[0] && time.Since(lastBest) > time.Hour {
+		if err == nil && time.Since(lastBest) > time.Hour {
+			if cands := l.candidates(); l.auto && len(cands) > 1 {
+				// Servers get slower or faster: look for the fastest again once an hour.
+				lastBest = time.Now()
+				l.pick(cands)
+			} else if l.current() != cands[0] {
 				lastBest = time.Now()
 				l.pick(cands[:1])
 			}

@@ -15,13 +15,17 @@
 //
 // stdin accepts "RESCAN" (optimise the endpoint now).
 //
-// With a vless:// link in the ULB_LINE environment variable the helper uses that
-// private VLESS + REALITY server instead of WARP (-state is then not needed):
+// With a share link (vless://, trojan://, vmess://, ss://; see links.go) in the
+// ULB_LINE environment variable the helper uses that server instead of WARP
+// (-state is then not needed):
 // every connection and name lookup goes through it, never direct. It prints
 // PORT, STATE and ERROR lines, plus "LINE <host:port>" once the core is running
 // and whenever it moves to another server address. ULB_LINE_ROTATE, an IPv6 /64
 // prefix, makes the line follow a server address that changes every 3 days
-// (see rotate.go).
+// (see rotate.go). ULB_LINES, several links one per line, selects automatically:
+// the fastest one that works is used, and another is chosen when it fails.
+//
+// -probe and -fetch are one-shot modes for the settings page (see modes.go).
 //
 // A WARP device is replaced by a newly registered one every 3 days, which changes
 // the exit IPv6 address; "ROTATE <device v6>" is printed when that happens.
@@ -46,6 +50,10 @@ var (
 	listenAddr = flag.String("listen", "127.0.0.1:0", "SOCKS5 listen address")
 	parentPID  = flag.Int("parent", 0, "exit when this process exits")
 	failClosed = flag.Bool("fail-closed", false, "refuse connections while the tunnel is down")
+	probeMode  = flag.Bool("probe", false, "test the links in ULB_PROBE and exit (see modes.go)")
+	parseOnly  = flag.Bool("parse-only", false, "with -probe: only check that the links can be used")
+	fetchMode  = flag.Bool("fetch", false, "download the subscription at ULB_FETCH and exit")
+	socksAddr  = flag.String("socks", "", "with -fetch: try this SOCKS5 proxy first")
 )
 
 var out sync.Mutex
@@ -61,10 +69,23 @@ func status(format string, args ...any) {
 
 func main() {
 	flag.Parse()
+	if *probeMode {
+		runProbe(*parseOnly)
+		return
+	}
+	if *fetchMode {
+		runFetch(*socksAddr)
+		return
+	}
 	link := os.Getenv("ULB_LINE")
 	rotatePrefix := os.Getenv("ULB_LINE_ROTATE")
+	autoLinks := splitLinks(os.Getenv("ULB_LINES"))
 	os.Unsetenv("ULB_LINE")
 	os.Unsetenv("ULB_LINE_ROTATE")
+	os.Unsetenv("ULB_LINES")
+	if link == "" && len(autoLinks) > 0 {
+		link = autoLinks[0]
+	}
 	if rotatePrefix == "" {
 		// An imported server can opt in with "&rotate6=<its /64>" in its link.
 		if u, err := url.Parse(strings.TrimSpace(link)); err == nil {
@@ -89,7 +110,14 @@ func main() {
 
 	t := &Tunnel{}
 	if link != "" {
-		l, server, err := StartLine(link, rotatePrefix)
+		var l *Line
+		var server string
+		var err error
+		if len(autoLinks) > 1 {
+			l, server, err = StartAuto(autoLinks)
+		} else {
+			l, server, err = StartLine(link, rotatePrefix)
+		}
 		if err != nil {
 			status("ERROR line: %v", err)
 			os.Exit(1)

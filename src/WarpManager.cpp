@@ -73,23 +73,6 @@ bool PortOpen(int port) {
     return open;
 }
 
-std::filesystem::path LineFile() {
-    return WarpFolder() / "line.dat";
-}
-
-// "host:port" of a vless://uuid@host:port?... link (IPv6 hosts without brackets).
-std::string ServerOf(const std::string& link) {
-    const size_t at = link.find('@');
-    if (at == std::string::npos) return {};
-    std::string rest = link.substr(at + 1, link.find_first_of("?#/", at + 1) - at - 1);
-    if (!rest.empty() && rest[0] == '[') {
-        const size_t close = rest.find(']');
-        if (close == std::string::npos) return {};
-        return rest.substr(1, close - 1) + rest.substr(close + 1);
-    }
-    return rest;
-}
-
 // The public line server answers on a new address in this /64 every 3 days; the
 // helper derives the address (warp/rotate.go, server/ulb-line-ipv6.sh) and falls
 // back to the fixed address in the link while the server has not switched.
@@ -105,20 +88,20 @@ std::string PublicLine() {
 
 } // namespace
 
-bool WarpManager::SetLine(const std::string& input) {
-    std::string link = input;
-    while (!link.empty() && isspace(static_cast<unsigned char>(link.back()))) link.pop_back();
-    while (!link.empty() && isspace(static_cast<unsigned char>(link.front()))) link.erase(0, 1);
-    if (link.rfind("vless://", 0) != 0 || link.find("security=reality") == std::string::npos ||
-        link.find("pbk=") == std::string::npos || ServerOf(link).empty() || link.size() > 4096) {
-        return false;
-    }
-    DATA_BLOB in{static_cast<DWORD>(link.size()), reinterpret_cast<BYTE*>(link.data())};
+namespace {
+
+std::filesystem::path StoreFile() {
+    return WarpFolder() / "lines.dat";
+}
+
+// DPAPI: only the current Windows account can read what is written.
+bool WriteProtected(const std::filesystem::path& path, const std::string& plain) {
+    DATA_BLOB in{static_cast<DWORD>(plain.size()), reinterpret_cast<BYTE*>(const_cast<char*>(plain.data()))};
     DATA_BLOB out{};
-    if (!CryptProtectData(&in, L"UltraLightBrowser line", nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) return false;
+    if (!CryptProtectData(&in, L"UltraLightBrowser lines", nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) return false;
     std::error_code ec;
-    std::filesystem::create_directories(WarpFolder(), ec);
-    const std::filesystem::path tmp = LineFile().wstring() + L".tmp";
+    std::filesystem::create_directories(path.parent_path(), ec);
+    const std::filesystem::path tmp = path.wstring() + L".tmp";
     bool ok;
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
@@ -126,34 +109,132 @@ bool WarpManager::SetLine(const std::string& input) {
         ok = static_cast<bool>(f);
     }
     LocalFree(out.pbData);
-    return ok && MoveFileExW(tmp.c_str(), LineFile().c_str(), MOVEFILE_REPLACE_EXISTING);
+    return ok && MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
 }
 
-void WarpManager::ClearLine() {
-    std::error_code ec;
-    std::filesystem::remove(LineFile(), ec);
-}
-
-std::string WarpManager::LoadLine() {
-    std::string link = LoadImported();
-    return link.empty() ? PublicLine() : link;
-}
-
-bool WarpManager::LineImported() {
-    return !LoadImported().empty();
-}
-
-std::string WarpManager::LoadImported() {
-    std::ifstream f(LineFile(), std::ios::binary);
+std::string ReadProtected(const std::filesystem::path& path) {
+    std::ifstream f(path, std::ios::binary);
     std::string blob((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     if (blob.empty()) return {};
     DATA_BLOB in{static_cast<DWORD>(blob.size()), reinterpret_cast<BYTE*>(blob.data())};
     DATA_BLOB out{};
     if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) return {};
-    std::string link(reinterpret_cast<const char*>(out.pbData), out.cbData);
+    std::string plain(reinterpret_cast<const char*>(out.pbData), out.cbData);
     SecureZeroMemory(out.pbData, out.cbData);
     LocalFree(out.pbData);
-    return link;
+    return plain;
+}
+
+} // namespace
+
+LineStore WarpManager::LoadStore() {
+    LineStore store;
+    if (store.Load(ReadProtected(StoreFile()))) return store;
+    // Up to 2.7: one imported link in line.dat. It becomes the selected line.
+    const std::filesystem::path old = WarpFolder() / "line.dat";
+    std::string link = ReadProtected(old);
+    if (!link.empty()) {
+        store.Add({link});
+        if (!store.Lines().empty()) store.Select(store.Lines().front().id);
+        if (SaveStore(store)) {
+            std::error_code ec;
+            std::filesystem::remove(old, ec);
+        }
+    }
+    SecureZeroMemory(link.data(), link.size());
+    return store;
+}
+
+bool WarpManager::SaveStore(const LineStore& store) {
+    std::string plain = store.Save();
+    const bool ok = WriteProtected(StoreFile(), plain);
+    SecureZeroMemory(plain.data(), plain.size());
+    return ok;
+}
+
+std::vector<std::string> WarpManager::LoadLinks() {
+    std::vector<std::string> links = LoadStore().SelectedLinks();
+    if (links.empty()) links.push_back(PublicLine());
+    return links;
+}
+
+namespace {
+
+// Environment of the current process without our own ULB_* variables, plus vars;
+// a CREATE_UNICODE_ENVIRONMENT block.
+std::wstring HelperEnvironment(const std::vector<std::pair<std::wstring, std::wstring>>& vars) {
+    std::wstring env;
+    if (wchar_t* block = GetEnvironmentStringsW()) {
+        for (const wchar_t* p = block; *p; p += wcslen(p) + 1) {
+            if (_wcsnicmp(p, L"ULB_", 4) != 0) env.append(p).push_back(L'\0');
+        }
+        FreeEnvironmentStringsW(block);
+    }
+    for (const auto& [k, v] : vars) {
+        env += k + L"=" + v;
+        env.push_back(L'\0');
+    }
+    env.push_back(L'\0');
+    return env;
+}
+
+std::mutex g_extractMutex;
+
+} // namespace
+
+std::string WarpManager::RunTool(const std::wstring& args, const std::vector<std::pair<std::wstring, std::wstring>>& vars, DWORD timeoutMs) {
+    const std::filesystem::path folder = WarpFolder();
+    const std::wstring exe = (folder / "ulb-warp.exe").wstring();
+    {
+        std::lock_guard<std::mutex> lock(g_extractMutex);
+        if (!Instance().Extract(exe)) return "ERROR helper unavailable\n";
+    }
+    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+    HANDLE readPipe = nullptr, writePipe = nullptr;
+    if (!CreatePipe(&readPipe, &writePipe, &sa, 0)) return "ERROR pipe\n";
+    SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+    std::wstring cmd = L"\"" + exe + L"\" " + args;
+    std::wstring env = HelperEnvironment(vars);
+    STARTUPINFOW si{sizeof(si)};
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = writePipe;
+    si.hStdError = writePipe;
+    si.hStdInput = nullptr;
+    PROCESS_INFORMATION pi{};
+    const BOOL started = CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, TRUE,
+                                        CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+                                        env.data(), folder.wstring().c_str(), &si, &pi);
+    SecureZeroMemory(env.data(), env.size() * sizeof(wchar_t));
+    CloseHandle(writePipe);
+    if (!started) {
+        CloseHandle(readPipe);
+        return "ERROR could not start helper\n";
+    }
+    // Ends with the browser even if the browser crashes.
+    HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    if (job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+        AssignProcessToJobObject(job, pi.hProcess);
+    }
+    ResumeThread(pi.hThread);
+    CloseHandle(pi.hThread);
+    std::string output;
+    std::thread reader([&output, readPipe]() {
+        char buf[4096];
+        DWORD read = 0;
+        while (ReadFile(readPipe, buf, sizeof(buf), &read, nullptr) && read > 0 && output.size() < (8u << 20)) output.append(buf, read);
+    });
+    if (WaitForSingleObject(pi.hProcess, timeoutMs) == WAIT_TIMEOUT) {
+        TerminateProcess(pi.hProcess, 1);
+        output += "\nERROR timed out\n";
+    }
+    reader.join();
+    CloseHandle(readPipe);
+    CloseHandle(pi.hProcess);
+    if (job) CloseHandle(job);
+    return output;
 }
 
 WarpManager& WarpManager::Instance() {
@@ -225,8 +306,8 @@ void WarpManager::Start() {
     }
 
     if (m_lineMode) {
-        m_link = LoadLine();
-        if (m_link.empty()) {
+        m_links = LoadLinks();
+        if (m_links.empty()) {
             m_state = State::Unavailable;
             BlockIfFailClosed();
             return;
@@ -284,14 +365,24 @@ bool WarpManager::Launch(int port) {
     if (m_lineMode) {
         if (wchar_t* block = GetEnvironmentStringsW()) {
             for (const wchar_t* p = block; *p; p += wcslen(p) + 1) {
-                if (_wcsnicmp(p, L"ULB_LINE=", 9) != 0 && _wcsnicmp(p, L"ULB_LINE_ROTATE=", 16) != 0) env.append(p).push_back(L'\0');
+                if (_wcsnicmp(p, L"ULB_", 4) != 0) env.append(p).push_back(L'\0');
             }
             FreeEnvironmentStringsW(block);
         }
-        env += L"ULB_LINE=" + StringUtils::Utf8ToWide(m_link);
+        if (m_links.size() > 1) {
+            // "自动选择": the helper uses the fastest of these that works.
+            std::string joined;
+            for (const auto& l : m_links) {
+                if (joined.size() + l.size() > 30000) break;  // an environment variable holds 32767 characters
+                joined += l + "\n";
+            }
+            env += L"ULB_LINES=" + StringUtils::Utf8ToWide(joined);
+        } else {
+            env += L"ULB_LINE=" + StringUtils::Utf8ToWide(m_links.front());
+        }
         env.push_back(L'\0');
         // Only the built-in line rotates; an imported server keeps its own address.
-        if (m_link == PublicLine()) {
+        if (m_links.size() == 1 && m_links.front() == PublicLine()) {
             env += std::wstring(L"ULB_LINE_ROTATE=") + kPublicLineRotate;
             env.push_back(L'\0');
         }
