@@ -268,8 +268,26 @@ const open = async (pred) => {
   await page.send('Page.navigate', {url: 'http://127.0.0.1:8099/t.html'});
   await new Promise(r => setTimeout(r, 6000));
   console.log('SMOKE-PAGE', await page.ev('JSON.stringify({title: document.title, ext: document.documentElement.dataset.ext || null, gm: document.documentElement.dataset.gm || null, style: [...document.querySelectorAll("style")].some(s => s.textContent.includes("outline"))})'));
-  await page.send('Page.navigate', {url: 'https://ulb.internal/settings.html#lines'});
-  await new Promise(r => setTimeout(r, 4000));
+  process.exit(0);
+})().catch(e => { console.log('CDP-ERR', e.message); process.exit(0); });
+'@ | Set-Content v280.js
+node v280.js
+# Web pages may not navigate into built-in pages; open settings like a user does.
+Keys "^," 4000
+@'
+const WS = require('ws');
+const open = async (pred) => {
+  const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
+  const t = list.find(pred);
+  const ws = new WS(t.webSocketDebuggerUrl); await new Promise(r => ws.on('open', r));
+  let n = 0; const pend = new Map();
+  ws.on('message', m => { const d = JSON.parse(m); if (pend.has(d.id)) { pend.get(d.id)(d.result); pend.delete(d.id); } });
+  const send = (method, params = {}) => new Promise(r => { const id = ++n; pend.set(id, r); ws.send(JSON.stringify({id, method, params})); });
+  const ev = async (e) => { const r = await send('Runtime.evaluate', {expression: e, awaitPromise: true, returnByValue: true}); return r.exceptionDetails ? 'EXC ' + JSON.stringify(r.exceptionDetails).slice(0, 300) : r.result.value; };
+  return { send, ev, ws };
+};
+(async () => {
+  const page = await open(t => t.type === 'page' && t.url.includes('settings.html'));
   console.log('SMOKE-EXT', await page.ev('ULB.call("getExtensions").then(r => JSON.stringify(r))'));
   const links = ['trojan://pw@example.com:443?sni=example.com#t1', 'ss://YWVzLTI1Ni1nY206cHc@192.0.2.1:8388#s1', 'vless://00000000-0000-4000-8000-000000000000@example.com:443?type=grpc#bad'].join('\n');
   console.log('SMOKE-ADDLINES', await page.ev(`ULB.call("addLines", {text: ${JSON.stringify(links)}}).then(r => JSON.stringify(r))`));
@@ -282,8 +300,8 @@ const open = async (pred) => {
   console.log('SMOKE-TARGETS', list.map(t => t.type + ' ' + t.url).join(' | '));
   process.exit(0);
 })().catch(e => { console.log('CDP-ERR', e.message); process.exit(0); });
-'@ | Set-Content v280.js
-node v280.js
+'@ | Set-Content v280b.js
+node v280b.js
 Shot "20-v280-settings"
 Stop-Process -Name UltraLightBrowser -Force -ErrorAction SilentlyContinue
 Stop-Process $web -Force -ErrorAction SilentlyContinue
