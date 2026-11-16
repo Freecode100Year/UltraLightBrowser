@@ -22,7 +22,7 @@ android {
         applicationId = "net.freedom8964.ulb"
         minSdk = 26
         targetSdk = 36
-        versionCode = ulbVersionCode   // 2.8.0 -> 20800
+        versionCode = ulbVersionCode   // 2.9.0 -> 20900
         versionName = ulbVersion
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
