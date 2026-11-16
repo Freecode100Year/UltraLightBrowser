@@ -49,7 +49,8 @@ func runProbe(parseOnly bool) {
 			defer func() { <-sem }()
 			ms, err := probeLink(link)
 			if err != nil {
-				status("PROBE %d fail %v", i, err)
+				// Xray's own errors ("io: read/write on closed pipe") mean nothing to users.
+				status("PROBE %d fail 连不上（服务器没有回应、链接已失效或被封锁）", i)
 			} else {
 				status("PROBE %d %d", i, ms)
 			}
@@ -90,7 +91,7 @@ func runFetch(socks string) {
 	os.Unsetenv("ULB_FETCH")
 	u, err := url.Parse(target)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		status("ERROR fetch: not an http(s) address")
+		status("ERROR fetch: 订阅地址要以 http:// 或 https:// 开头")
 		os.Exit(1)
 	}
 	var body []byte
@@ -138,7 +139,7 @@ func fetchOnce(target string, proxy *url.URL) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("服务器返回 %d", resp.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, maxSubscription))
 }
@@ -153,7 +154,7 @@ func subscriptionLinks(body []byte) ([]string, int, error) {
 		}
 	}
 	if strings.Contains(text, "proxies:") && !strings.Contains(text, "://") {
-		return nil, 0, fmt.Errorf("Clash (YAML) subscriptions are not supported; use the v2rayN / base64 format")
+		return nil, 0, fmt.Errorf("不支持 Clash（YAML）格式的订阅，请使用通用 / v2rayN（Base64）格式")
 	}
 	var links []string
 	skipped := 0
@@ -172,7 +173,7 @@ func subscriptionLinks(body []byte) ([]string, int, error) {
 		}
 	}
 	if len(links) == 0 && skipped == 0 {
-		return nil, 0, fmt.Errorf("no share links found")
+		return nil, 0, fmt.Errorf("订阅里没有找到分享链接")
 	}
 	return links, skipped, nil
 }

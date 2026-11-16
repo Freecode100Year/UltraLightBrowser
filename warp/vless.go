@@ -58,7 +58,7 @@ func StartAuto(links []string) (*Line, string, error) {
 		}
 	}
 	if len(ok) == 0 {
-		return nil, "", fmt.Errorf("no usable link")
+		return nil, "", fmt.Errorf("没有可用的链接")
 	}
 	l := &Line{link: ok[0], cands: ok, auto: true}
 	inst, server, err := startInst(ok[0])

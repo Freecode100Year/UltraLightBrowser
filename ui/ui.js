@@ -38,7 +38,7 @@ const ULB = (() => {
       else if (k === "style" && typeof v === "object") Object.assign(n.style, v);
       else n.setAttribute(k, v === true ? "" : v);
     }
-    for (const c of children.flat()) {
+    for (const c of children.flat(Infinity)) {
       if (c === null || c === undefined || c === false) continue;
       n.append(c instanceof Node ? c : document.createTextNode(String(c)));
     }

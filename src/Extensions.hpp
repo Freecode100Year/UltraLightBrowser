@@ -8,6 +8,7 @@
 // settings and data are cleared on close like other website data.
 
 #include <windows.h>
+#include <objbase.h>
 #include <WebView2.h>
 #include <wil/com.h>
 

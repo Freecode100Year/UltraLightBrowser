@@ -79,7 +79,7 @@ func parseLink(link string) (*core.Config, string, error) {
 func parseShare(link string) (proxy *serial.TypedMessage, stream *internet.StreamConfig, host string, port int, err error) {
 	scheme, _, ok := strings.Cut(link, "://")
 	if !ok {
-		return nil, nil, "", 0, fmt.Errorf("not a share link")
+		return nil, nil, "", 0, fmt.Errorf("不是分享链接")
 	}
 	switch strings.ToLower(scheme) {
 	case "vless":
@@ -91,7 +91,7 @@ func parseShare(link string) (proxy *serial.TypedMessage, stream *internet.Strea
 	case "ss":
 		return parseSS(link)
 	}
-	return nil, nil, "", 0, fmt.Errorf("unsupported link type %q", scheme)
+	return nil, nil, "", 0, fmt.Errorf("不支持 %s:// 链接", scheme)
 }
 
 func endpoint(host string, port int, account *serial.TypedMessage) *protocol.ServerEndpoint {
@@ -107,7 +107,7 @@ func hostPort(u *url.URL) (string, int, error) {
 	host := u.Hostname()
 	port, err := strconv.Atoi(u.Port())
 	if host == "" || err != nil || port <= 0 || port > 65535 {
-		return "", 0, fmt.Errorf("bad server address")
+		return "", 0, fmt.Errorf("服务器地址或端口不正确")
 	}
 	return host, port, nil
 }
@@ -115,7 +115,7 @@ func hostPort(u *url.URL) (string, int, error) {
 func parseVless(link string) (*serial.TypedMessage, *internet.StreamConfig, string, int, error) {
 	u, err := url.Parse(link)
 	if err != nil || u.User == nil || u.User.Username() == "" {
-		return nil, nil, "", 0, fmt.Errorf("bad vless:// link")
+		return nil, nil, "", 0, fmt.Errorf("vless:// 链接格式不正确")
 	}
 	host, port, err := hostPort(u)
 	if err != nil {
@@ -128,10 +128,10 @@ func parseVless(link string) (*serial.TypedMessage, *internet.StreamConfig, stri
 	}
 	flow := p.get("flow")
 	if flow != "" && flow != vless.XRV {
-		return nil, nil, "", 0, fmt.Errorf("unsupported flow %q", flow)
+		return nil, nil, "", 0, fmt.Errorf("不支持流控 %q", flow)
 	}
 	if flow != "" && (stream.ProtocolName != "tcp" || stream.SecurityType == "") {
-		return nil, nil, "", 0, fmt.Errorf("flow %s needs TCP with TLS or REALITY", flow)
+		return nil, nil, "", 0, fmt.Errorf("流控 %s 只能用于 TCP + TLS / REALITY", flow)
 	}
 	enc := p.get("encryption")
 	if enc == "" {
@@ -145,7 +145,7 @@ func parseVless(link string) (*serial.TypedMessage, *internet.StreamConfig, stri
 func parseTrojan(link string) (*serial.TypedMessage, *internet.StreamConfig, string, int, error) {
 	u, err := url.Parse(link)
 	if err != nil || u.User == nil || u.User.Username() == "" {
-		return nil, nil, "", 0, fmt.Errorf("bad trojan:// link")
+		return nil, nil, "", 0, fmt.Errorf("trojan:// 链接格式不正确")
 	}
 	host, port, err := hostPort(u)
 	if err != nil {
@@ -164,11 +164,11 @@ func parseTrojan(link string) (*serial.TypedMessage, *internet.StreamConfig, str
 func parseVmess(link string) (*serial.TypedMessage, *internet.StreamConfig, string, int, error) {
 	raw, err := decodeB64(link[len("vmess://"):])
 	if err != nil {
-		return nil, nil, "", 0, fmt.Errorf("bad vmess:// link")
+		return nil, nil, "", 0, fmt.Errorf("vmess:// 链接格式不正确")
 	}
 	var v map[string]any
 	if err := json.Unmarshal(raw, &v); err != nil {
-		return nil, nil, "", 0, fmt.Errorf("bad vmess:// link")
+		return nil, nil, "", 0, fmt.Errorf("vmess:// 链接格式不正确")
 	}
 	str := func(k string) string {
 		switch x := v[k].(type) {
@@ -182,10 +182,10 @@ func parseVmess(link string) (*serial.TypedMessage, *internet.StreamConfig, stri
 	host := strings.Trim(str("add"), "[]")
 	port, err := strconv.Atoi(str("port"))
 	if host == "" || err != nil || port <= 0 || port > 65535 || str("id") == "" {
-		return nil, nil, "", 0, fmt.Errorf("bad server address")
+		return nil, nil, "", 0, fmt.Errorf("服务器地址或端口不正确")
 	}
 	if aid := str("aid"); aid != "" && aid != "0" {
-		return nil, nil, "", 0, fmt.Errorf("VMess alterId %s is not supported (only 0, AEAD)", aid)
+		return nil, nil, "", 0, fmt.Errorf("不支持 VMess alterId %s（只支持 0）", aid)
 	}
 	security := "none"
 	if t := str("tls"); t == "tls" || t == "reality" {
@@ -214,7 +214,7 @@ func parseVmess(link string) (*serial.TypedMessage, *internet.StreamConfig, stri
 	case "chacha20-poly1305":
 		sec.Type = protocol.SecurityType_CHACHA20_POLY1305
 	default:
-		return nil, nil, "", 0, fmt.Errorf("unsupported VMess security %q", str("scy"))
+		return nil, nil, "", 0, fmt.Errorf("不支持 VMess 加密方式 %q", str("scy"))
 	}
 	account := &vmess.Account{Id: str("id"), SecuritySettings: sec}
 	out := &vmessout.Config{Receiver: endpoint(host, port, serial.ToTypedMessage(account))}
@@ -231,13 +231,13 @@ func parseSS(link string) (*serial.TypedMessage, *internet.StreamConfig, string,
 	if !strings.Contains(rest, "@") {
 		dec, err := decodeB64(strings.SplitN(rest, "?", 2)[0])
 		if err != nil {
-			return nil, nil, "", 0, fmt.Errorf("bad ss:// link")
+			return nil, nil, "", 0, fmt.Errorf("ss:// 链接格式不正确")
 		}
 		rest = string(dec)
 	}
 	at := strings.LastIndexByte(rest, '@')
 	if at < 0 {
-		return nil, nil, "", 0, fmt.Errorf("bad ss:// link")
+		return nil, nil, "", 0, fmt.Errorf("ss:// 链接格式不正确")
 	}
 	userinfo := rest[:at]
 	if dec, err := decodeB64(userinfo); err == nil && strings.Contains(string(dec), ":") {
@@ -247,18 +247,18 @@ func parseSS(link string) (*serial.TypedMessage, *internet.StreamConfig, string,
 	}
 	method, password, ok := strings.Cut(userinfo, ":")
 	if !ok || password == "" {
-		return nil, nil, "", 0, fmt.Errorf("bad ss:// link")
+		return nil, nil, "", 0, fmt.Errorf("ss:// 链接格式不正确")
 	}
 	u, err := url.Parse("ss://x@" + rest[at+1:])
 	if err != nil {
-		return nil, nil, "", 0, fmt.Errorf("bad ss:// link")
+		return nil, nil, "", 0, fmt.Errorf("ss:// 链接格式不正确")
 	}
 	host, port, err := hostPort(u)
 	if err != nil {
 		return nil, nil, "", 0, err
 	}
 	if u.Query().Get("plugin") != "" {
-		return nil, nil, "", 0, fmt.Errorf("Shadowsocks plugins are not supported")
+		return nil, nil, "", 0, fmt.Errorf("不支持 Shadowsocks 插件（plugin）")
 	}
 	stream := &internet.StreamConfig{ProtocolName: "tcp"}
 	method = strings.ToLower(method)
@@ -266,7 +266,7 @@ func parseSS(link string) (*serial.TypedMessage, *internet.StreamConfig, string,
 		switch method {
 		case "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305":
 		default:
-			return nil, nil, "", 0, fmt.Errorf("unsupported Shadowsocks method %q", method)
+			return nil, nil, "", 0, fmt.Errorf("不支持 Shadowsocks 加密方式 %q", method)
 		}
 		out := &ss2022.ClientConfig{Address: xnet.NewIPOrDomain(xnet.ParseAddress(host)), Port: uint32(port), Method: method, Key: password}
 		return serial.ToTypedMessage(out), stream, host, port, nil
@@ -281,7 +281,7 @@ func parseSS(link string) (*serial.TypedMessage, *internet.StreamConfig, string,
 	}
 	ct, ok := ciphers[method]
 	if !ok {
-		return nil, nil, "", 0, fmt.Errorf("unsupported Shadowsocks method %q", method)
+		return nil, nil, "", 0, fmt.Errorf("不支持 Shadowsocks 加密方式 %q", method)
 	}
 	account := &shadowsocks.Account{Password: password, CipherType: ct}
 	out := &shadowsocks.ClientConfig{Server: endpoint(host, port, serial.ToTypedMessage(account))}
@@ -304,7 +304,7 @@ func streamConfig(p params, server, defSecurity string) (*internet.StreamConfig,
 	switch t := strings.ToLower(p.get("type")); t {
 	case "", "tcp", "raw":
 		if h := p.get("headerType"); h != "" && h != "none" {
-			return nil, fmt.Errorf("TCP header %q is not supported", h)
+			return nil, fmt.Errorf("不支持 TCP 伪装类型 %q", h)
 		}
 		sc.ProtocolName = "tcp"
 	case "ws", "websocket":
@@ -326,7 +326,7 @@ func streamConfig(p params, server, defSecurity string) (*internet.StreamConfig,
 	case "grpc":
 		// gRPC would add ~7 MB (google.golang.org/grpc) to the helper; XHTTP has
 		// largely replaced it.
-		return nil, fmt.Errorf("gRPC transport is not supported; use XHTTP, WebSocket or TCP")
+		return nil, fmt.Errorf("不支持 gRPC 传输，请改用 XHTTP、WebSocket 或 TCP")
 	case "httpupgrade":
 		setTransport("httpupgrade", serial.ToTypedMessage(&httpupgrade.Config{Host: hostHeader, Path: path}))
 	case "xhttp", "splithttp":
@@ -336,7 +336,7 @@ func streamConfig(p params, server, defSecurity string) (*internet.StreamConfig,
 		}
 		setTransport("splithttp", serial.ToTypedMessage(&splithttp.Config{Host: hostHeader, Path: path, Mode: mode}))
 	default:
-		return nil, fmt.Errorf("unsupported transport %q", t)
+		return nil, fmt.Errorf("不支持传输方式 %q", t)
 	}
 
 	security := strings.ToLower(p.get("security"))
@@ -352,7 +352,7 @@ func streamConfig(p params, server, defSecurity string) (*internet.StreamConfig,
 	case "none":
 	case "tls":
 		if v := p.get("allowInsecure"); v == "1" || v == "true" {
-			return nil, fmt.Errorf("links that skip certificate checks (allowInsecure) are not supported")
+			return nil, fmt.Errorf("不支持跳过证书验证（allowInsecure）的链接")
 		}
 		if sni == "" {
 			sni = hostHeader
@@ -369,13 +369,13 @@ func streamConfig(p params, server, defSecurity string) (*internet.StreamConfig,
 	case "reality":
 		pbk, err := base64.RawURLEncoding.DecodeString(p.get("pbk"))
 		if err != nil || len(pbk) != 32 {
-			return nil, fmt.Errorf("bad public key")
+			return nil, fmt.Errorf("REALITY 公钥（pbk）不正确")
 		}
 		sid := make([]byte, 8)
 		if s := p.get("sid"); len(s) > 16 {
-			return nil, fmt.Errorf("bad short id")
+			return nil, fmt.Errorf("REALITY short id（sid）不正确")
 		} else if _, err := hex.Decode(sid, []byte(s)); err != nil {
-			return nil, fmt.Errorf("bad short id")
+			return nil, fmt.Errorf("REALITY short id（sid）不正确")
 		}
 		if fp == "" {
 			fp = "chrome"
@@ -388,7 +388,7 @@ func streamConfig(p params, server, defSecurity string) (*internet.StreamConfig,
 		sc.SecurityType = serial.GetMessageType(rc)
 		sc.SecuritySettings = []*serial.TypedMessage{serial.ToTypedMessage(rc)}
 	default:
-		return nil, fmt.Errorf("unsupported security %q", security)
+		return nil, fmt.Errorf("不支持安全类型 %q", security)
 	}
 	return sc, nil
 }
