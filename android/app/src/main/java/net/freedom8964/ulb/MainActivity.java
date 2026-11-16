@@ -90,6 +90,8 @@ public class MainActivity extends Activity implements Helper.Listener {
 
     private Helper helper;
     private Lines lines;
+    private LinesDialog activeLinesDialog;
+    private UserScripts userScripts;
     private SharedPreferences prefs;
     private String netMode;                 // "warp", "line" or "direct"
     private boolean proxyReady;             // the WebView's proxy points at the running helper
@@ -106,6 +108,7 @@ public class MainActivity extends Activity implements Helper.Listener {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("settings", MODE_PRIVATE);
+        userScripts = new UserScripts(this);
         netMode = prefs.getString("net", "warp");
         lines = new Lines(this);
         helper = new Helper(this);
@@ -146,7 +149,7 @@ public class MainActivity extends Activity implements Helper.Listener {
     protected void onDestroy() {
         if (isFinishing()) clearEverything();
         helper.stop();
-        for (Tab t : tabs) t.view.destroy();
+        for (Tab t : tabs) { userScripts.detach(t.view); t.view.destroy(); }
         super.onDestroy();
     }
 
@@ -339,6 +342,7 @@ public class MainActivity extends Activity implements Helper.Listener {
         if (i < 0) return;
         tabs.remove(i);
         content.removeView(t.view);
+        userScripts.detach(t.view);
         t.view.destroy();
         if (tabs.isEmpty()) {
             current = null;
@@ -371,6 +375,7 @@ public class MainActivity extends Activity implements Helper.Listener {
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, false);
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(w, NO_WEBRTC, Collections.singleton("*"));
+            userScripts.attach(w);
         }
         w.setWebViewClient(new WebViewClient() {
             @Override
@@ -474,6 +479,16 @@ public class MainActivity extends Activity implements Helper.Listener {
 
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
+        if (request == REQUEST_WIREGUARD) {
+            LinesDialog target = activeLinesDialog;
+            activeLinesDialog = null;
+            if (result == RESULT_OK && data != null && data.getData() != null && target != null) target.importWireGuardFile(data.getData());
+            return;
+        }
+        if (request == REQUEST_SCRIPT) {
+            if (result == RESULT_OK && data != null && data.getData() != null) importUserScript(data.getData());
+            return;
+        }
         if (request == 7 && fileCallback != null) {
             fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
             fileCallback = null;
@@ -786,7 +801,7 @@ public class MainActivity extends Activity implements Helper.Listener {
 
     // ------------------------------------------------------------------ menus
 
-    private static final int M_NEW = 1, M_COPY = 2, M_NET = 3, M_LINES = 4, M_ABOUT = 5, M_FIND = 6, M_CLEAR = 7;
+    private static final int M_NEW = 1, M_COPY = 2, M_NET = 3, M_LINES = 4, M_ABOUT = 5, M_FIND = 6, M_CLEAR = 7, M_SCRIPTS = 8;
 
     private void showMenu(View anchor) {
         PopupMenu pm = new PopupMenu(this, anchor);
@@ -794,10 +809,11 @@ public class MainActivity extends Activity implements Helper.Listener {
         m.add(0, M_NEW, 0, "新建标签页");
         m.add(0, M_COPY, 1, "拷贝链接");
         m.add(0, M_FIND, 2, "在页面中查找");
-        m.add(0, M_NET, 3, "网络线路：" + modeName());
-        m.add(0, M_LINES, 4, "管理我的线路…");
-        m.add(0, M_CLEAR, 5, "清除浏览数据并退出");
-        m.add(0, M_ABOUT, 6, "关于");
+        m.add(0, M_SCRIPTS, 3, "用户脚本…");
+        m.add(0, M_NET, 4, "网络线路：" + modeName());
+        m.add(0, M_LINES, 5, "管理我的线路…");
+        m.add(0, M_CLEAR, 6, "清除浏览数据并退出");
+        m.add(0, M_ABOUT, 7, "关于");
         pm.setOnMenuItemClickListener(this::onMenu);
         pm.show();
     }
@@ -807,8 +823,9 @@ public class MainActivity extends Activity implements Helper.Listener {
             case M_NEW: newTab(HOME, true); return true;
             case M_COPY: if (current != null && current.view.getUrl() != null) { copy(current.view.getUrl()); toast("已拷贝链接"); } return true;
             case M_FIND: find(); return true;
+            case M_SCRIPTS: showUserScripts(); return true;
             case M_NET: showNetMenu(address); return true;
-            case M_LINES: new LinesDialog(this, lines).show(); return true;
+            case M_LINES: showLinesDialog(); return true;
             case M_CLEAR: finish(); return true;
             case M_ABOUT:
                 new AlertDialog.Builder(this).setTitle("UltraLight 浏览器 " + versionName())
@@ -820,6 +837,89 @@ public class MainActivity extends Activity implements Helper.Listener {
         return false;
     }
 
+    private static final int REQUEST_SCRIPT = 8;
+    private static final int REQUEST_WIREGUARD = 9;
+
+    void pickWireGuardFile(LinesDialog owner) {
+        activeLinesDialog = owner;
+        Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .setType("*/*")
+            .putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "application/octet-stream"})
+            .addCategory(Intent.CATEGORY_OPENABLE);
+        try { startActivityForResult(pick, REQUEST_WIREGUARD); }
+        catch (Exception e) { activeLinesDialog = null; toast("无法打开文件选择器"); }
+    }
+
+    private void showLinesDialog() {
+        activeLinesDialog = new LinesDialog(this, lines);
+        activeLinesDialog.show();
+    }
+
+    private void showUserScripts() {
+        List<UserScripts.Entry> entries = userScripts.list();
+        List<String> labels = new ArrayList<>();
+        for (UserScripts.Entry e : entries) labels.add((e.enabled ? "✓  " : "○  ") + e.name);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("用户脚本（" + entries.size() + "）")
+            .setItems(labels.toArray(new String[0]), (d, which) -> {
+                UserScripts.Entry e = entries.get(which);
+                userScripts.setEnabled(e.id, !e.enabled);
+                showUserScripts();
+            })
+            .setPositiveButton("导入 JS 脚本…", (d, w) -> pickUserScript())
+            .setNeutralButton("管理说明", null)
+            .setNegativeButton("关闭", null).create();
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+            new AlertDialog.Builder(this).setTitle("用户脚本说明")
+                .setMessage("选择 .user.js 或 .js 文件导入。油猴脚本需在头部声明 @match 或 @include；普通 JS 脚本导入时可指定运行网址。点脚本切换启用状态，长按脚本可删除。\n\n支持常用 GM_info、GM_getValue、GM_setValue、GM_deleteValue、GM_addStyle。脚本只在当前浏览器配置文件中保存。")
+                .setPositiveButton("好", null).show();
+        }));
+        dialog.show();
+        dialog.getListView().setOnItemLongClickListener((parent, view, position, id) -> {
+            UserScripts.Entry e = entries.get(position);
+            new AlertDialog.Builder(this).setTitle("删除脚本")
+                .setMessage("删除“" + e.name + "”？")
+                .setPositiveButton("删除", (x, y) -> { userScripts.remove(e.id); showUserScripts(); })
+                .setNegativeButton("取消", null).show();
+            return true;
+        });
+    }
+
+    private void pickUserScript() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("text/*")
+            .addCategory(Intent.CATEGORY_OPENABLE);
+        try { startActivityForResult(i, REQUEST_SCRIPT); }
+        catch (Exception e) { toast("无法打开文件选择器"); }
+    }
+
+    private void importUserScript(Uri uri) {
+        String name = "用户脚本";
+        try {
+            android.database.Cursor c = getContentResolver().query(uri, null, null, null, null);
+            if (c != null) {
+                try { int n = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME); if (n >= 0 && c.moveToFirst()) name = c.getString(n); }
+                finally { c.close(); }
+            }
+            final String scriptName = name;
+            String source = UserScripts.readFile(this, uri);
+            if (source.contains("==UserScript==")) {
+                userScripts.install(source, scriptName, "");
+                toast("脚本已导入：" + scriptName);
+                showUserScripts();
+            } else {
+                EditText match = new EditText(this);
+                match.setSingleLine(true);
+                match.setHint("例如 https://example.com/*");
+                final String scriptSource = source;
+                new AlertDialog.Builder(this).setTitle("指定脚本运行网址")
+                    .setMessage("普通 JS 没有油猴匹配规则，请限定它运行的页面。")
+                    .setView(match).setPositiveButton("导入", (d, w) -> {
+                        try { userScripts.install(scriptSource, scriptName, match.getText().toString().trim()); toast("脚本已导入：" + scriptName); showUserScripts(); }
+                        catch (Exception e) { toast(e.getMessage()); }
+                    }).setNegativeButton("取消", null).show();
+            }
+        } catch (Exception e) { toast("导入失败：" + e.getMessage()); }
+    }
+
     private void showNetMenu(View anchor) {
         String[] names = {"Cloudflare WARP", "我的线路（" + lines.selectedName() + "）", "直接连接（不翻墙）"};
         String[] modes = {"warp", "line", "direct"};
@@ -829,7 +929,7 @@ public class MainActivity extends Activity implements Helper.Listener {
                 d.dismiss();
                 if (!modes[which].equals(netMode)) setNetMode(modes[which]);
             })
-            .setNeutralButton("管理我的线路…", (d, w) -> new LinesDialog(this, lines).show())
+            .setNeutralButton("管理我的线路…", (d, w) -> showLinesDialog())
             .setNegativeButton("取消", null).show();
     }
 

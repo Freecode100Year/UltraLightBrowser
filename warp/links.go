@@ -31,6 +31,7 @@ import (
 	"github.com/xtls/xray-core/proxy/vmess"
 	vmessout "github.com/xtls/xray-core/proxy/vmess/outbound"
 	"github.com/xtls/xray-core/transport/internet"
+	grpcTransport "github.com/xtls/xray-core/transport/internet/grpc"
 	"github.com/xtls/xray-core/transport/internet/httpupgrade"
 	"github.com/xtls/xray-core/transport/internet/reality"
 	"github.com/xtls/xray-core/transport/internet/splithttp"
@@ -44,19 +45,35 @@ type params map[string]string
 
 func (p params) get(k string) string { return strings.TrimSpace(p[k]) }
 
-func queryParams(q url.Values) params {
+func queryParams(raw string) (params, error) {
+	q, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil, fmt.Errorf("线路参数格式不正确")
+	}
 	p := params{}
 	for k, v := range q {
-		if len(v) > 0 {
-			p[k] = v[0]
+		if len(v) != 1 {
+			return nil, fmt.Errorf("线路参数 %s 重复填写", k)
 		}
+		p[k] = v[0]
 	}
-	return p
+	return p, nil
 }
 
 // parseLink turns a share link into an Xray config with a single outbound, and
 // returns the server as host:port.
 func parseLink(link string) (*core.Config, string, error) {
+	scheme, _, hasScheme := strings.Cut(strings.ToLower(strings.TrimSpace(link)), "://")
+	if hasScheme && (scheme == "hysteria2" || scheme == "hy2" || scheme == "tuic") {
+		p, err := parseQUICLine(link)
+		if err != nil {
+			return nil, "", err
+		}
+		return nil, net.JoinHostPort(p.server, strconv.Itoa(int(p.port))), nil
+	}
+	if strings.EqualFold(strings.SplitN(link, "://", 2)[0], "wireguard") {
+		return parseWireGuardLink(strings.TrimSpace(link))
+	}
 	proxy, stream, host, port, err := parseShare(strings.TrimSpace(link))
 	if err != nil {
 		return nil, "", err
@@ -90,6 +107,8 @@ func parseShare(link string) (proxy *serial.TypedMessage, stream *internet.Strea
 		return parseVmess(link)
 	case "ss":
 		return parseSS(link)
+	case "wireguard":
+		return nil, nil, "", 0, fmt.Errorf("WireGuard 配置应通过文件导入")
 	}
 	return nil, nil, "", 0, fmt.Errorf("不支持 %s:// 链接", scheme)
 }
@@ -121,7 +140,10 @@ func parseVless(link string) (*serial.TypedMessage, *internet.StreamConfig, stri
 	if err != nil {
 		return nil, nil, "", 0, err
 	}
-	p := queryParams(u.Query())
+	p, err := queryParams(u.RawQuery)
+	if err != nil {
+		return nil, nil, "", 0, err
+	}
 	stream, err := streamConfig(p, host, "none")
 	if err != nil {
 		return nil, nil, "", 0, err
@@ -151,7 +173,11 @@ func parseTrojan(link string) (*serial.TypedMessage, *internet.StreamConfig, str
 	if err != nil {
 		return nil, nil, "", 0, err
 	}
-	stream, err := streamConfig(queryParams(u.Query()), host, "tls")
+	p, err := queryParams(u.RawQuery)
+	if err != nil {
+		return nil, nil, "", 0, err
+	}
+	stream, err := streamConfig(p, host, "tls")
 	if err != nil {
 		return nil, nil, "", 0, err
 	}
@@ -257,7 +283,11 @@ func parseSS(link string) (*serial.TypedMessage, *internet.StreamConfig, string,
 	if err != nil {
 		return nil, nil, "", 0, err
 	}
-	if u.Query().Get("plugin") != "" {
+	query, err := queryParams(u.RawQuery)
+	if err != nil {
+		return nil, nil, "", 0, err
+	}
+	if query.get("plugin") != "" {
 		return nil, nil, "", 0, fmt.Errorf("不支持 Shadowsocks 插件（plugin）")
 	}
 	stream := &internet.StreamConfig{ProtocolName: "tcp"}
@@ -324,9 +354,17 @@ func streamConfig(p params, server, defSecurity string) (*internet.StreamConfig,
 		}
 		setTransport("websocket", serial.ToTypedMessage(ws))
 	case "grpc":
-		// gRPC would add ~7 MB (google.golang.org/grpc) to the helper; XHTTP has
-		// largely replaced it.
-		return nil, fmt.Errorf("不支持 gRPC 传输，请改用 XHTTP、WebSocket 或 TCP")
+		serviceName := p.get("serviceName")
+		if serviceName == "" {
+			serviceName = p.get("servicename")
+		}
+		if serviceName == "" {
+			serviceName = "Tun"
+		}
+		setTransport("grpc", serial.ToTypedMessage(&grpcTransport.Config{
+			ServiceName: serviceName,
+			Authority:   p.get("authority"),
+		}))
 	case "httpupgrade":
 		setTransport("httpupgrade", serial.ToTypedMessage(&httpupgrade.Config{Host: hostHeader, Path: path}))
 	case "xhttp", "splithttp":

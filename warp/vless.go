@@ -24,7 +24,7 @@ import (
 // moves back to the best candidate when a new rotation period starts.
 type Line struct {
 	mu     sync.Mutex
-	inst   *core.Instance
+	inst   lineEngine
 	server string
 	link   string // the link as given
 	prefix string // rotation prefix, or ""
@@ -33,6 +33,18 @@ type Line struct {
 	auto   bool   // cands are independent servers: use the fastest that works
 	up     atomic.Bool
 }
+
+type lineEngine interface {
+	Dial(context.Context, string, int) (net.Conn, error)
+	Close() error
+}
+
+type xrayLineEngine struct{ inst *core.Instance }
+
+func (e *xrayLineEngine) Dial(ctx context.Context, host string, port int) (net.Conn, error) {
+	return core.Dial(ctx, e.inst, xnet.TCPDestination(xnet.ParseAddress(host), xnet.Port(port)))
+}
+func (e *xrayLineEngine) Close() error { return e.inst.Close() }
 
 // StartLine starts the line. prefix is an IPv6 rotation prefix or "".
 func StartLine(link, prefix string) (*Line, string, error) {
@@ -69,8 +81,11 @@ func StartAuto(links []string) (*Line, string, error) {
 	return l, server, nil
 }
 
-func startInst(link string) (*core.Instance, string, error) {
-	cfg, server, err := parseLink(link)
+func startInst(link string) (lineEngine, string, error) {
+	if profile, err := parseQUICLine(link); err == nil {
+		return startSingBoxLine(profile)
+	}
+	cfg, server, err := lineConfigForStart(link)
 	if err != nil {
 		return nil, "", err
 	}
@@ -79,21 +94,22 @@ func startInst(link string) (*core.Instance, string, error) {
 		return nil, "", err
 	}
 	if err := inst.Start(); err != nil {
+		inst.Close()
 		return nil, "", err
 	}
-	return inst, server, nil
+	return &xrayLineEngine{inst: inst}, server, nil
 }
 
 func (l *Line) Dial(ctx context.Context, host string, port int) (net.Conn, error) {
 	l.mu.Lock()
 	inst := l.inst
 	l.mu.Unlock()
-	return core.Dial(ctx, inst, xnet.TCPDestination(xnet.ParseAddress(host), xnet.Port(port)))
+	return inst.Dial(ctx, host, port)
 }
 
 // retire closes an instance that is no longer in use, after a grace period so
 // connections already open through it can finish.
-func retire(inst *core.Instance) {
+func retire(inst lineEngine) {
 	go func() {
 		time.Sleep(2 * time.Minute)
 		inst.Close()
@@ -108,7 +124,7 @@ func (l *Line) pick(cands []string) bool {
 	curInst, cur := l.inst, l.cur
 	l.mu.Unlock()
 	type trial struct {
-		inst   *core.Instance
+		inst   lineEngine
 		server string
 		ok     bool
 		took   time.Duration
@@ -119,7 +135,7 @@ func (l *Line) pick(cands []string) bool {
 		wg.Add(1)
 		go func(i int, c string) {
 			defer wg.Done()
-			var inst *core.Instance
+			var inst lineEngine
 			var server string
 			if c == cur {
 				inst = curInst
@@ -178,10 +194,10 @@ func (l *Line) check() error {
 	return checkInst(inst)
 }
 
-func checkInst(inst *core.Instance) error {
+func checkInst(inst lineEngine) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	c, err := core.Dial(ctx, inst, xnet.TCPDestination(xnet.ParseAddress("cp.cloudflare.com"), xnet.Port(80)))
+	c, err := inst.Dial(ctx, "cp.cloudflare.com", 80)
 	if err != nil {
 		return err
 	}

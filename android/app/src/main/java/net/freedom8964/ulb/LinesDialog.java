@@ -1,6 +1,7 @@
 package net.freedom8964.ulb;
 
 import android.app.AlertDialog;
+import android.net.Uri;
 import android.content.res.Configuration;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -16,6 +17,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.text.DateFormat;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -23,6 +26,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
 
 /** "我的线路": choose, import, test and subscribe, like the desktop settings page. */
 final class LinesDialog {
@@ -50,6 +54,7 @@ final class LinesDialog {
         LinearLayout buttons = new LinearLayout(act);
         buttons.setPadding(dp(12), dp(4), dp(12), dp(4));
         buttons.addView(button("导入链接", v -> importLinks()), new LinearLayout.LayoutParams(0, -2, 1));
+        buttons.addView(button("导入 WireGuard", v -> act.pickWireGuardFile(this)), new LinearLayout.LayoutParams(0, -2, 1));
         buttons.addView(button("添加订阅", v -> addSub()), new LinearLayout.LayoutParams(0, -2, 1));
         buttons.addView(button("全部测速", v -> runProbe(allIds())), new LinearLayout.LayoutParams(0, -2, 1));
         col.addView(buttons);
@@ -59,8 +64,10 @@ final class LinesDialog {
         scroll.addView(list);
         col.addView(scroll, new LinearLayout.LayoutParams(-1, dp(380)));
         TextView hint = new TextView(act);
-        hint.setText("点一条线路即可使用（立即生效）；长按可测速、重命名、删除。支持 vless:// trojan:// vmess:// ss://，" +
-            "传输 TCP / WebSocket / HTTPUpgrade / XHTTP，安全 TLS / REALITY；不支持 gRPC、Hysteria2。线路保存在本应用的私有存储中。");
+        hint.setText("支持 VLESS、Trojan、VMess、Shadowsocks、Hysteria2（hysteria2:// / hy2://）、TUIC；gRPC 是传输方式。" +
+            "现有线路支持 TCP / WebSocket / HTTPUpgrade / XHTTP / gRPC，TLS / REALITY 按线路类型启用。Hysteria2 与 TUIC 使用安全 TLS 校验。" +
+            "WireGuard 仅导入单 Peer wg-quick .conf，必须填写 DNS 且 DNS 地址需在 AllowedIPs 内；网页 DNS 经隧道。Hysteria2 / TUIC / WireGuard 的服务器域名由设备 DNS 解析。" +
+            "订阅支持通用分享链接，不支持 WireGuard 文件或 Clash YAML。线路保存在本应用私有存储中。");
         hint.setTextSize(12);
         hint.setAlpha(0.7f);
         hint.setPadding(dp(20), dp(6), dp(20), dp(4));
@@ -68,6 +75,52 @@ final class LinesDialog {
         dialog = new AlertDialog.Builder(act).setTitle("我的线路").setView(col).setPositiveButton("完成", null).create();
         dialog.show();
         render();
+    }
+
+    void importWireGuardFile(Uri uri) {
+        if (uri == null) return;
+        new Thread(() -> {
+            try {
+                String name = "WireGuard 配置";
+                android.database.Cursor cursor = act.getContentResolver().query(uri, null, null, null, null);
+                if (cursor != null) {
+                    try {
+                        int column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                        if (column >= 0 && cursor.moveToFirst()) name = cursor.getString(column);
+                    } finally { cursor.close(); }
+                }
+                String config;
+                try (InputStream in = act.getContentResolver().openInputStream(uri)) {
+                    if (in == null) throw new IllegalArgumentException("无法读取所选文件");
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[4096];
+                    int total = 0, count;
+                    while ((count = in.read(buffer)) != -1) {
+                        total += count;
+                        if (total > 64 * 1024) throw new IllegalArgumentException("WireGuard 配置不能超过 64 KB");
+                        out.write(buffer, 0, count);
+                    }
+                    config = new String(out.toByteArray(), StandardCharsets.UTF_8);
+                }
+                String canonical = Lines.wireGuardLink(config);
+                String result = Helper.runTool(act, Arrays.asList("-probe", "-parse-only"),
+                    Collections.singletonMap("ULB_PROBE", canonical), 15000);
+                String status = parseProbe(result).get(0);
+                String finalName = name;
+                main.post(() -> {
+                    if (!"ok".equals(status)) {
+                        act.toast("WireGuard 配置无效：" + (status == null ? "无法检查" : status.replaceFirst("^fail ", "")));
+                        return;
+                    }
+                    int added = lines.addWireGuardProfile(finalName, canonical);
+                    lines.save();
+                    render();
+                    act.toast(added == 0 ? "此 WireGuard 配置已存在" : "WireGuard 配置已导入");
+                });
+            } catch (Exception e) {
+                main.post(() -> act.toast("导入 WireGuard 配置失败：" + e.getMessage()));
+            }
+        }).start();
     }
 
     private TextView button(String text, View.OnClickListener click) {

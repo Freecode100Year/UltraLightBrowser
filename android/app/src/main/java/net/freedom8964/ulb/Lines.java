@@ -127,6 +127,22 @@ final class Lines {
         return added;
     }
 
+    int addWireGuardProfile(String name, String canonicalLink) {
+        int added = add(java.util.Collections.singletonList(canonicalLink), "");
+        if (added > 0) {
+            Line line = lines.get(lines.size() - 1);
+            String label = name == null ? "" : name.trim();
+            line.name = label.isEmpty() ? "WireGuard 配置" : label.replaceFirst("(?i)\\.conf$", "");
+        }
+        return added;
+    }
+
+    static String wireGuardLink(String config) {
+        String encoded = Base64.encodeToString(config.getBytes(StandardCharsets.UTF_8),
+            Base64.URL_SAFE | Base64.NO_PADDING | Base64.NO_WRAP);
+        return "wireguard://" + encoded;
+    }
+
     boolean remove(String id) {
         Line l = find(id);
         if (l == null) return false;
@@ -215,6 +231,9 @@ final class Lines {
             case "trojan": return "Trojan";
             case "vmess": return "VMess";
             case "ss": return "Shadowsocks";
+            case "hysteria2": case "hy2": return "Hysteria2";
+            case "tuic": return "TUIC";
+            case "wireguard": return "WireGuard";
             default: return s;
         }
     }
@@ -240,6 +259,7 @@ final class Lines {
     static String serverOf(String link) {
         try {
             String s = scheme(link);
+            if (s.equals("wireguard")) return "wg-quick 配置";
             if (s.equals("vmess")) {
                 JSONObject v = vmess(link);
                 return v.optString("add").isEmpty() ? "" : v.optString("add") + ":" + v.optString("port");
