@@ -69,6 +69,7 @@ func status(format string, args ...any) {
 
 func main() {
 	flag.Parse()
+	setupDNS()
 	if *probeMode {
 		runProbe(*parseOnly)
 		return

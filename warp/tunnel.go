@@ -382,7 +382,7 @@ func (t *Tunnel) build(a *Account, endpoint string) (*device.Device, *netstack.N
 	if err != nil {
 		return nil, nil, fmt.Errorf("tun: %v", err)
 	}
-	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
+	dev := device.NewDevice(tunDev, plainBind{conn.NewDefaultBind()}, device.NewLogger(device.LogLevelSilent, ""))
 	priv, _ := base64.StdEncoding.DecodeString(a.PrivateKey)
 	peer, _ := base64.StdEncoding.DecodeString(a.PeerKey)
 	cfg := fmt.Sprintf("private_key=%s\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\nallowed_ip=::/0\npersistent_keepalive_interval=25\n",
@@ -558,3 +558,9 @@ func registerWith(prof regProfile) (*Account, error) {
 		EndpointV4: hostOnly(p.Endpoint.V4), EndpointV6: hostOnly(p.Endpoint.V6), Ports: p.Endpoint.Ports,
 	}, nil
 }
+
+// plainBind hides the concrete *conn.StdNetBind from wireguard-go, which on Linux
+// then skips its "sticky socket" route listener. That listener needs a netlink
+// route socket, which Android (11 and later) refuses to apps; without this the
+// device never comes up on Android. Windows has no sticky sockets either way.
+type plainBind struct{ conn.Bind }
