@@ -4,6 +4,11 @@ plugins {
     id("com.android.application")
 }
 
+// Same version as the Windows browser: read from CMakeLists.txt ("VERSION x.y.z").
+val ulbVersion: String = Regex("""VERSION\s+(\d+\.\d+\.\d+)""")
+    .find(rootProject.file("../CMakeLists.txt").readText())!!.groupValues[1]
+val ulbVersionCode: Int = ulbVersion.split(".").map { it.toInt() }.let { (a, b, c) -> a * 10000 + b * 100 + c }
+
 val signing = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -17,8 +22,8 @@ android {
         applicationId = "net.freedom8964.ulb"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = ulbVersionCode   // 2.8.0 -> 20800
+        versionName = ulbVersion
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
