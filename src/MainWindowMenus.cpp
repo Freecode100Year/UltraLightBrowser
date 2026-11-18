@@ -361,16 +361,16 @@ void MainWindow::ShowAboutDialog() {
     dialog.dwCommonButtons = TDCBF_CLOSE_BUTTON;
     dialog.pszWindowTitle = L"关于 UltraLightBrowser";
     dialog.pszMainInstruction = L"UltraLightBrowser " ULB_VERSION_STRING;
-    dialog.pszContent = L"Windows 原生浏览器 · Microsoft Edge WebView2\n\n项目源码与问题反馈：\n<a href=\"https://github.com/Freecode100Year/UltraLightBrowser\">https://github.com/Freecode100Year/UltraLightBrowser</a>";
+    dialog.pszContent = L"Windows 原生浏览器 · Microsoft Edge WebView2\n\n项目源码与问题反馈：\n<a href=\"https://gitlab.com/sj9292008133/UltraLightBrowser\">https://gitlab.com/sj9292008133/UltraLightBrowser</a>";
     dialog.pfCallback = [](HWND owner, UINT notification, WPARAM, LPARAM link, LONG_PTR) -> HRESULT {
         if (notification == TDN_HYPERLINK_CLICKED && link &&
-            std::wstring(reinterpret_cast<LPCWSTR>(link)) == L"https://github.com/Freecode100Year/UltraLightBrowser") {
+            std::wstring(reinterpret_cast<LPCWSTR>(link)) == L"https://gitlab.com/sj9292008133/UltraLightBrowser") {
             ShellExecuteW(owner, L"open", reinterpret_cast<LPCWSTR>(link), nullptr, nullptr, SW_SHOWNORMAL);
         }
         return S_OK;
     };
     if (FAILED(TaskDialogIndirect(&dialog, nullptr, nullptr, nullptr))) {
-        MessageBoxW(m_hWnd, L"UltraLightBrowser " ULB_VERSION_STRING L"\n项目：https://github.com/Freecode100Year/UltraLightBrowser", L"关于", MB_OK);
+        MessageBoxW(m_hWnd, L"UltraLightBrowser " ULB_VERSION_STRING L"\n项目：https://gitlab.com/sj9292008133/UltraLightBrowser", L"关于", MB_OK);
     }
 }
 

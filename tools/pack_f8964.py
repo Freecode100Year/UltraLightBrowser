@@ -26,7 +26,9 @@ import urllib.request
 from collections import deque
 from pathlib import Path
 
-MIRROR = "https://freecode100year.github.io/freedom8964.com/"
+# Crawled from the live site (the old GitHub Pages mirror went away with the GitHub account).
+MIRROR = "https://freedom8964.com/"
+OLD_MIRROR = "https://freecode100year.github.io/freedom8964.com/"
 LIVE = "https://freedom8964.com/"
 ROOTS = ["", "zh-hant/", "en/"]
 NAME_OK = re.compile(r"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$")
@@ -57,7 +59,7 @@ def file_for(path: str) -> str:
 
 def site_path(url: str):
     """Path inside the site for links to the mirror or to the live domain; None for anything else."""
-    for base in (MIRROR, LIVE, "https://www.freedom8964.com/", "/freedom8964.com/"):
+    for base in (OLD_MIRROR, MIRROR, LIVE, "https://www.freedom8964.com/"):
         if url.startswith(base):
             return url[len(base):]
     return None
@@ -78,6 +80,8 @@ def rewrite(name: str, text: str, date: str, known: set) -> str:
         val = html.unescape(m.group(2))
         if val.startswith(("#", "mailto:", "tel:", "data:", "javascript:")) or val == "":
             return m.group(0)
+        if val.startswith("/freedom8964.com/"):  # root-relative link written for the old GitHub Pages project path
+            val = OLD_MIRROR + val[len("/freedom8964.com/"):]
         absolute = urllib.parse.urljoin(page_url, val)
         p = site_path(absolute) if absolute.startswith(("http:", "https:")) else None
         if p is None or file_for(p) not in known:

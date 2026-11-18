@@ -9,7 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Freecode100Year/UltraLightBrowser/releases/latest"><img src="https://img.shields.io/github/v/release/Freecode100Year/UltraLightBrowser?color=blue&logo=github" alt="Release"></a>
+  <a href="https://dl.freedom8964.com/"><img src="https://img.shields.io/badge/下载-v2.9.2-blue" alt="下载"></a>
+  <a href="https://gitlab.com/sj9292008133/UltraLightBrowser"><img src="https://img.shields.io/badge/源码-GitLab-fc6d26?logo=gitlab" alt="GitLab"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078d4?logo=windows" alt="Platform">
   <img src="https://img.shields.io/badge/C%2B%2B-20-blue?logo=cplusplus" alt="C++20">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT"></a>
@@ -134,7 +135,7 @@ UltraLightBrowser 把这些问题放在一个约 21MB 的 exe 里解决：**双�
 
 右上角 **「⋯」菜单最上方的「六四事件（离线版）」**（「个人收藏」页最上方也有入口）打开 [freedom8964.com](https://freedom8964.com)（1989 年天安门事件资料采集与归档导航站）的离线快照，简体 / 繁體 / English 三种语言，**不联网也能看**。
 
-- 快照在每次发布新版时自动打包进程序（`tools/pack_f8964.py`，取自网站的 GitHub Pages 镜像），每页顶部写明快照日期，并有「查看在线最新版」链接。
+- 快照在每次发布新版时自动打包进程序（`tools/pack_f8964.py`，取自 freedom8964.com 网站），每页顶部写明快照日期，并有「查看在线最新版」链接。
 - 快照放在独立地址 `https://f8964.internal/`，和浏览器的内置页面分开：它不能调用浏览器的任何功能，其他网站也无法嵌入或读取它。
 - 打开离线快照不会产生任何网络访问。页面里指向维基百科等外部资料的链接、「查看在线最新版」需要联网：请在开启 WARP 或「我的线路」时打开，直接连接时网络运营商能看到你访问的网站。
 - 想一打开浏览器就看到它：「设置 → 通用」，把「主页」填为 `https://f8964.internal/index.html`，「UltraLightBrowser 打开时」选「主页」。
@@ -159,32 +160,30 @@ UltraLightBrowser 把这些问题放在一个约 21MB 的 exe 里解决：**双�
 
 ## 下载
 
-前往 **[Releases 最新版](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**：
+前往下载页 **[dl.freedom8964.com](https://dl.freedom8964.com/)**（原 GitHub 发布页已随账号停用）：
 
 | 文件 | 说明 |
 | :--- | :--- |
-| `UltraLightBrowser.exe` | 单文件，双击运行 |
-| `UltraLightBrowser-vX.Y.Z-windows-x64.zip` | 便携压缩包 |
-| `SHA256SUMS.txt` | 校验值 |
+| `UltraLightBrowser-vX.Y.Z-Windows-x64.exe` | 单文件，双击运行 |
+| `SHA256SUMS.txt` | 校验值（下载页底部） |
 
 需要 Windows 10/11 x64 和 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 11 已自带）。
 
-**安卓版（测试版）** 也在同一个发布页，版本号与电脑版一致，需要 Android 8.0 及以上：
+**安卓版（测试版）** 也在同一个下载页，版本号与电脑版一致，需要 Android 8.0 及以上：
 
 | 文件 | 给谁用 |
 | :--- | :--- |
-| `…-Android-Phone-arm64-Android8plus-recommended.apk` | **手机版，推荐**：近几年的绝大多数安卓手机 |
-| `…-Android-Phone-32bit-armv7-Android8plus.apk` | 老旧的 32 位手机 |
-| `…-Android-Universal-AllDevices-Android8plus.apk` | 通用版，所有手机和模拟器都能装，体积较大 |
-| `…-Android-Emulator-x86_64-Android8plus.apk` | 电脑上的安卓模拟器，不是手机用的 |
+| `…-Android-arm64-v8a-推荐大多数手机.apk` | **手机版，推荐**：近几年的绝大多数安卓手机 |
+| `…-Android-armeabi-v7a-老旧32位手机.apk` | 老旧的 32 位手机 |
+| `…-Android-universal-通用版.apk` | 通用版，所有手机和模拟器都能装，体积较大 |
+| `…-Android-x86_64-电脑模拟器.apk` | 电脑上的安卓模拟器，不是手机用的 |
 
 安卓 APK 在本地用固定的签名密钥签名，证书 SHA-256 为 `2e:a7:c1:5b:f9:86:31:19:ad:af:2b:b0:0f:20:1e:c0:5f:98:42:a8:63:1c:6c:fd:46:d1:e6:c5:48:ea:68:10`；以后的版本都用同一个密钥，可以直接覆盖升级。
 
-所有发布文件由 GitHub Actions 从本仓库源码编译，附带构建来源证明。下载后建议校验：
+所有发布文件都从本仓库源码编译（Windows 版在 Linux 上用 clang-cl + Windows SDK 交叉编译，C 运行库静态链接，不用另装 VC++ 运行库）。下载后建议校验：
 
 ```powershell
-Get-FileHash .\UltraLightBrowser.exe -Algorithm SHA256   # 与 SHA256SUMS.txt 对比
-gh attestation verify .\UltraLightBrowser.exe -R Freecode100Year/UltraLightBrowser
+Get-FileHash .\UltraLightBrowser-v2.9.2-Windows-x64.exe -Algorithm SHA256   # 与下载页的 SHA256SUMS.txt 对比
 ```
 
 ## 功能
@@ -386,6 +385,7 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 
 ## 最近更新
 
+- **v2.9.2**：原 GitHub 账号停用，项目搬到 GitLab（https://gitlab.com/sj9292008133/UltraLightBrowser），安装包改由 https://dl.freedom8964.com 下载；「关于」里的项目链接随之更新。Windows 版改为静态链接 C 运行库，没装 VC++ 运行库的电脑也能直接运行。
 - **v2.9.1**：修复 v2.9.0：
   - 安卓 APK 重新用固定密钥签名（v2.9.0 的安卓 APK 没有签名，无法安装）。
   - Hysteria2 改用 Xray 自带的实现，去掉 sing-box：v2.9.0 的 Hysteria2 在安卓 App 里发不出数据（sing-box 需要安卓禁止应用使用的 netlink），现已在安卓 App 的沙盒里实测连通（含 Salamander 混淆）；网络组件减小约 18 MB（Windows 版 45 MB → 约 37 MB 级别），也不再带有 GPL 许可的组件。
@@ -435,7 +435,7 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 - **v2.1.4**：审计修复：开启“WARP 断开时阻止联网”后，即使 WARP 组件根本无法启动（被杀毒软件拦截、文件损坏等），也不再直接联网；首次启动等待 WARP 组件的时间从 3 秒延长到 8 秒（新解压的组件可能正被杀毒软件扫描）；WARP 组件重启与浏览器退出同时发生时不再可能遗留组件进程或重复关闭句柄；保留下来的旧浏览器配置也会补上 WebRTC 防泄露设置；书签等资料写入磁盘失败后，下次保存或退出时会重试，不再丢失。
 - **v2.1.3**：审计修复：WARP 入口测速使用与 WireGuard 相同精度的握手时间戳，并在切换入口前稍作等待，避免切换后的首次握手被服务器当作重放丢弃而断流几秒；第二个浏览器进程中点“重新优选 IP”会提示无法优选，不再假装已开始；`build-windows.ps1` 和编译说明补上 WARP 组件的编译步骤（之前按说明从源码编译会失败）；自述文件重写。
 
-完整记录见 [Releases](https://github.com/Freecode100Year/UltraLightBrowser/releases)。
+源码和完整提交记录见 [GitLab](https://gitlab.com/sj9292008133/UltraLightBrowser)，安装包见 [dl.freedom8964.com](https://dl.freedom8964.com/)。
 
 ## 许可证
 

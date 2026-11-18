@@ -830,7 +830,7 @@ public class MainActivity extends Activity implements Helper.Listener {
             case M_ABOUT:
                 new AlertDialog.Builder(this).setTitle("UltraLight 浏览器 " + versionName())
                     .setMessage("自带 Cloudflare WARP 和线路的翻墙浏览器。所有网页都经网络线路访问，线路不通时不会直接联网。关闭浏览器时清除 Cookie、网站数据和缓存。\n\n" +
-                        "当前：" + modeName() + "\n状态：" + netDetail + "\n\ngithub.com/Freecode100Year/UltraLightBrowser")
+                        "当前：" + modeName() + "\n状态：" + netDetail + "\n\ngitlab.com/sj9292008133/UltraLightBrowser")
                     .setPositiveButton("好", null).show();
                 return true;
         }
