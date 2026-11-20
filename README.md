@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://dl.freedom8964.com/"><img src="https://img.shields.io/badge/下载-v2.9.2-blue" alt="下载"></a>
+  <a href="https://github.com/Freecode100Year/UltraLightBrowser"><img src="https://img.shields.io/badge/源码-GitHub-181717?logo=github" alt="GitHub"></a>
   <a href="https://gitlab.com/sj9292008133/UltraLightBrowser"><img src="https://img.shields.io/badge/源码-GitLab-fc6d26?logo=gitlab" alt="GitLab"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078d4?logo=windows" alt="Platform">
   <img src="https://img.shields.io/badge/C%2B%2B-20-blue?logo=cplusplus" alt="C++20">
@@ -160,7 +161,7 @@ UltraLightBrowser 把这些问题放在一个约 21MB 的 exe 里解决：**双�
 
 ## 下载
 
-前往下载页 **[dl.freedom8964.com](https://dl.freedom8964.com/)**（原 GitHub 发布页已随账号停用）：
+前往 **[GitHub Releases 最新版](https://github.com/Freecode100Year/UltraLightBrowser/releases/latest)**，或下载站 **[dl.freedom8964.com](https://dl.freedom8964.com/)**（两边文件相同）：
 
 | 文件 | 说明 |
 | :--- | :--- |
@@ -435,7 +436,7 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 - **v2.1.4**：审计修复：开启“WARP 断开时阻止联网”后，即使 WARP 组件根本无法启动（被杀毒软件拦截、文件损坏等），也不再直接联网；首次启动等待 WARP 组件的时间从 3 秒延长到 8 秒（新解压的组件可能正被杀毒软件扫描）；WARP 组件重启与浏览器退出同时发生时不再可能遗留组件进程或重复关闭句柄；保留下来的旧浏览器配置也会补上 WebRTC 防泄露设置；书签等资料写入磁盘失败后，下次保存或退出时会重试，不再丢失。
 - **v2.1.3**：审计修复：WARP 入口测速使用与 WireGuard 相同精度的握手时间戳，并在切换入口前稍作等待，避免切换后的首次握手被服务器当作重放丢弃而断流几秒；第二个浏览器进程中点“重新优选 IP”会提示无法优选，不再假装已开始；`build-windows.ps1` 和编译说明补上 WARP 组件的编译步骤（之前按说明从源码编译会失败）；自述文件重写。
 
-源码和完整提交记录见 [GitLab](https://gitlab.com/sj9292008133/UltraLightBrowser)，安装包见 [dl.freedom8964.com](https://dl.freedom8964.com/)。
+完整记录见 [GitHub Releases](https://github.com/Freecode100Year/UltraLightBrowser/releases)；源码同步在 [GitLab](https://gitlab.com/sj9292008133/UltraLightBrowser)，安装包也在 [dl.freedom8964.com](https://dl.freedom8964.com/)。
 
 ## 许可证
 
