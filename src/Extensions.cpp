@@ -108,6 +108,7 @@ void Extensions::LoadIndex() {
         e.dir = j.value("dir", "");
         if (e.dir.empty() || e.dir.find_first_of("/\\:.") != std::string::npos) continue;
         e.enabled = j.value("enabled", true);
+        e.source = j.value("source", "");
         const ExtensionManifest m = ReadExtensionManifest(Folder() / e.dir);
         if (!m.error.empty()) continue;  // folder gone or broken
         e.name = m.name;
@@ -115,13 +116,18 @@ void Extensions::LoadIndex() {
         e.description = m.description;
         e.popup = m.popup;
         e.options = m.options;
+        e.proxy = m.proxy;
         m_entries.push_back(std::move(e));
     }
 }
 
 bool Extensions::SaveIndex() const {
     json list = json::array();
-    for (const auto& e : m_entries) list.push_back({{"dir", e.dir}, {"enabled", e.enabled}});
+    for (const auto& e : m_entries) {
+        json j = {{"dir", e.dir}, {"enabled", e.enabled}};
+        if (!e.source.empty()) j["source"] = e.source;
+        list.push_back(std::move(j));
+    }
     std::error_code ec;
     std::filesystem::create_directories(Folder(), ec);
     const auto tmp = Folder() / "index.json.tmp";
@@ -153,7 +159,7 @@ std::string Extensions::InstallFolder(const std::filesystem::path& source) {
     return Install(staged);
 }
 
-std::string Extensions::InstallPackage(const std::filesystem::path& file) {
+std::string Extensions::InstallPackage(const std::filesystem::path& file, const std::string& source) {
     LoadIndex();
     std::error_code ec;
     if (std::filesystem::file_size(file, ec) > kMaxBytes) throw std::runtime_error("扩展文件超过 200 MB");
@@ -185,19 +191,19 @@ std::string Extensions::InstallPackage(const std::filesystem::path& file) {
     }
     try {
         CheckSize(root);
-        if (root == staged) return Install(staged);
+        if (root == staged) return Install(staged, source);
         const auto inner = StagingPath("dir");
         std::filesystem::rename(root, inner, ec);
         std::filesystem::remove_all(staged, ec);
         if (ec) throw std::runtime_error("整理扩展文件失败");
-        return Install(inner);
+        return Install(inner, source);
     } catch (...) {
         std::filesystem::remove_all(staged, ec);
         throw;
     }
 }
 
-std::string Extensions::Install(const std::filesystem::path& staged) {
+std::string Extensions::Install(const std::filesystem::path& staged, const std::string& source) {
     std::error_code ec;
     const ExtensionManifest m = ReadExtensionManifest(staged);
     if (!m.error.empty()) {
@@ -206,7 +212,7 @@ std::string Extensions::Install(const std::filesystem::path& staged) {
     }
     // The same extension again is an update: the old copy goes.
     for (const auto& e : std::vector<Entry>(m_entries)) {
-        if (e.name == m.name) Remove(e.dir);
+        if (e.name == m.name || (!source.empty() && e.source == source)) Remove(e.dir);
     }
     if (m_entries.size() >= kMaxExtensions) {
         std::filesystem::remove_all(staged, ec);
@@ -226,6 +232,8 @@ std::string Extensions::Install(const std::filesystem::path& staged) {
     e.description = m.description;
     e.popup = m.popup;
     e.options = m.options;
+    e.proxy = m.proxy;
+    e.source = source;
     m_entries.push_back(e);
     SaveIndex();
     AddToProfile(dir);

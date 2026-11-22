@@ -16,6 +16,7 @@ struct ExtensionManifest {
     int manifestVersion = 0;
     std::string popup;    // action / browser_action / page_action default_popup
     std::string options;  // options_ui.page or options_page
+    bool proxy = false;   // asks for the "proxy" permission: it can take over the browser's proxy
     std::string error;    // non-empty when the folder is not a usable extension
 };
 

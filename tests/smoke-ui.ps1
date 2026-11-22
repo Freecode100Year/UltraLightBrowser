@@ -295,6 +295,12 @@ const open = async (pred) => {
   console.log('SMOKE-SCRIPTS', await page.ev('ULB.call("getScripts").then(r => JSON.stringify(r.map(s => [s.name, s.enabled, s.sites])))'));
   console.log('SMOKE-SECTIONS', await page.ev('[...document.querySelectorAll("section h2")].map(h => h.textContent).join(",")'));
   console.log('SMOKE-OPENEXT', await page.ev('ULB.call("openExtensionPage", {dir: "smoketest", page: "popup"}).then(r => r, e => "ERR " + e.message)'));
+  // v2.10.0: recommended extensions are downloaded from their official source, verified and installed.
+  for (const key of ['global-speed', 'violentmonkey', 'proton-vpn']) {
+    console.log('SMOKE-REC ' + key, await page.ev(`ULB.call("downloadRecommendedExtension", {key: "${key}"}).then(() => ULB.call("installRecommendedExtension", {key: "${key}"})).then(r => JSON.stringify(r), e => "ERR " + e.message)`));
+  }
+  await new Promise((r) => setTimeout(r, 5000));
+  console.log('SMOKE-REC-LOADED', await page.ev('ULB.call("getExtensions").then(r => JSON.stringify(r.list.map(x => [x.source, x.name, x.loaded, x.proxy, x.error])))'));
   await new Promise(r => setTimeout(r, 3000));
   const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
   console.log('SMOKE-TARGETS', list.map(t => t.type + ' ' + t.url).join(' | '));

@@ -53,7 +53,8 @@ var (
 	probeMode  = flag.Bool("probe", false, "test the links in ULB_PROBE and exit (see modes.go)")
 	parseOnly  = flag.Bool("parse-only", false, "with -probe: only check that the links can be used")
 	fetchMode  = flag.Bool("fetch", false, "download the subscription at ULB_FETCH and exit")
-	socksAddr  = flag.String("socks", "", "with -fetch: try this SOCKS5 proxy first")
+	socksAddr  = flag.String("socks", "", "with -fetch: try this SOCKS5 proxy first; with -download: use only it")
+	dlMode     = flag.Bool("download", false, "download and verify the extension at ULB_DOWNLOAD and exit (see extdownload.go)")
 )
 
 var out sync.Mutex
@@ -76,6 +77,10 @@ func main() {
 	}
 	if *fetchMode {
 		runFetch(*socksAddr)
+		return
+	}
+	if *dlMode {
+		runDownload(*socksAddr)
 		return
 	}
 	link := os.Getenv("ULB_LINE")

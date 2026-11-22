@@ -29,6 +29,8 @@ public:
         std::string popup;
         std::string options;
         bool enabled = true;
+        bool proxy = false;  // can take over the browser's proxy
+        std::string source;  // key in RecommendedExtensions() when installed from that list
         std::string id;     // WebView2's extension id once loaded this session
         std::string error;  // why loading failed, if it did
     };
@@ -41,7 +43,7 @@ public:
     // Copies the extension in and loads it at once (when the profile is known).
     // Returns its name; throws std::runtime_error with a Chinese message.
     std::string InstallFolder(const std::filesystem::path& source);
-    std::string InstallPackage(const std::filesystem::path& crxOrZip);
+    std::string InstallPackage(const std::filesystem::path& crxOrZip, const std::string& source = {});
     bool SetEnabled(const std::string& dir, bool enabled);
     bool Remove(const std::string& dir);
 
@@ -56,7 +58,7 @@ private:
     Extensions() = default;
     void LoadIndex();
     bool SaveIndex() const;
-    std::string Install(const std::filesystem::path& staged);  // staged folder is moved in
+    std::string Install(const std::filesystem::path& staged, const std::string& source = {});  // staged folder is moved in
     void AddToProfile(const std::string& dir);
 
     bool m_indexLoaded = false;

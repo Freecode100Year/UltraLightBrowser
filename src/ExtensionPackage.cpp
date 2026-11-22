@@ -77,6 +77,11 @@ ExtensionManifest ReadExtensionManifest(const std::filesystem::path& dir) {
     }
     if (const auto it = root.find("options_ui"); it != root.end()) m.options = Str(*it, "page");
     if (m.options.empty()) m.options = Str(root, "options_page");
+    for (const char* key : {"permissions", "optional_permissions"}) {
+        if (const auto it = root.find(key); it != root.end() && it->is_array()) {
+            for (const auto& p : *it) m.proxy = m.proxy || (p.is_string() && p.get<std::string>() == "proxy");
+        }
+    }
     m.popup = ExtensionPagePath(m.popup);
     m.options = ExtensionPagePath(m.options);
     if (m.name.empty() || m.version.empty()) m.error = "manifest.json 缺少 name 或 version";

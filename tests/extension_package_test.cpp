@@ -1,4 +1,7 @@
 #include "ExtensionPackage.hpp"
+#include "RecommendedExtensions.hpp"
+
+#include <set>
 
 #include <cstdlib>
 #include <fstream>
@@ -51,6 +54,39 @@ static void TestCrx() {
     CHECK(CrxZipOffset("<html>") == std::string::npos);
 }
 
+static void TestProxyPermission(const std::filesystem::path& dir) {
+    std::filesystem::remove_all(dir);
+    Write(dir / "manifest.json", R"({"manifest_version": 3, "name": "V", "version": "1", "permissions": ["storage", "proxy"]})");
+    CHECK(ReadExtensionManifest(dir).proxy);
+    Write(dir / "manifest.json", R"({"manifest_version": 3, "name": "V", "version": "1", "optional_permissions": ["proxy"]})");
+    CHECK(ReadExtensionManifest(dir).proxy);
+    Write(dir / "manifest.json", R"({"manifest_version": 3, "name": "V", "version": "1", "permissions": ["storage", "proxyish"]})");
+    CHECK(!ReadExtensionManifest(dir).proxy);
+    std::filesystem::remove_all(dir);
+}
+
+static void TestRecommended() {
+    std::set<std::string> keys;
+    for (const auto& r : RecommendedExtensions()) {
+        CHECK(keys.insert(r.key).second);
+        CHECK(FindRecommendedExtension(r.key) == &r);
+        CHECK(std::string(r.homepage).rfind("https://", 0) == 0);
+        const std::string id = r.storeId, url = r.url, sum = r.sha256;
+        // Either a store id (32 letters a-p) or an https ZIP with its SHA-256, never both.
+        CHECK(id.empty() != url.empty());
+        if (!id.empty()) {
+            CHECK(id.size() == 32 && id.find_first_not_of("abcdefghijklmnop") == std::string::npos);
+            CHECK(StoreDownloadUrl(id).find("x=id%3D" + id + "%26uc") != std::string::npos);
+        } else {
+            CHECK(url.rfind("https://", 0) == 0 && sum.size() == 64 && sum.find_first_not_of("0123456789abcdef") == std::string::npos);
+        }
+        // A proxy-taking extension must say so before it is installed.
+        if (r.proxy) CHECK(std::string(r.note).find("代理") != std::string::npos);
+    }
+    CHECK(FindRecommendedExtension("hola") == nullptr);
+    CHECK(FindRecommendedExtension("") == nullptr);
+}
+
 static void TestPagePath() {
     CHECK(ExtensionPagePath("/a/b.html") == "a/b.html");
     CHECK(ExtensionPagePath("a\\b.html") == "a/b.html");
@@ -63,6 +99,8 @@ int main() {
     TestManifest(std::filesystem::temp_directory_path() / "ulb-ext-test");
     TestCrx();
     TestPagePath();
+    TestProxyPermission(std::filesystem::temp_directory_path() / "ulb-ext-proxy-test");
+    TestRecommended();
     if (failures) return EXIT_FAILURE;
     std::cout << "extension package tests passed\n";
     return 0;

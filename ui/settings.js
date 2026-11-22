@@ -161,6 +161,8 @@ async function addSub() {
 // ---------------------------------------------------------------- extensions & scripts
 
 let X = { list: [], private: false };
+let R = [];  // 推荐扩展
+const busy = new Set();  // recommended extensions being downloaded
 let U = [];
 
 function toggle(checked, onchange) {
@@ -171,7 +173,8 @@ function extensionsSection() {
   const items = X.list.map((x) => el("div", { class: "item" },
     el("div", { class: "t" },
       el("div", {}, x.name, el("span", { class: "muted", text: "  " + x.version })),
-      el("small", { class: x.error ? "bad" : "muted", text: x.error || x.description || "" })),
+      el("small", { class: x.error ? "bad" : "muted", text: x.error || x.description || "" }),
+      x.proxy ? el("small", { class: "warn", text: "⚠ 会接管网络代理：开着它时 ULB 的 WARP / 我的线路不生效" }) : null),
     x.popup ? el("button", { class: "x", disabled: !x.loaded || !x.enabled, onclick: () => openExt(x, "popup") }, "打开") : null,
     x.options ? el("button", { class: "x", disabled: !x.loaded || !x.enabled, onclick: () => openExt(x, "options") }, "选项") : null,
     el("button", { class: "x danger", onclick: async () => {
@@ -185,9 +188,44 @@ function extensionsSection() {
         el("button", { onclick: () => installExt("installExtensionFile") }, "安装 .crx / .zip…")),
       el("div", { class: "list" }, items),
       X.list.length ? null : el("div", { class: "empty", text: "还没有扩展。可加载 Chrome / Edge 扩展：解压后的文件夹，或 .crx / .zip 安装包。" }),
+      recommendedCard(),
       el("small", { class: "muted", style: { display: "block", padding: "10px 4px 0" },
         text: "扩展只在普通窗口运行，不在无痕窗口运行。为保护隐私，关闭浏览器时会清除扩展自己保存的设置和数据（扩展本身保留）。" +
           "只安装你信任的扩展：扩展能读取和修改你打开的网页。部分扩展用到 WebView2 不支持的功能，可能无法加载。" })));
+}
+
+// 推荐扩展: downloaded from the official source when asked, checked, then installed.
+function recommendedCard() {
+  if (!R.length) return null;
+  const installed = new Set(X.list.map((x) => x.source).filter(Boolean));
+  const items = R.map((r) => el("div", { class: "item rec" },
+    el("div", { class: "t" },
+      el("div", {}, r.name, installed.has(r.key) ? el("span", { class: "tag", text: "已安装" }) : null),
+      el("small", { class: "muted wrap", text: r.summary }),
+      r.note ? el("small", { class: r.proxy ? "warn wrap" : "muted wrap", text: (r.proxy ? "⚠ " : "提示：") + r.note }) : null),
+    el("a", { class: "more", href: r.homepage, target: "_blank", text: "了解更多" }),
+    el("button", { class: installed.has(r.key) ? "" : "primary", disabled: busy.has(r.key) || X.private, onclick: () => installRecommended(r, installed.has(r.key)) },
+      busy.has(r.key) ? "正在下载…" : installed.has(r.key) ? "更新" : "安装")));
+  return el("div", { style: { marginTop: "14px" } },
+    el("h3", { text: "推荐扩展" }),
+    el("small", { class: "muted wrap", style: { padding: "0 4px 6px" },
+      text: "点「安装」时才从官方来源下载（Chrome 网上应用店或项目官方发布页），并校验签名，确认是原版后再安装。下载走 ULB 当前的线路。" }),
+    el("div", { class: "list" }, items));
+}
+
+async function installRecommended(r, update) {
+  if (r.proxy && !update && !confirm(`${r.name}\n\n${r.note}\n\n仍要安装吗？`)) return;
+  busy.add(r.key);
+  const y = scrollY;
+  build();
+  scrollTo(0, y);
+  try {
+    await call("downloadRecommendedExtension", { key: r.key });
+    const res = await call("installRecommendedExtension", { key: r.key });
+    toast("已安装“" + res.installed + "”。刷新网页后生效");
+  } catch (e) { toast(e.message); }
+  busy.delete(r.key);
+  load();
 }
 
 async function installExt(cmd) {
@@ -261,6 +299,7 @@ async function load() {
   s = await call("getSettings");
   L = await call("getLines");
   X = await call("getExtensions");
+  if (!R.length) R = await call("getRecommendedExtensions");
   U = await call("getScripts");
   const y = scrollY;
   build();

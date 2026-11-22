@@ -12,6 +12,7 @@
 #include "WarpManager.hpp"
 #include "UserScripts.hpp"
 #include "Extensions.hpp"
+#include "RecommendedExtensions.hpp"
 
 #include <shobjidl.h>
 
@@ -155,7 +156,7 @@ json ExtensionsJson() {
     for (const auto& e : Extensions::Instance().List()) {
         list.push_back({{"dir", e.dir}, {"name", e.name}, {"version", e.version}, {"description", e.description},
                         {"enabled", e.enabled}, {"loaded", !e.id.empty()}, {"error", e.error},
-                        {"popup", !e.popup.empty()}, {"options", !e.options.empty()}});
+                        {"popup", !e.popup.empty()}, {"options", !e.options.empty()}, {"proxy", e.proxy}, {"source", e.source}});
     }
     return list;
 }
@@ -594,6 +595,58 @@ void MainWindow::HandlePageMessage(ICoreWebView2* source, const std::wstring& ra
                                                                          : Extensions::Instance().InstallPackage(chosen);
                 result = {{"installed", name}};
             }
+        } else if (cmd == "getRecommendedExtensions") {
+            json list = json::array();
+            for (const auto& r : RecommendedExtensions()) {
+                list.push_back({{"key", r.key}, {"name", r.name}, {"summary", r.summary}, {"note", r.note},
+                                {"homepage", r.homepage}, {"proxy", r.proxy}});
+            }
+            result = list;
+        } else if (cmd == "downloadRecommendedExtension") {
+            // Step 1, off the UI thread: the helper downloads and verifies the file.
+            const RecommendedExtension* r = FindRecommendedExtension(Arg(args, "key"));
+            if (!r) throw std::runtime_error("未知的推荐扩展");
+            if (m_private) throw std::runtime_error("无痕窗口不运行扩展，请在普通窗口安装");
+            // Through the browser's own line, never around it.
+            const int port = WarpManager::Instance().Port();
+            if (Config::Instance().GetSettings().warpEnabled && port <= 0) throw std::runtime_error("线路还没连上，连上后再安装");
+            std::error_code ec;
+            std::filesystem::create_directories(Extensions::Folder(), ec);
+            const std::filesystem::path file = Extensions::Folder() / (std::string(".staging-download-") + r->key);
+            std::vector<std::pair<std::wstring, std::wstring>> vars = {
+                {L"ULB_DOWNLOAD", W(*r->storeId ? StoreDownloadUrl(r->storeId) : std::string(r->url))},
+                {L"ULB_DOWNLOAD_TO", file.wstring()}};
+            if (*r->storeId) vars.emplace_back(L"ULB_DOWNLOAD_CRXID", W(r->storeId));
+            else vars.emplace_back(L"ULB_DOWNLOAD_SHA256", W(r->sha256));
+            std::wstring toolArgs = L"-download";
+            if (port > 0) toolArgs += L" -socks 127.0.0.1:" + std::to_wstring(port);
+            ReplyLater(source, id.dump(), [toolArgs, vars]() {
+                std::string error;
+                bool done = false;
+                for (const auto& line : SplitLines(WarpManager::RunTool(toolArgs, vars, 150000))) {
+                    if (line.rfind("DOWNLOADED ", 0) == 0) done = true;
+                    else if (line.rfind("ERROR download: ", 0) == 0) error = line.substr(16);
+                }
+                if (!done) throw std::runtime_error(error.empty() ? "下载失败" : "下载失败：" + error);
+                return std::string("true");
+            });
+            return;
+        } else if (cmd == "installRecommendedExtension") {
+            // Step 2, on the UI thread (it adds the extension to the browser profile).
+            const RecommendedExtension* r = FindRecommendedExtension(Arg(args, "key"));
+            if (!r) throw std::runtime_error("未知的推荐扩展");
+            const std::filesystem::path file = Extensions::Folder() / (std::string(".staging-download-") + r->key);
+            std::error_code ec;
+            if (!std::filesystem::exists(file, ec)) throw std::runtime_error("请先下载");
+            std::string name;
+            try {
+                name = Extensions::Instance().InstallPackage(file, r->key);
+            } catch (...) {
+                std::filesystem::remove(file, ec);
+                throw;
+            }
+            std::filesystem::remove(file, ec);
+            result = {{"installed", name}};
         } else if (cmd == "setExtensionEnabled") {
             result = Extensions::Instance().SetEnabled(Arg(args, "dir"), args.value("enabled", true));
         } else if (cmd == "removeExtension") {
