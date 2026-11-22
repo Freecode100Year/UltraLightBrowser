@@ -5,6 +5,10 @@
 // and the helper checks it is the genuine file before it is installed
 // (a Chrome Web Store CRX by its signature and id, a release ZIP by SHA-256).
 // No Windows calls, so it can be unit-tested.
+//
+// Only extensions that WebView2 actually loads are listed (checked by
+// tests/smoke-ui.ps1 on Windows). Violentmonkey 2.50 (MV3) was tried and
+// WebView2 refuses it (0x80004005); ULB's own user scripts replace it.
 
 #include <string>
 #include <vector>
@@ -34,12 +38,6 @@ inline const std::vector<RecommendedExtension>& RecommendedExtensions() {
          "调整所有网站视频和音频的播放速度，可用快捷键加速、减速、跳过。", "",
          "https://chromewebstore.google.com/detail/jpbjcnkcffbooppibceonlgknpkniiff",
          "jpbjcnkcffbooppibceonlgknpkniiff", "", "", false},
-        {"violentmonkey", "Violentmonkey（暴力猴）",
-         "开源（MIT）的用户脚本管理器，可代替篡改猴，能从 Greasy Fork 等网站安装脚本。",
-         "ULB 自带「用户脚本」功能（下面一节），一般不用再装。WebView2 对扩展的用户脚本接口支持有限，如果脚本不运行，请改用自带功能。",
-         "https://violentmonkey.github.io/", "",
-         "https://github.com/violentmonkey/violentmonkey/releases/download/v2.50.0/Violentmonkey-mv3-v2.50.0.zip",
-         "72f1de5a2edc4bc3cd3b3ca06c2b3631cdde4f06f8ed9e8b2b565bf77258b36c", false},
         {"proton-vpn", "Proton VPN",
          "瑞士 Proton 公司的开源（GPL-3.0）VPN 扩展，有免费线路，需要 Proton 账号。",
          "它会接管浏览器的网络代理：开着它时，ULB 自己的 WARP / 我的线路不再生效，「线路不通时不直连」的保护也由它决定。不用时请在这里关掉。",

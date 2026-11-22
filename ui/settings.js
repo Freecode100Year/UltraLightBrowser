@@ -209,8 +209,10 @@ function recommendedCard() {
   return el("div", { style: { marginTop: "14px" } },
     el("h3", { text: "推荐扩展" }),
     el("small", { class: "muted wrap", style: { padding: "0 4px 6px" },
-      text: "点「安装」时才从官方来源下载（Chrome 网上应用店或项目官方发布页），并校验签名，确认是原版后再安装。下载走 ULB 当前的线路。" }),
-    el("div", { class: "list" }, items));
+      text: "点「安装」时才从 Chrome 网上应用店下载，并校验开发者签名，确认是原版后再安装。下载走 ULB 当前的线路。" }),
+    el("div", { class: "list" }, items),
+    el("small", { class: "muted wrap", style: { padding: "6px 4px 0" },
+      text: "想用油猴 / 篡改猴脚本？不用装扩展：用下面的「用户脚本」（ULB 自带）导入 .user.js 即可。WebView2 加载不了篡改猴、暴力猴这类脚本管理扩展。" }));
 }
 
 async function installRecommended(r, update) {
