@@ -52,6 +52,7 @@ struct FrameBuffer {
     height: i32,
     bgra: Vec<u8>,
     scale: f32,
+    dirty: bool,
 }
 
 struct TabInner {
@@ -73,6 +74,7 @@ impl CefTabView {
             height: 0,
             bgra: Vec::new(),
             scale: 1.0,
+            dirty: false,
         }));
         let browser = Arc::new(Mutex::new(0usize));
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -90,6 +92,7 @@ impl CefTabView {
             policy: Arc::clone(&policy),
             events: Arc::clone(&events),
             logical_size: Mutex::new((1024, 720)),
+            scale_factor: Mutex::new(1.0),
         });
 
         // Paint rendered Chromium framebuffer cleanly to GTK4 Cairo surface.
@@ -97,6 +100,15 @@ impl CefTabView {
         let vs_resize = Arc::clone(&view_state);
         drawing.set_draw_func(move |area, cr, w, h| {
             let scale = area.scale_factor().max(1) as f32;
+            let scale_changed = {
+                let mut sc = vs_resize.scale_factor.lock().unwrap();
+                if (*sc - scale).abs() > 0.01 {
+                    *sc = scale;
+                    true
+                } else {
+                    false
+                }
+            };
             let resized = {
                 let mut sz = vs_resize.logical_size.lock().unwrap();
                 if *sz != (w.max(1), h.max(1)) {
@@ -106,7 +118,7 @@ impl CefTabView {
                     false
                 }
             };
-            if resized {
+            if resized || scale_changed {
                 let ptr_raw = *vs_resize.browser.lock().unwrap();
                 if ptr_raw != 0 {
                     unsafe {
@@ -114,6 +126,11 @@ impl CefTabView {
                         if let Some(get_host) = (*b).get_host {
                             let host = get_host(b);
                             if !host.is_null() {
+                                if scale_changed {
+                                    if let Some(notify) = (*host).notify_screen_info_changed {
+                                        notify(host);
+                                    }
+                                }
                                 if let Some(was_resized) = (*host).was_resized {
                                     was_resized(host);
                                 }
@@ -188,8 +205,13 @@ impl CefTabView {
 
     pub fn poll_repaint_and_events(&self) -> Vec<BrowserEvent> {
         let inner = self.inner.borrow();
-        let has_frame = !inner.frame.lock().unwrap().bgra.is_empty();
-        if has_frame {
+        let should_draw = {
+            let mut fb = inner.frame.lock().unwrap();
+            let d = fb.dirty && !fb.bgra.is_empty();
+            fb.dirty = false;
+            d
+        };
+        if should_draw {
             inner.drawing.queue_draw();
         }
         let mut evs = inner.events.lock().unwrap();
@@ -529,6 +551,7 @@ struct ClientState {
     policy: Arc<Mutex<BrowserPolicy>>,
     events: Arc<Mutex<Vec<BrowserEvent>>>,
     logical_size: Mutex<(i32, i32)>,
+    scale_factor: Mutex<f32>,
 }
 
 fn create_client(state: Arc<ClientState>) -> *mut sys::cef_client_t {
@@ -650,9 +673,10 @@ unsafe extern "C" fn render_get_screen_info(
 ) -> c_int {
     let st: &Arc<ClientState> = CefObject::state_from(self_);
     let (w, h) = *st.logical_size.lock().unwrap();
+    let scale = (*st.scale_factor.lock().unwrap()).max(1.0);
     if !info.is_null() {
         (*info).size = std::mem::size_of::<sys::cef_screen_info_t>();
-        (*info).device_scale_factor = 1.0;
+        (*info).device_scale_factor = scale;
         (*info).depth = 24;
         (*info).depth_per_component = 8;
         (*info).rect = sys::cef_rect_t { x: 0, y: 0, width: w.max(1), height: h.max(1) };
@@ -675,11 +699,14 @@ unsafe extern "C" fn render_on_paint(
         return;
     }
     let st: &Arc<ClientState> = CefObject::state_from(self_);
+    let scale = (*st.scale_factor.lock().unwrap()).max(1.0);
     let byte_len = (width as usize) * (height as usize) * 4;
     let slice = std::slice::from_raw_parts(buffer.cast::<u8>(), byte_len);
     let mut fb = st.frame.lock().unwrap();
     fb.width = width;
     fb.height = height;
+    fb.scale = scale;
+    fb.dirty = true;
     fb.bgra.clear();
     fb.bgra.extend_from_slice(slice);
 }

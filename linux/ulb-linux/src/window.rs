@@ -254,6 +254,7 @@ pub struct BrowserWindow {
     find_entry: Entry,
     find_status: Label,
     sidebar_panel: GtkBox,
+    sidebar_engine: RefCell<Option<Box<dyn WebEngine>>>,
     content_stack: Stack,
     toast_label: Label,
     menu_popover: PopoverMenu,
@@ -302,7 +303,7 @@ pub fn run_browser(
     private_mode: bool,
     smoke_test: bool,
 ) {
-    let mut config = ConfigStore::new(paths.config_dir.join("config.json"));
+    let mut config = ConfigStore::new(&paths.config_dir);
     config.load();
     if config.settings.user_agent_profile == "default" {
         config.settings.user_agent_profile = "macos-edge".to_string();
@@ -534,12 +535,7 @@ pub fn run_browser(
         .orientation(Orientation::Vertical)
         .width_request(260)
         .visible(false)
-        .spacing(6)
-        .margin_start(10)
-        .margin_end(10)
-        .margin_top(10)
         .build();
-    sidebar_panel.append(&Label::builder().label("边栏 · 收藏与标签组").build());
     content_row.append(&sidebar_panel);
 
     let content_overlay = Overlay::new();
@@ -571,6 +567,7 @@ pub fn run_browser(
         find_entry: find_entry.clone(),
         find_status,
         sidebar_panel,
+        sidebar_engine: RefCell::new(None),
         content_stack,
         toast_label,
         menu_popover,
@@ -681,6 +678,7 @@ pub fn run_browser(
                     a.stop();
                 }
             }
+            bw_close.sidebar_engine.borrow_mut().take();
             bw_close.cef_runtime.borrow_mut().take();
             glib::Propagation::Proceed
         }
@@ -776,6 +774,14 @@ impl BrowserWindow {
             });
         }
 
+        if let Some(ref mut sb) = *self.sidebar_engine.borrow_mut() {
+            for ev in sb.poll_events() {
+                if let BrowserEvent::OpenPopup(u) = ev {
+                    popups.push(u);
+                }
+            }
+        }
+
         for u in popups {
             self.new_tab(&u, true);
         }
@@ -789,7 +795,7 @@ impl BrowserWindow {
             self.apply_side_effect(fx);
         }
 
-        if need_redraw {
+        if need_redraw || self.state.borrow().tabs.iter().any(|t| t.state.loading) {
             self.toolbar.queue_draw();
         }
     }
@@ -1471,6 +1477,16 @@ impl BrowserWindow {
                         st.sidebar_visible = !st.sidebar_visible;
                         st.sidebar_visible
                     };
+                    if vis && bw_click.sidebar_engine.borrow().is_none() {
+                        let st = bw_click.state.borrow();
+                        if st.cef_active {
+                            let view = CefEngine::new(&internal_url("sidebar.html"), Arc::clone(&st.policy));
+                            bw_click.sidebar_panel.append(&view.widget());
+                            *bw_click.sidebar_engine.borrow_mut() = Some(Box::new(view));
+                        } else if bw_click.sidebar_panel.first_child().is_none() {
+                            bw_click.sidebar_panel.append(&Label::builder().label("边栏 · 收藏与标签组").build());
+                        }
+                    }
                     bw_click.sidebar_panel.set_visible(vis);
                     bw_click.toolbar.queue_draw();
                 }
@@ -1514,7 +1530,17 @@ impl BrowserWindow {
                     bw_click.toolbar.queue_draw();
                 }
                 HitKind::Address => bw_click.begin_address_edit(),
-                HitKind::DragArea | HitKind::Overflow | HitKind::Reader | HitKind::None => {}
+                HitKind::DragArea => {
+                    if let Some(surface) = bw_click.window.surface() {
+                        if let Ok(toplevel) = surface.downcast::<gdk::Toplevel>() {
+                            if let Some(dev) = g.current_event().and_then(|e| e.device()) {
+                                let ts = g.current_event_time();
+                                toplevel.begin_move(&dev, btn as i32, x, y, ts);
+                            }
+                        }
+                    }
+                }
+                HitKind::Overflow | HitKind::Reader | HitKind::None => {}
             }
         });
         self.toolbar.add_controller(click);
@@ -1524,6 +1550,17 @@ impl BrowserWindow {
             let text = e.text().to_string();
             bw_act.navigate_active(&text);
         });
+
+        let focus_ctrl = gtk4::EventControllerFocus::new();
+        let bw_blur = Rc::clone(self);
+        focus_ctrl.connect_leave(move |_| {
+            if !bw_blur.suggest_popover.is_visible() {
+                bw_blur.state.borrow_mut().address_focused = false;
+                bw_blur.address_entry.set_visible(false);
+                bw_blur.toolbar.queue_draw();
+            }
+        });
+        self.address_entry.add_controller(focus_ctrl);
 
         let bw_chg = Rc::clone(self);
         self.address_entry.connect_changed(move |e| {
