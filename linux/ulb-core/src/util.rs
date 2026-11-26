@@ -1,6 +1,33 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Current Unix timestamp in milliseconds.
+pub fn now_epoch_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Extracts lowercase hostname (without userinfo or port) from a URL, or empty if none.
+pub fn domain_of(url: &str) -> String {
+    let Some((_, after_scheme)) = url.split_once("://") else {
+        return String::new();
+    };
+    let authority = after_scheme
+        .split(&['/', '?', '#'][..])
+        .next()
+        .unwrap_or("");
+    let host_port = authority.rsplit('@').next().unwrap_or("");
+    let host = if let Some(inner) = host_port.strip_prefix('[') {
+        inner.split(']').next().unwrap_or("")
+    } else {
+        host_port.split(':').next().unwrap_or("")
+    };
+    host.to_ascii_lowercase()
+}
 
 /// Clips a UTF-8 string to at most `max_bytes` without splitting a code point.
 pub fn clip_utf8(s: &str, max_bytes: usize) -> &str {
