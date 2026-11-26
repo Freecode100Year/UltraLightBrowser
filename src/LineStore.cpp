@@ -105,6 +105,8 @@ std::string LineStore::ProtocolOf(const std::string& link) {
     if (s == "trojan") return "Trojan";
     if (s == "vmess") return "VMess";
     if (s == "ss") return "Shadowsocks";
+    if (s == "hysteria2" || s == "hy2") return "Hysteria2";
+    if (s == "wireguard") return "WireGuard";
     return s;
 }
 

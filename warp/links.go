@@ -390,8 +390,8 @@ func streamConfig(p params, server, defSecurity string) (*internet.StreamConfig,
 	switch security {
 	case "none":
 	case "tls":
-		if v := p.get("allowInsecure"); v == "1" || v == "true" {
-			return nil, fmt.Errorf("不支持跳过证书验证（allowInsecure）的链接")
+		if v, v2 := strings.ToLower(p.get("allowInsecure")), strings.ToLower(p.get("insecure")); v == "1" || v == "true" || v2 == "1" || v2 == "true" {
+			return nil, fmt.Errorf("不支持跳过证书验证（allowInsecure / insecure）的链接")
 		}
 		if sni == "" {
 			sni = hostHeader

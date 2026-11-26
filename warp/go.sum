@@ -1,5 +1,5 @@
-github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e h1:5mgtR5gwIgBKMiGI1QdXldZZ+SNor06Nbu1wCBulQBg=
-github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e/go.mod h1:x7qxEvX6MCVtDuBKHj3E+88+BtrbEMuAL5qGUKItjW8=
+github.com/apernet/quic-go v0.65.1-0.20261109005002-2895f039137a h1:uCIlOCbXUtBkFk47HxIkQieCkV+zKv5VCDawLtj3Pkc=
+github.com/apernet/quic-go v0.65.1-0.20261109005002-2895f039137a/go.mod h1:J7UZVOMF2M1LiE3iiUZWPuy8YCPAcLJOwVURrfJCvc0=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
@@ -18,8 +18,8 @@ github.com/google/gopacket v1.1.19 h1:ves8RnFZPGiFnTS0uPQStjwru6uO6h+nlr9j6fL7kF
 github.com/google/gopacket v1.1.19/go.mod h1:iJ8V8n6KS+z2U1A8pUwu8bW5SyEMkXJB8Yo/Vo+TKTo=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
-github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 h1:JeSE6pjso5THxAzdVpqr6/geYxZytqFMBCOtn/ujyeo=
+github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674/go.mod h1:r4w70xmWCQKmi1ONH4KIaBptdivuRPyosB9RmPlGEwA=
 github.com/huin/goupnp v1.3.0 h1:UvLUlWDNpoUdYzb2TCn+MuTWtcjXKSza2n6CBdQ0xXc=
 github.com/huin/goupnp v1.3.0/go.mod h1:gnGPsThkYa7bFi/KWmEysQRf48l2dvR5bxr2OFckNX8=
 github.com/jackpal/go-nat-pmp v1.0.2 h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=
@@ -56,6 +56,7 @@ github.com/pion/transport/v4 v4.1.0 h1:8S+nF2reM2cJuqC6g78OVy2BBgmbdns+acx3jA97B
 github.com/pion/transport/v4 v4.1.0/go.mod h1:06hFI+jCFcok2X2MekVufNZ/uzNZXivGBPfviSVcjgM=
 github.com/pires/go-proxyproto v0.16.0 h1:9KYT/fM3wpjT8bdMEj/7FBcoiUG1KyzEjRYnPu+vz7A=
 github.com/pires/go-proxyproto v0.16.0/go.mod h1:n7yhg8yIfNl3KgYDCwBzmeUHNpKTVnUhcWpc7rV4RW4=
+github.com/pkg/diff v0.0.0-20210226163009-20ebb0f2a09e/go.mod h1:pJLUxLENpZxwdsKMEsNbx1VGcRFpLqf3715MtcvvzbA=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0 h1:APacT+iIaNF6fd8AGEiN3bT/Jtkd2jz4v4TzM7MFjy0=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0/go.mod h1:3IOHRbJIc+L6YKMwfDtJAM9Vj9k0YY4muhuyUYk5tbk=
 github.com/quic-go/qpack v0.6.0 h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=
@@ -64,6 +65,7 @@ github.com/refraction-networking/utls v1.8.3-0.20261108164504-a13c59ffe98b h1:Mi
 github.com/refraction-networking/utls v1.8.3-0.20261108164504-a13c59ffe98b/go.mod h1:rc/ctWeKlh9LSk5k90KlSPcwF7P6D31mn/9GI2NAfBI=
 github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
 github.com/robfig/cron/v3 v3.0.1/go.mod h1:eQICP3HwyT7UooqI/z+Ov+PtYAWygg1TEWWzGIFLtro=
+github.com/rogpeppe/go-internal v1.9.0/go.mod h1:WtVeX8xhTBvf0smdhujwtBcq4Qrzq/fJaraNFVN+nFs=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
@@ -74,10 +76,12 @@ github.com/vishvananda/netns v0.0.5 h1:DfiHV+j8bA32MFM7bfEunvT8IAqQ/NzSJHtcmW5zd
 github.com/vishvananda/netns v0.0.5/go.mod h1:SpkAiCQRtJ6TvvxPnOSyH3BMl6unz3xZlaprSwhNNJM=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
-github.com/xtls/reality v0.0.0-20261108101329-4bb46b2afd8b h1:fAn11r21QiUY2oAGwENWb5ummjhWwMcs2WzkbjDMh+k=
-github.com/xtls/reality v0.0.0-20261108101329-4bb46b2afd8b/go.mod h1:ptlSkJ8k/7IDauNH0SA96JPOo+nYGLTv2Y3UMpwvAsY=
-github.com/xtls/xray-core v1.260327.1-0.20261109052709-676eaf66f8f0 h1:p2uoadP+ulClbJ9dn+QioF2SfBqRly6VoKJosHqwcRo=
-github.com/xtls/xray-core v1.260327.1-0.20261109052709-676eaf66f8f0/go.mod h1:qOpfp0I7DlfhmEHyiv0OV+6jbalzb41EFGegv0UfzBE=
+github.com/xtls/reality v0.0.0-20261108102217-4a26e87788f5 h1:34XENppeOVlB10VLSH4igXmqd3+Rj9Jr3Oy1Ht+batQ=
+github.com/xtls/reality v0.0.0-20261108102217-4a26e87788f5/go.mod h1:3XtOc956L0/A/CRlq/4zYAURfW4hWCwC2IZDiXKPJkw=
+github.com/xtls/utls v0.0.0-20261106062530-666e20f266ac h1:nRlqo57FDFc2UfII/rARfuqT+pY0V3p3v38+LCtLSbA=
+github.com/xtls/utls v0.0.0-20261106062530-666e20f266ac/go.mod h1:fWZDN7axSrekwnSY/FXuRW2OEFR7M5cJaecV9p95vS8=
+github.com/xtls/xray-core v1.260327.1-0.20261126183327-67756b3674d5 h1:iBXovnp0OKTfHtpL12PPGRvSXDFr0JTDOZx6b3Yz4AY=
+github.com/xtls/xray-core v1.260327.1-0.20261126183327-67756b3674d5/go.mod h1:vE3mewSE/byCjql9p+TZdpKAypT7dWP2sN5AYZLByKY=
 github.com/yuin/gopher-lua v0.0.0-20190206043414-8bfc7677f583/go.mod h1:gqRgreBUhTSL0GeU64rtZ3Uq3wtjOa/TB2YfrtkCbVQ=
 github.com/yuin/gopher-lua v1.1.2 h1:yF/FjE3hD65tBbt0VXLE13HWS9h34fdzJmrWRXwobGA=
 github.com/yuin/gopher-lua v1.1.2/go.mod h1:7aRmXIWl37SqRf0koeyylBEzJ+aPt8A+mmkQ4f1ntR8=
@@ -89,12 +93,12 @@ go4.org/netipx v0.0.0-20231129151722-fdeea329fbba h1:0b9z3AuHCjxk0x/opv64kcgZLBs
 go4.org/netipx v0.0.0-20231129151722-fdeea329fbba/go.mod h1:PLyyIXexvUFg3Owu6p/WfdlivPbZJsZdgWZlrGope/Y=
 golang.org/x/crypto v0.59.0 h1:xS2jhqYbzNrpvkWP2YTDf4TJwBy3ykR03i8vFDxEc7c=
 golang.org/x/crypto v0.59.0/go.mod h1:veDyUwATGs3c+vN3VfTbzViMGXeTBk3WyhBOkn+F/4U=
-golang.org/x/crypto/x509roots/fallback v0.0.0-20261020153306-9f2b28d4331a h1:V5oicZXS0oqZx30gY/apgSVD7YvNBfrIOdcMnlelJY4=
-golang.org/x/crypto/x509roots/fallback v0.0.0-20261020153306-9f2b28d4331a/go.mod h1:HPze8vhfG6fO06AM+VSvxRm4E3+5Yk375mgrJ5M2z1E=
+golang.org/x/crypto/x509roots/fallback v0.0.0-20261123192653-4dc4fb521066 h1:IkSTNrk5HNulTzFHeCzJ5t3UnzLJkSIPaU7nmNI37Uk=
+golang.org/x/crypto/x509roots/fallback v0.0.0-20261123192653-4dc4fb521066/go.mod h1:HPze8vhfG6fO06AM+VSvxRm4E3+5Yk375mgrJ5M2z1E=
 golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f h1:W3F4c+6OLc6H2lb//N1q4WpJkhzJCK5J6kUi1NTVXfM=
 golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f/go.mod h1:J1xhfL/vlindoeF/aINzNzt2Bket5bjo9sdOYzOsU80=
-golang.org/x/net v0.62.0 h1:18ELalfM5+XNRwzM2nYqXsZQ9ByS1uhj2O/U7+5jqRY=
-golang.org/x/net v0.62.0/go.mod h1:WgDCOTH8iwtB66T4/GfI94AHo/hhdb7Hah9NDseQfiI=
+golang.org/x/net v0.63.0 h1:HCoTmNh9EpD1PpK8gBNFY4gcTY4N+KQEO8ylfIKqFJ0=
+golang.org/x/net v0.63.0/go.mod h1:15JLg3IX1bLjHK264EZQEbIpTiR/KVLuo9CTRWd0pig=
 golang.org/x/sync v0.0.0-20210220032951-036812b2e83c/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.25.0 h1:dJnifr0nMV8/SBnBvdo4eSGGnrc3O4FFx6IqvtLcmRs=
 golang.org/x/sync v0.25.0/go.mod h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
@@ -131,5 +135,5 @@ gvisor.dev/gvisor v0.0.0-20260122175437-89a5d21be8f0 h1:Lk6hARj5UPY47dBep70OD/TI
 gvisor.dev/gvisor v0.0.0-20260122175437-89a5d21be8f0/go.mod h1:QkHjoMIBaYtpVufgwv3keYAbln78mBoCuShZrPrer1Q=
 layeh.com/gopher-luar v1.0.11 h1:8zJudpKI6HWkoh9eyyNFaTM79PY6CAPcIr6X/KTiliw=
 layeh.com/gopher-luar v1.0.11/go.mod h1:TPnIVCZ2RJBndm7ohXyaqfhzjlZ+OA2SZR/YwL8tECk=
-lukechampine.com/blake3 v1.4.1 h1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=
-lukechampine.com/blake3 v1.4.1/go.mod h1:QFosUxmjB8mnrWFSNwKmvxHpfY72bmD2tQ0kBMM3kwo=
+lukechampine.com/blake3 v1.5.1 h1:ITRyxe0LlLZcPUWOZ3Taz8mbug/ptn7jbbeeij5ZiPo=
+lukechampine.com/blake3 v1.5.1/go.mod h1:QFosUxmjB8mnrWFSNwKmvxHpfY72bmD2tQ0kBMM3kwo=

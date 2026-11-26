@@ -263,6 +263,8 @@ unsafe fn copy_out(s: &str, out: *mut c_char, cap: usize) -> usize {
 pub extern "C" fn ulb_domain_count() -> usize {
     domains().len()
 }
+/// # Safety
+/// `out` must be null or valid for writes of `cap` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn ulb_domain_at(i: usize, out: *mut c_char, cap: usize) -> usize {
     domains().get(i).map_or(0, |s| copy_out(s, out, cap))
@@ -271,12 +273,16 @@ pub unsafe extern "C" fn ulb_domain_at(i: usize, out: *mut c_char, cap: usize) -
 pub extern "C" fn ulb_pattern_count() -> usize {
     request_filter_patterns().len()
 }
+/// # Safety
+/// `out` must be null or valid for writes of `cap` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn ulb_pattern_at(i: usize, out: *mut c_char, cap: usize) -> usize {
     request_filter_patterns()
         .get(i)
         .map_or(0, |s| copy_out(s, out, cap))
 }
+/// # Safety
+/// `uri` must be null or valid for reads of `len` bytes; `out` must be null or valid for writes of `cap` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn ulb_extract_host(
     uri: *const c_char,
@@ -286,6 +292,8 @@ pub unsafe extern "C" fn ulb_extract_host(
 ) -> usize {
     copy_out(&extract_host(read_utf8(uri, len)), out, cap)
 }
+/// # Safety
+/// `host` must be null or valid for reads of `len` bytes; `out` must be null or valid for writes of `cap` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn ulb_base_domain(
     host: *const c_char,
@@ -295,6 +303,8 @@ pub unsafe extern "C" fn ulb_base_domain(
 ) -> usize {
     copy_out(&base_domain(read_utf8(host, len)), out, cap)
 }
+/// # Safety
+/// `host` must be null or valid for reads of `len` bytes; `out` must be null or valid for writes of `cap` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn ulb_match_host(
     host: *const c_char,
@@ -304,6 +314,8 @@ pub unsafe extern "C" fn ulb_match_host(
 ) -> usize {
     match_host(read_utf8(host, len)).map_or(0, |s| copy_out(s, out, cap))
 }
+/// # Safety
+/// `uri` and `top` must be null or valid for reads of `uri_len` and `top_len` bytes respectively.
 #[no_mangle]
 pub unsafe extern "C" fn ulb_evaluate(
     uri: *const c_char,

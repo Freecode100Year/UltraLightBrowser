@@ -121,6 +121,3 @@ func hysteriaConfig(p *quicLineProfile) (*core.Config, string) {
 	}
 	return cfg, net.JoinHostPort(p.server, strconv.Itoa(int(p.port)))
 }
-
-var _ = strings.TrimSpace
-var _ = url.Parse

@@ -24,8 +24,8 @@ func TestRotatedAddrMatchesServerScript(t *testing.T) {
 		t.Fatalf("got %s, want %s", got, want)
 	}
 	// Upper-case UUIDs give the same address.
-	if g := rotatedAddr(p, "00000000-1111-4222-8333-444444444444", 6922); g != want {
-		t.Fatalf("case: got %s", g)
+	if a, b := rotatedAddr(p, "abcdef00-1111-4222-8333-444444444444", 6922), rotatedAddr(p, "ABCDEF00-1111-4222-8333-444444444444", 6922); a != b {
+		t.Fatalf("case: %s != %s", a, b)
 	}
 }
 

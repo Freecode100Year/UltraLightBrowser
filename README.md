@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://dl.freedom8964.com/"><img src="https://img.shields.io/badge/下载-v2.9.2-blue" alt="下载"></a>
+  <a href="https://dl.freedom8964.com/"><img src="https://img.shields.io/badge/下载-v2.10.1-blue" alt="下载"></a>
   <a href="https://github.com/Freecode100Year/UltraLightBrowser"><img src="https://img.shields.io/badge/源码-GitHub-181717?logo=github" alt="GitHub"></a>
   <a href="https://gitlab.com/sj9292008133/UltraLightBrowser"><img src="https://img.shields.io/badge/源码-GitLab-fc6d26?logo=gitlab" alt="GitLab"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078d4?logo=windows" alt="Platform">
@@ -184,7 +184,7 @@ UltraLightBrowser 把这些问题放在一个约 21MB 的 exe 里解决：**双�
 所有发布文件都从本仓库源码编译（Windows 版在 Linux 上用 clang-cl + Windows SDK 交叉编译，C 运行库静态链接，不用另装 VC++ 运行库）。下载后建议校验：
 
 ```powershell
-Get-FileHash .\UltraLightBrowser-v2.9.2-Windows-x64.exe -Algorithm SHA256   # 与下载页的 SHA256SUMS.txt 对比
+Get-FileHash .\UltraLightBrowser-v2.10.1-Windows-x64.exe -Algorithm SHA256   # 与下载页的 SHA256SUMS.txt 对比
 ```
 
 ## 功能
@@ -401,6 +401,10 @@ tests/                       单元测试、页面资源检查、Windows 界面�
 
 ## 最近更新
 
+- **v2.10.1**：日常维护：
+  - 网络组件升级 `Xray-core`、`xtls/reality`、`quic-go`、`golang.org/x/net`（v0.63.0）及 `gorilla/websocket`，修复 `govulncheck` 报告的 `GO-2026-6278`（WebSocket 掩码密钥使用弱随机数），`govulncheck` 已无已知漏洞。
+  - 线路链接解析同时拒绝 `insecure=1` / `insecure=true`（与 `allowInsecure` 一致），补全 `LineStore::ProtocolOf` 与设置页导入提示对 `hysteria2://` / `hy2://` 的支持并补充单元测试。
+  - 修复 Rust 广告拦截 FFI 函数的 `clippy` 安全文档警告；Android Gradle 插件更新至 `9.5.3`；更新 README 下载徽章版本。
 - **v2.10.0**：“设置 → 扩展程序”新增「推荐扩展」：Global Speed（视频变速）和 Proton VPN，一键从 Chrome 网上应用店下载、校验签名后安装（已在 Windows 上实测能加载）；会接管网络代理的扩展在列表里有提示。篡改猴脚本请用自带的「用户脚本」。
 - **v2.9.2**：原 GitHub 账号停用，项目搬到 GitLab（https://gitlab.com/sj9292008133/UltraLightBrowser），安装包改由 https://dl.freedom8964.com 下载；「关于」里的项目链接随之更新。Windows 版改为静态链接 C 运行库，没装 VC++ 运行库的电脑也能直接运行。
 - **v2.9.1**：修复 v2.9.0：

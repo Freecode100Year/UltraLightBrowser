@@ -129,7 +129,7 @@ function linesSection() {
 }
 
 async function importLinks() {
-  const r = await ULB.modal("导入线路链接", [{ name: "text", label: "每行一条分享链接（vless:// trojan:// vmess:// ss://）", multiline: true, rows: 8, required: true }], "导入");
+  const r = await ULB.modal("导入线路链接", [{ name: "text", label: "每行一条分享链接（vless:// trojan:// vmess:// ss:// hysteria2:// hy2://）", multiline: true, rows: 8, required: true }], "导入");
   if (!r || !r.text) return;
   toast("正在检查链接…");
   try {

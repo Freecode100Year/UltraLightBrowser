@@ -25,6 +25,9 @@ static void TestDisplay() {
     CHECK(LineStore::NameOf(kVmess) == "东京");
     CHECK(LineStore::ServerOf(kVmess) == "192.0.2.7:443");
     CHECK(LineStore::ServerOf(kSsLegacy) == "192.0.2.9:8388");
+    CHECK(LineStore::ProtocolOf("hysteria2://pw@example.com:443") == "Hysteria2");
+    CHECK(LineStore::ProtocolOf("hy2://pw@example.com:443") == "Hysteria2");
+    CHECK(LineStore::ProtocolOf("wireguard://abc") == "WireGuard");
     CHECK(LineStore::NameOf("vless://x@h:1#%0A%0A") == "VLESS h:1");  // blank name falls back
 }
 

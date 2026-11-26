@@ -26,6 +26,8 @@ func TestParseLinkAccepts(t *testing.T) {
 		"ss sip002":     "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-256-gcm:pw")) + "@192.0.2.1:8388#s",
 		"ss plain 2022": "ss://2022-blake3-aes-128-gcm:AAAAAAAAAAAAAAAAAAAAAA%3D%3D@192.0.2.1:8388",
 		"ss legacy":     "ss://" + base64.StdEncoding.EncodeToString([]byte("chacha20-ietf-poly1305:pw@192.0.2.1:8388")) + "#old",
+		"hysteria2":     "hysteria2://secret@example.com:443?sni=example.com&obfs=salamander&obfs-password=mask#hy",
+		"hy2":           "hy2://secret@example.com:8443#hy2",
 	}
 	for name, link := range ok {
 		if _, server, err := parseLink(link); err != nil || server == "" {
@@ -36,8 +38,11 @@ func TestParseLinkAccepts(t *testing.T) {
 
 func TestParseLinkRejects(t *testing.T) {
 	bad := map[string]string{
-		"allowInsecure": "trojan://secret@example.com:443?allowInsecure=1",
-		"plugin":        "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-256-gcm:pw")) + "@192.0.2.1:8388?plugin=obfs-local",
+		"allowInsecure":   "trojan://secret@example.com:443?allowInsecure=1",
+		"insecure":        "vless://" + testUUID + "@example.com:443?security=tls&insecure=true",
+		"hy2 insecure":    "hysteria2://secret@example.com:443?insecure=1",
+		"tuic":            "tuic://" + testUUID + ":secret@example.com:443",
+		"plugin":          "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-256-gcm:pw")) + "@192.0.2.1:8388?plugin=obfs-local",
 		"old cipher":    "ss://" + base64.RawURLEncoding.EncodeToString([]byte("rc4-md5:pw")) + "@192.0.2.1:8388",
 		"alterId":       vmessLink(`{"add":"example.com","port":"443","id":"` + testUUID + `","aid":"64"}`),
 		"vision on ws":  "vless://" + testUUID + "@example.com:443?security=tls&type=ws&flow=xtls-rprx-vision",
