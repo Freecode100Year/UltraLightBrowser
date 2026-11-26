@@ -55,7 +55,7 @@ const MULTI_TENANT: &[&str] = &[
     "surge.sh",
 ];
 
-fn domains() -> Vec<&'static str> {
+pub fn domains() -> Vec<&'static str> {
     DOMAINS_TEXT.lines().filter(|s| !s.is_empty()).collect()
 }
 fn under(host: &str, domain: &str) -> bool {
@@ -85,7 +85,7 @@ fn lower_path(uri: &str) -> String {
     }
     p
 }
-fn extract_host(uri: &str) -> String {
+pub fn extract_host(uri: &str) -> String {
     let Some((_, rest)) = uri.split_once("://") else {
         return String::new();
     };
@@ -103,7 +103,7 @@ fn extract_host(uri: &str) -> String {
     }
     host
 }
-fn base_domain(host: &str) -> String {
+pub fn base_domain(host: &str) -> String {
     if host.is_empty() || host.starts_with('[') {
         return host.to_string();
     }
@@ -131,10 +131,10 @@ fn base_domain(host: &str) -> String {
     };
     p[p.len() - take..].join(".")
 }
-fn third_party(req: &str, top: &str) -> bool {
+pub fn is_third_party(req: &str, top: &str) -> bool {
     req.is_empty() || top.is_empty() || (req != top && base_domain(req) != base_domain(top))
 }
-fn match_host(host: &str) -> Option<&'static str> {
+pub fn match_host(host: &str) -> Option<&'static str> {
     let ds = domains();
     ds.into_iter().find(|d| under(host, d))
 }
@@ -169,7 +169,7 @@ fn surrogate(host: &str, path: &str) -> i32 {
         0
     }
 }
-fn evaluate(uri: &str, top: &str, kind: i32) -> i32 {
+pub fn evaluate(uri: &str, top: &str, kind: i32) -> i32 {
     if !web_scheme(uri) {
         return 0;
     }
@@ -177,7 +177,7 @@ fn evaluate(uri: &str, top: &str, kind: i32) -> i32 {
     if host.is_empty() {
         return 0;
     }
-    if (kind == 1 || kind == 0) && !top.is_empty() && !third_party(&host, top) {
+    if (kind == 1 || kind == 0) && !top.is_empty() && !is_third_party(&host, top) {
         return 0;
     }
     let path = lower_path(uri);
@@ -193,7 +193,7 @@ fn evaluate(uri: &str, top: &str, kind: i32) -> i32 {
         0
     }
 }
-fn request_filter_patterns() -> Vec<String> {
+pub fn request_filter_patterns() -> Vec<String> {
     let ds = domains();
     let mut out = Vec::new();
     for d in &ds {
