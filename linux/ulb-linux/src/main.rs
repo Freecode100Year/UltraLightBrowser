@@ -41,9 +41,15 @@ fn find_warp_binary() -> Option<PathBuf> {
 }
 
 fn main() {
+    // CEF spawns helper processes (--type=renderer/gpu/zygote) from the same binary.
+    if let Some(code) = ulb_cef::try_execute_subprocess() {
+        std::process::exit(code);
+    }
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     let private_mode = args.iter().any(|a| a == "--private");
     let headless_check = args.iter().any(|a| a == "--check");
+    let smoke_test = args.iter().any(|a| a == "--smoke-test");
     let urls: Vec<String> = args
         .into_iter()
         .filter(|a| !a.starts_with("--"))
@@ -51,20 +57,24 @@ fn main() {
 
     if headless_check {
         let ua = ulb_core::user_agent::build_macos_edge_user_agent(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
             "macos-edge",
         );
-        println!("ulb-linux ok | ua={ua}");
+        println!("ulb-linux ok | ua={ua} | cef=linked");
         return;
     }
 
     let runtime_root = resolve_runtime_dir();
-    if !private_mode && try_send_open(&runtime_root, &urls) {
+    if !private_mode && !smoke_test && try_send_open(&runtime_root, &urls) {
         return;
     }
 
     let app = Application::builder()
-        .application_id("com.ultralight.browser")
+        .application_id(if smoke_test {
+            "com.ultralight.browser.smoke"
+        } else {
+            "com.ultralight.browser"
+        })
         .build();
 
     let paths = AppPaths {
@@ -80,7 +90,14 @@ fn main() {
             return;
         };
         let initial = urls_ref.borrow_mut().take().unwrap_or_default();
-        run_browser(app, paths.clone(), session, initial, private_mode);
+        run_browser(
+            app,
+            paths.clone(),
+            session,
+            initial,
+            private_mode || smoke_test,
+            smoke_test,
+        );
     });
 
     app.run_with_args::<&str>(&[]);

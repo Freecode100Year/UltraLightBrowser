@@ -1,4 +1,5 @@
 pub mod adblock;
+pub mod audio_dsp;
 pub mod audio_endpoint;
 pub mod config;
 pub mod extension_pkg;

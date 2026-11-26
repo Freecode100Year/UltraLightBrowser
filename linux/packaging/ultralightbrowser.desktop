@@ -1,0 +1,19 @@
+[Desktop Entry]
+Version=1.0
+Name=UltraLightBrowser
+GenericName=Web Browser
+Comment=Safari-style Omarchy native browser with Chromium + Chrome Extensions + macOS Edge Stealth
+Exec=ulb-linux %U
+Terminal=false
+Type=Application
+Icon=ultralightbrowser
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupWMClass=com.ultralight.browser
+StartupNotify=true
+Keywords=browser;web;safari;chromium;
+Actions=NewPrivateWindow;
+
+[Desktop Action NewPrivateWindow]
+Name=New Private Window
+Exec=ulb-linux --private

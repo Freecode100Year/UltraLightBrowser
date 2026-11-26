@@ -1,7 +1,10 @@
 use crate::audio_watcher::AudioWatcher;
-use crate::engine::{PlaceholderEngine, TabState, WebEngine};
+use crate::engine::{CefEngine, PlaceholderEngine, TabState, WebEngine};
 use crate::menus::{build_main_menu, build_share_menu, build_tab_menu, MainMenuContext};
-use crate::paint_bar::{compute_layout, hit_test, paint_toolbar, HitKind, HitResult, PaintParams, ToolbarLayout, TOPBAR_HEIGHT};
+use crate::paint_bar::{
+    compute_layout, hit_test, paint_toolbar, HitKind, HitResult, PaintParams, ToolbarLayout,
+    TOPBAR_HEIGHT,
+};
 use crate::session::{start_ipc_server, IpcCommand, IpcGuard, SessionDir};
 use gtk4::gdk;
 use gtk4::gio::SimpleActionGroup;
@@ -15,21 +18,82 @@ use gtk4::{
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use ulb_cef::{BrowserEvent, BrowserPolicy, CefConfig, CefRuntime};
+use ulb_core::audio_dsp::{build_audio_dsp_script, build_audio_update_script};
 use ulb_core::config::{ConfigStore, DEFAULT_HOME_URL};
+use ulb_core::extension_pkg::{find_recommended_extension, store_download_url};
 use ulb_core::extensions_store::ExtensionsStore;
+use ulb_core::f8964_pack::extract_pack;
 use ulb_core::internal_pages::internal_url;
 use ulb_core::library::{Library, BOOKMARKS_FOLDER, FAVORITES_FOLDER};
 use ulb_core::line_store::LineStore;
+use ulb_core::ui_bridge::{dispatch_rpc, BridgeContext, SideEffect, TabView};
+use ulb_core::user_agent::build_macos_edge_user_agent;
 use ulb_core::user_scripts::UserScriptStore;
 use ulb_core::util::{domain_of, now_epoch_ms};
-use ulb_core::warp_host::{load_encrypted_lines, save_encrypted_lines, WarpConfig, WarpStatus, WarpSupervisor};
+use ulb_core::warp_host::{
+    load_encrypted_lines, run_download_extension, run_fetch_subscription, run_probe,
+    save_encrypted_lines, WarpConfig, WarpStatus, WarpSupervisor,
+};
 
-/// Shared mutable browser paths/binaries needed across windows.
+/// Shared mutable paths/binaries needed across the browser window lifetime.
 #[derive(Clone)]
 pub struct AppPaths {
     pub config_dir: PathBuf,
     pub data_dir: PathBuf,
     pub warp_bin: Option<PathBuf>,
+}
+
+/// Thread-safe core stores shared between GTK UI thread and CEF `ulb.internal/__rpc`.
+struct HostStores {
+    paths: AppPaths,
+    config: ConfigStore,
+    library: Library,
+    lines: LineStore,
+    extensions: ExtensionsStore,
+    scripts: UserScriptStore,
+    warp_status: WarpStatus,
+    tabs_view: Vec<TabView>,
+    active_tab_id: u64,
+    private_mode: bool,
+    total_blocked_ads: u64,
+    rpc_calls: u64,
+    pending_fx: Vec<SideEffect>,
+}
+
+impl HostStores {
+    fn save_all(&mut self) {
+        let _ = self.config.save();
+        if !self.private_mode {
+            let _ = self.library.save();
+        }
+        let _ = save_encrypted_lines(&self.paths.data_dir, &self.lines);
+    }
+
+    fn build_policy(&mut self, headphones_active: bool) -> BrowserPolicy {
+        let base_linux_ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36";
+        let ua_str = build_macos_edge_user_agent(
+            base_linux_ua,
+            &self.config.settings.user_agent_profile,
+        );
+        self.scripts.load();
+        let early_scripts_js = self.scripts.injection_scripts();
+        let idle_scripts_js = Vec::new();
+
+        BrowserPolicy {
+            ua_profile: self.config.settings.user_agent_profile.clone(),
+            user_agent_string: ua_str,
+            mac_platform_version: self.config.settings.mac_platform_version.clone(),
+            mac_profile_idx: 0,
+            early_scripts_js,
+            idle_scripts_js,
+            audio_dsp_js: build_audio_dsp_script(&self.config.settings, headphones_active),
+            adblock_enabled: self.config.settings.enable_ad_block,
+            adblock_disabled_hosts: self.library.hosts_with_adblock_off(),
+        }
+    }
 }
 
 struct TabItem {
@@ -38,13 +102,10 @@ struct TabItem {
 }
 
 struct AppState {
-    paths: AppPaths,
-    config: ConfigStore,
-    library: Library,
-    lines: LineStore,
-    extensions: ExtensionsStore,
-    scripts: UserScriptStore,
-    warp_status: WarpStatus,
+    stores: Arc<Mutex<HostStores>>,
+    policy: Arc<Mutex<BrowserPolicy>>,
+    cef_active: bool,
+    cef_error: String,
     warp_sup: Option<WarpSupervisor>,
     audio_watcher: Option<AudioWatcher>,
     tabs: Vec<TabItem>,
@@ -60,78 +121,97 @@ struct AppState {
     address_focused: bool,
     traffic_hover: bool,
     hover: HitResult,
-    layout: ToolbarLayout,
     _session: SessionDir,
     _ipc: Option<IpcGuard>,
     session_path_str: String,
 }
 
-pub struct BrowserWindow {
-    window: ApplicationWindow,
-    toolbar: DrawingArea,
-    address_entry: Entry,
-    suggest_popover: Popover,
-    suggest_list: ListBox,
-    find_bar: GtkBox,
-    find_entry: Entry,
-    sidebar_panel: GtkBox,
-    content_stack: Stack,
-    toast_label: Label,
-    menu_popover: PopoverMenu,
-    state: Rc<RefCell<AppState>>,
-}
-
 impl AppState {
-    fn save_all(&mut self) {
-        let _ = self.config.save();
-        if !self.private_mode {
-            let _ = self.library.save();
+    fn sync_stores_tabs(&self) {
+        let mut s = self.stores.lock().unwrap();
+        s.active_tab_id = self.active_id;
+        s.tabs_view = self
+            .tabs
+            .iter()
+            .map(|t| TabView {
+                id: t.state.id,
+                title: t.state.title.clone(),
+                url: t.state.url.clone(),
+                loading: t.state.loading,
+                audio: t.state.audio,
+                muted: t.state.muted,
+                active: t.state.id == self.active_id,
+                reader_source: t.state.reader_source.clone(),
+            })
+            .collect();
+    }
+
+    fn sync_policy(&mut self) {
+        let hp = self
+            .audio_watcher
+            .as_ref()
+            .is_some_and(|w| w.is_headphones_active());
+        let next_policy = self.stores.lock().unwrap().build_policy(hp);
+        *self.policy.lock().unwrap() = next_policy;
+        let audio_update = {
+            let st = self.stores.lock().unwrap();
+            build_audio_update_script(&st.config.settings, hp)
+        };
+        for t in &mut self.tabs {
+            t.engine.execute_js(&audio_update);
         }
-        let _ = save_encrypted_lines(&self.paths.data_dir, &self.lines);
     }
 
     fn restart_warp(&mut self) {
         if let Some(mut s) = self.warp_sup.take() {
             s.stop();
         }
-        self.warp_status = WarpStatus::default();
-        if !self.config.settings.warp_enabled {
-            return;
-        }
-        let Some(ref bin) = self.paths.warp_bin else {
-            self.warp_status.error = "未找到 ulb-warp 组件".to_string();
-            return;
+        let cfg_opt = {
+            let mut st = self.stores.lock().unwrap();
+            st.warp_status = WarpStatus::default();
+            if !st.config.settings.warp_enabled {
+                None
+            } else if let Some(ref bin) = st.paths.warp_bin {
+                let selected_id = st.lines.selected().to_string();
+                let selected_links = st
+                    .lines
+                    .selected_links()
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect();
+                Some(WarpConfig {
+                    binary: bin.clone(),
+                    state_dir: st.paths.data_dir.join("warp-state"),
+                    fail_closed: st.config.settings.warp_fail_closed,
+                    use_line: st.config.settings.use_line,
+                    selected_id,
+                    selected_links,
+                })
+            } else {
+                st.warp_status.error = "未找到 ulb-warp 组件".to_string();
+                None
+            }
         };
-        let selected_id = self.lines.selected().to_string();
-        let selected_links = self
-            .lines
-            .selected_links()
-            .into_iter()
-            .map(str::to_string)
-            .collect();
-        let cfg = WarpConfig {
-            binary: bin.clone(),
-            state_dir: self.paths.data_dir.join("warp-state"),
-            fail_closed: self.config.settings.warp_fail_closed,
-            use_line: self.config.settings.use_line,
-            selected_id,
-            selected_links,
-        };
-        if let Ok(sup) = WarpSupervisor::start(&cfg, |_| {}) {
-            self.warp_status = sup.status();
-            self.warp_sup = Some(sup);
+
+        if let Some(cfg) = cfg_opt {
+            if let Ok(sup) = WarpSupervisor::start(&cfg, |_| {}) {
+                let status = sup.status();
+                self.stores.lock().unwrap().warp_status = status;
+                self.warp_sup = Some(sup);
+            }
         }
     }
 
     fn home_url(&self) -> String {
-        if self.config.settings.new_tab_page == "blank" {
+        let st = self.stores.lock().unwrap();
+        if st.config.settings.new_tab_page == "blank" {
             "about:blank".to_string()
-        } else if self.config.settings.start_url.is_empty()
-            || self.config.settings.start_url == DEFAULT_HOME_URL
+        } else if st.config.settings.start_url.is_empty()
+            || st.config.settings.start_url == DEFAULT_HOME_URL
         {
             internal_url("start.html")
         } else {
-            self.config.settings.start_url.clone()
+            st.config.settings.start_url.clone()
         }
     }
 
@@ -149,8 +229,9 @@ impl AppState {
         if !trimmed.contains(' ') && (trimmed.contains('.') || trimmed.starts_with("localhost")) {
             return format!("https://{trimmed}");
         }
-        let q: String = url_encode(trimmed);
-        match self.config.settings.search_engine.as_str() {
+        let q = url_encode(trimmed);
+        let engine = self.stores.lock().unwrap().config.settings.search_engine.clone();
+        match engine.as_str() {
             "bing" => format!("https://www.bing.com/search?q={q}"),
             "duckduckgo" => format!("https://duckduckgo.com/?q={q}"),
             "baidu" => format!("https://www.baidu.com/s?wd={q}"),
@@ -161,6 +242,24 @@ impl AppState {
     fn tab_snapshots(&self) -> Vec<TabState> {
         self.tabs.iter().map(|t| t.state.clone()).collect()
     }
+}
+
+pub struct BrowserWindow {
+    window: ApplicationWindow,
+    toolbar: DrawingArea,
+    address_entry: Entry,
+    suggest_popover: Popover,
+    suggest_list: ListBox,
+    find_bar: GtkBox,
+    find_entry: Entry,
+    find_status: Label,
+    sidebar_panel: GtkBox,
+    content_stack: Stack,
+    toast_label: Label,
+    menu_popover: PopoverMenu,
+    layout: RefCell<ToolbarLayout>,
+    cef_runtime: RefCell<Option<CefRuntime>>,
+    state: Rc<RefCell<AppState>>,
 }
 
 fn url_encode(input: &str) -> String {
@@ -177,11 +276,35 @@ fn url_encode(input: &str) -> String {
     out
 }
 
-pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, initial_urls: Vec<String>, private_mode: bool) {
+fn extract_memorial_pack(paths: &AppPaths, session_path: &std::path::Path) -> PathBuf {
+    let dest = session_path.join("f8964");
+    let mut candidates = vec![paths.data_dir.join("f8964.pack")];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("f8964.pack"));
+        }
+    }
+    for src in candidates {
+        if let Ok(bytes) = std::fs::read(&src) {
+            if extract_pack(&bytes, &dest).is_ok() {
+                break;
+            }
+        }
+    }
+    dest
+}
+
+pub fn run_browser(
+    app: &Application,
+    paths: AppPaths,
+    session: SessionDir,
+    initial_urls: Vec<String>,
+    private_mode: bool,
+    smoke_test: bool,
+) {
     let mut config = ConfigStore::new(paths.config_dir.join("config.json"));
     config.load();
     if config.settings.user_agent_profile == "default" {
-        // Default profile on Linux uses macOS Edge stealth identity unless user overrides.
         config.settings.user_agent_profile = "macos-edge".to_string();
     }
 
@@ -203,15 +326,125 @@ pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, init
     })
     .ok();
 
-    let mut state = AppState {
-        paths,
+    let mut host_stores = HostStores {
+        paths: paths.clone(),
         config,
         library,
         lines,
         extensions,
         scripts,
         warp_status: WarpStatus::default(),
-        warp_sup: None,
+        tabs_view: Vec::new(),
+        active_tab_id: 0,
+        private_mode,
+        total_blocked_ads: 0,
+        rpc_calls: 0,
+        pending_fx: Vec::new(),
+    };
+
+    let init_policy = host_stores.build_policy(false);
+    let ext_folder = host_stores.extensions.folder().to_path_buf();
+    let enabled_ext_dirs: Vec<PathBuf> = host_stores
+        .extensions
+        .list()
+        .iter()
+        .filter(|e| e.enabled)
+        .map(|e| ext_folder.join(&e.dir))
+        .collect();
+    let ua_for_cef = init_policy.user_agent_string.clone();
+    let fail_closed = host_stores.config.settings.warp_fail_closed;
+    let warp_enabled = host_stores.config.settings.warp_enabled;
+    let memorial_dir = extract_memorial_pack(&paths, session.path());
+
+    let stores = Arc::new(Mutex::new(host_stores));
+    let policy = Arc::new(Mutex::new(init_policy));
+
+    let stores_rpc = Arc::clone(&stores);
+    let rpc_cb: ulb_cef::RpcCallback = Arc::new(Mutex::new(Box::new(move |raw_json: &str| {
+        let mut st = stores_rpc.lock().unwrap();
+        let active_id = st.active_tab_id;
+        let private = st.private_mode;
+        let blocked = st.total_blocked_ads;
+        let st_ptr = &mut *st;
+        let mut ctx = BridgeContext {
+            config: &mut st_ptr.config,
+            library: &mut st_ptr.library,
+            lines: &mut st_ptr.lines,
+            extensions: &mut st_ptr.extensions,
+            scripts: &mut st_ptr.scripts,
+            warp: &st_ptr.warp_status,
+            tabs: &st_ptr.tabs_view,
+            reader: None,
+            private_mode: private,
+            active_tab_id: active_id,
+            total_blocked_ads: blocked,
+        };
+        if let Some(outcome) = dispatch_rpc(&mut ctx, raw_json) {
+            st.rpc_calls += 1;
+            st.pending_fx.extend(outcome.side_effects);
+            outcome.response_json
+        } else {
+            r#"{"error":"invalid rpc"}"#.to_string()
+        }
+    })));
+
+    // Start WARP before CEF subprocesses/networking come up if enabled.
+    let mut initial_warp_sup = None;
+    if warp_enabled {
+        let mut st = stores.lock().unwrap();
+        if let Some(ref bin) = st.paths.warp_bin {
+            let cfg = WarpConfig {
+                binary: bin.clone(),
+                state_dir: st.paths.data_dir.join("warp-state"),
+                fail_closed: st.config.settings.warp_fail_closed,
+                use_line: st.config.settings.use_line,
+                selected_id: st.lines.selected().to_string(),
+                selected_links: st
+                    .lines
+                    .selected_links()
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+            };
+            if let Ok(sup) = WarpSupervisor::start(&cfg, |_| {}) {
+                st.warp_status = sup.status();
+                initial_warp_sup = Some(sup);
+            }
+        }
+    }
+    let initial_socks_port = stores.lock().unwrap().warp_status.port;
+
+    let (cef_runtime, cef_error) = match CefRuntime::init(CefConfig {
+        session_dir: session.path().to_path_buf(),
+        memorial_dir,
+        extension_dirs: enabled_ext_dirs,
+        user_agent: ua_for_cef,
+        socks_port: initial_socks_port,
+        fail_closed: warp_enabled && fail_closed,
+        rpc: rpc_cb,
+    }) {
+        Ok(rt) => {
+            let mut st = stores.lock().unwrap();
+            let loaded_ids = rt.loaded_extension_ids.clone();
+            let folder = st.extensions.folder().to_path_buf();
+            for (path, id) in loaded_ids {
+                if let Some(dir_name) = path.strip_prefix(&folder).ok().and_then(|p| p.to_str()) {
+                    let dir_string = dir_name.to_string();
+                    st.extensions.mark_runtime_status(&dir_string, &id, "");
+                }
+            }
+            (Some(rt), String::new())
+        }
+        Err(e) => (None, e),
+    };
+
+    let session_path_str = session.path().display().to_string();
+    let app_state = AppState {
+        stores,
+        policy,
+        cef_active: cef_runtime.is_some(),
+        cef_error,
+        warp_sup: initial_warp_sup,
         audio_watcher: None,
         tabs: Vec::new(),
         closed_urls: Vec::new(),
@@ -226,14 +459,12 @@ pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, init
         address_focused: false,
         traffic_hover: false,
         hover: HitResult::default(),
-        layout: ToolbarLayout::default(),
-        session_path_str: session.path().display().to_string(),
+        session_path_str,
         _session: session,
         _ipc: ipc_guard,
     };
-    state.restart_warp();
-    let state = Rc::new(RefCell::new(state));
 
+    let state = Rc::new(RefCell::new(app_state));
     let audio_watcher = AudioWatcher::start(|_headphones| {});
     state.borrow_mut().audio_watcher = Some(audio_watcher);
 
@@ -247,7 +478,6 @@ pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, init
 
     let root_box = GtkBox::new(Orientation::Vertical, 0);
 
-    // Topbar Overlay: Cairo toolbar + floating Address Entry
     let topbar_overlay = Overlay::new();
     let toolbar = DrawingArea::new();
     toolbar.set_content_height(TOPBAR_HEIGHT as i32);
@@ -265,20 +495,15 @@ pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, init
     topbar_overlay.add_overlay(&address_entry);
     root_box.append(&topbar_overlay);
 
-    // Suggestions popover anchored under address_entry
     let suggest_list = ListBox::new();
     let suggest_scroll = ScrolledWindow::builder()
         .min_content_width(420)
         .max_content_height(260)
         .child(&suggest_list)
         .build();
-    let suggest_popover = Popover::builder()
-        .child(&suggest_scroll)
-        .autohide(true)
-        .build();
+    let suggest_popover = Popover::builder().child(&suggest_scroll).autohide(true).build();
     suggest_popover.set_parent(&address_entry);
 
-    // Find bar (hidden by default)
     let find_bar = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(6)
@@ -288,20 +513,18 @@ pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, init
         .margin_bottom(6)
         .visible(false)
         .build();
-    let find_entry = Entry::builder()
-        .placeholder_text("在页面中查找…")
-        .hexpand(true)
-        .build();
+    let find_entry = Entry::builder().placeholder_text("在页面中查找…").hexpand(true).build();
+    let find_status = Label::builder().label("").build();
     let find_prev = Button::with_label("上一个");
     let find_next = Button::with_label("下一个");
     let find_done = Button::with_label("完成");
     find_bar.append(&find_entry);
+    find_bar.append(&find_status);
     find_bar.append(&find_prev);
     find_bar.append(&find_next);
     find_bar.append(&find_done);
     root_box.append(&find_bar);
 
-    // Main content row: Collapsible Sidebar + Web Stack + Toast Overlay
     let content_row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .hexpand(true)
@@ -346,17 +569,47 @@ pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, init
         suggest_list: suggest_list.clone(),
         find_bar,
         find_entry: find_entry.clone(),
+        find_status,
         sidebar_panel,
         content_stack,
         toast_label,
         menu_popover,
+        layout: RefCell::new(ToolbarLayout::default()),
+        cef_runtime: RefCell::new(cef_runtime),
         state: Rc::clone(&state),
     });
 
     bw.install_actions();
     bw.connect_events(&find_prev, &find_next, &find_done);
 
-    if initial_urls.is_empty() {
+    let smoke_headers: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    if smoke_test {
+        let hdr_out = Arc::clone(&smoke_headers);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("smoke listener");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            for stream in listener.incoming().take(3) {
+                let Ok(mut s) = stream else { break };
+                let mut buf = [0u8; 4096];
+                let n = s.read(&mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let mut guard = hdr_out.lock().unwrap();
+                if guard.is_none() && req.contains("User-Agent:") {
+                    *guard = Some(req);
+                }
+                let body = "<!doctype html><title>SMOKE_HTTP_OK</title><body>smoke</body>";
+                let _ = write!(
+                    s,
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+            }
+        });
+        bw.new_tab(&internal_url("start.html"), false);
+        bw.new_tab(&format!("http://127.0.0.1:{port}/"), true);
+    } else if initial_urls.is_empty() {
         let start = bw.state.borrow().home_url();
         bw.new_tab(&start, true);
     } else {
@@ -365,9 +618,11 @@ pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, init
         }
     }
 
-    // Periodic timer (~150ms): refresh WARP stdout status + animate loading progress + drain IPC commands.
+    // 16ms UI tick: pump CEF event loop, repaint active OSR frame, handle tab events & RPC side effects.
     let bw_tick = Rc::clone(&bw);
-    glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+    let smoke_started = std::time::Instant::now();
+    let smoke_hdr_tick = Arc::clone(&smoke_headers);
+    glib::timeout_add_local(Duration::from_millis(16), move || {
         while let Ok(cmd) = ipc_rx.try_recv() {
             match cmd {
                 IpcCommand::Raise => bw_tick.window.present(),
@@ -377,34 +632,56 @@ pub fn run_browser(app: &Application, paths: AppPaths, session: SessionDir, init
                 }
             }
         }
-        {
-            let mut st = bw_tick.state.borrow_mut();
-            if let Some(ref sup) = st.warp_sup {
-                let latest = sup.status();
-                if latest != st.warp_status {
-                    let port = latest.port;
-                    st.warp_status = latest;
-                    for t in &mut st.tabs {
-                        t.engine.set_proxy_port(port);
-                    }
+
+        bw_tick.pump_and_process();
+
+        if smoke_test {
+            let (painted, rpc_cnt, warp_up) = {
+                let st = bw_tick.state.borrow();
+                let p = st.tabs.iter().any(|t| t.engine.has_painted_frame());
+                let host = st.stores.lock().unwrap();
+                (p, host.rpc_calls, host.warp_status.port)
+            };
+            let hdr_opt = smoke_hdr_tick.lock().unwrap().clone();
+            if let Some(ref hdr) = hdr_opt {
+                if painted && rpc_cnt >= 1 {
+                    let has_mac = hdr.contains("Macintosh; Intel Mac OS X 10_15_7")
+                        && hdr.contains("Edg/");
+                    let has_ch = hdr.to_ascii_lowercase().contains("sec-ch-ua-platform: \"macos\"");
+                    println!(
+                        "SMOKE_PASS painted={painted} rpc_calls={rpc_cnt} warp_port={warp_up} mac_ua={has_mac} mac_ch={has_ch}"
+                    );
+                    bw_tick.window.close();
+                    return glib::ControlFlow::Break;
                 }
             }
+            if smoke_started.elapsed() >= Duration::from_secs(7) {
+                eprintln!(
+                    "SMOKE_TIMEOUT painted={painted} rpc_calls={rpc_cnt} has_hdr={}",
+                    hdr_opt.is_some()
+                );
+                bw_tick.window.close();
+                return glib::ControlFlow::Break;
+            }
         }
-        bw_tick.toolbar.queue_draw();
         glib::ControlFlow::Continue
     });
 
     window.connect_close_request({
-        let state_close = Rc::clone(&state);
+        let bw_close = Rc::clone(&bw);
         move |_| {
-            let mut st = state_close.borrow_mut();
-            st.save_all();
-            if let Some(mut w) = st.warp_sup.take() {
-                w.stop();
+            {
+                let mut st = bw_close.state.borrow_mut();
+                st.tabs.clear();
+                st.stores.lock().unwrap().save_all();
+                if let Some(mut w) = st.warp_sup.take() {
+                    w.stop();
+                }
+                if let Some(mut a) = st.audio_watcher.take() {
+                    a.stop();
+                }
             }
-            if let Some(mut a) = st.audio_watcher.take() {
-                a.stop();
-            }
+            bw_close.cef_runtime.borrow_mut().take();
             glib::Propagation::Proceed
         }
     });
@@ -417,9 +694,227 @@ impl BrowserWindow {
         self.toast_label.set_text(msg);
         self.toast_label.set_visible(true);
         let lbl = self.toast_label.clone();
-        glib::timeout_add_local_once(std::time::Duration::from_millis(1800), move || {
+        glib::timeout_add_local_once(Duration::from_millis(1800), move || {
             lbl.set_visible(false);
         });
+    }
+
+    fn pump_and_process(self: &Rc<Self>) {
+        if let Some(ref rt) = *self.cef_runtime.borrow() {
+            rt.pump();
+        }
+
+        let mut popups = Vec::new();
+        let mut blocked_count = 0u64;
+        let mut find_upd = None;
+        let mut need_redraw = false;
+
+        {
+            let mut st = self.state.borrow_mut();
+
+            if let Some(ref sup) = st.warp_sup {
+                let latest = sup.status();
+                let mut host = st.stores.lock().unwrap();
+                if latest != host.warp_status {
+                    host.warp_status = latest;
+                    need_redraw = true;
+                }
+            }
+
+            let save_history = !st.private_mode && st.stores.lock().unwrap().config.settings.save_history;
+            let mut visited = Vec::new();
+
+            for item in &mut st.tabs {
+                let evs = item.engine.poll_events();
+                for ev in evs {
+                    need_redraw = true;
+                    match ev {
+                        BrowserEvent::TitleChanged(t) => item.state.title = t,
+                        BrowserEvent::UrlChanged(u) => {
+                            item.state.url = u.clone();
+                            if save_history && u.starts_with("http") && !u.contains(".internal") {
+                                visited.push((u, item.state.title.clone()));
+                            }
+                        }
+                        BrowserEvent::LoadingChanged {
+                            loading,
+                            can_go_back,
+                            can_go_forward,
+                        } => {
+                            if loading && !item.state.loading {
+                                item.state.load_started_ms = now_epoch_ms();
+                            }
+                            item.state.loading = loading;
+                            item.state.can_go_back = can_go_back;
+                            item.state.can_go_forward = can_go_forward;
+                        }
+                        BrowserEvent::AudioChanged(a) => item.state.audio = a,
+                        BrowserEvent::FindResult { count, active_ordinal } => {
+                            find_upd = Some((count, active_ordinal));
+                        }
+                        BrowserEvent::OpenPopup(u) => popups.push(u),
+                        BrowserEvent::BlockedResource => blocked_count += 1,
+                    }
+                }
+            }
+
+            if blocked_count > 0 || !visited.is_empty() {
+                let mut host = st.stores.lock().unwrap();
+                host.total_blocked_ads += blocked_count;
+                for (u, t) in visited {
+                    host.library.record_visit(&u, &t, now_epoch_ms());
+                }
+            }
+            st.sync_stores_tabs();
+        }
+
+        if let Some((count, active_ord)) = find_upd {
+            self.find_status.set_text(&if count == 0 {
+                "0 个匹配".to_string()
+            } else {
+                format!("{active_ord}/{count}")
+            });
+        }
+
+        for u in popups {
+            self.new_tab(&u, true);
+        }
+
+        let fx_batch: Vec<SideEffect> = {
+            let st = self.state.borrow();
+            let mut host = st.stores.lock().unwrap();
+            std::mem::take(&mut host.pending_fx)
+        };
+        for fx in fx_batch {
+            self.apply_side_effect(fx);
+        }
+
+        if need_redraw {
+            self.toolbar.queue_draw();
+        }
+    }
+
+    fn apply_side_effect(self: &Rc<Self>, fx: SideEffect) {
+        match fx {
+            SideEffect::SaveConfig => {
+                let _ = self.state.borrow().stores.lock().unwrap().config.save();
+            }
+            SideEffect::SaveLibrary => {
+                let stores = Arc::clone(&self.state.borrow().stores);
+                let mut st = stores.lock().unwrap();
+                if !st.private_mode {
+                    let _ = st.library.save();
+                }
+            }
+            SideEffect::SaveLines => {
+                let stores = Arc::clone(&self.state.borrow().stores);
+                let st = stores.lock().unwrap();
+                let _ = save_encrypted_lines(&st.paths.data_dir, &st.lines);
+            }
+            SideEffect::SyncAdblock => {
+                self.state.borrow_mut().sync_policy();
+            }
+            SideEffect::RestartWarp => {
+                self.state.borrow_mut().restart_warp();
+                self.show_toast("网络线路配置已更新");
+            }
+            SideEffect::RescanWarp => {
+                if let Some(ref mut sup) = self.state.borrow_mut().warp_sup {
+                    sup.rescan();
+                }
+            }
+            SideEffect::OpenUrl { url, new_tab, activate } => {
+                if new_tab {
+                    self.new_tab(&url, activate);
+                } else {
+                    self.navigate_active(&url);
+                }
+            }
+            SideEffect::ActivateTab(id) => self.activate_tab(id),
+            SideEffect::CloseTab(id) => self.close_tab(id),
+            SideEffect::NewTab(act) => {
+                let u = self.state.borrow().home_url();
+                self.new_tab(&u, act);
+            }
+            SideEffect::OpenExtensionPage { dir, options } => {
+                let url_opt = self
+                    .state
+                    .borrow()
+                    .stores
+                    .lock()
+                    .unwrap()
+                    .extensions
+                    .page_url(&dir, options);
+                if let Some(u) = url_opt {
+                    self.new_tab(&u, true);
+                } else {
+                    self.show_toast("扩展未激活或未声明页面");
+                }
+            }
+            SideEffect::ProbeLines(lines) => {
+                let bin_opt = self.state.borrow().stores.lock().unwrap().paths.warp_bin.clone();
+                if let Some(bin) = bin_opt {
+                    std::thread::spawn(move || {
+                        let _ = run_probe(&bin, &lines, Duration::from_secs(15));
+                    });
+                }
+            }
+            SideEffect::FetchSubscription { id, url } => {
+                let stores = Arc::clone(&self.state.borrow().stores);
+                let (bin_opt, socks) = {
+                    let s = stores.lock().unwrap();
+                    (s.paths.warp_bin.clone(), s.warp_status.port)
+                };
+                if let Some(bin) = bin_opt {
+                    std::thread::spawn(move || {
+                        if let Ok(links) = run_fetch_subscription(&bin, &url, socks, Duration::from_secs(20)) {
+                            let refs: Vec<&str> = links.iter().map(String::as_str).collect();
+                            let mut s = stores.lock().unwrap();
+                            s.lines.replace_sub(&id, &refs, now_epoch_ms());
+                            let _ = save_encrypted_lines(&s.paths.data_dir, &s.lines);
+                        }
+                    });
+                }
+            }
+            SideEffect::DownloadRecommendedExtension(key) => {
+                if let Some(rec) = find_recommended_extension(&key) {
+                    let stores = Arc::clone(&self.state.borrow().stores);
+                    let (bin_opt, socks, data_dir) = {
+                        let s = stores.lock().unwrap();
+                        (s.paths.warp_bin.clone(), s.warp_status.port, s.paths.data_dir.clone())
+                    };
+                    if let Some(bin) = bin_opt {
+                        let url = if rec.url.is_empty() {
+                            store_download_url(rec.store_id)
+                        } else {
+                            rec.url.to_string()
+                        };
+                        let crx_dest = data_dir.join(format!("{}.crx", rec.key));
+                        std::thread::spawn(move || {
+                            if run_download_extension(
+                                &bin,
+                                &url,
+                                &crx_dest,
+                                rec.store_id,
+                                rec.sha256,
+                                socks,
+                                Duration::from_secs(45),
+                            )
+                            .is_ok()
+                            {
+                                let mut s = stores.lock().unwrap();
+                                let _ = s.extensions.install_package(&crx_dest, rec.key);
+                                let _ = std::fs::remove_file(&crx_dest);
+                            }
+                        });
+                    }
+                }
+            }
+            SideEffect::ReloadExtensionsRuntime => {
+                self.show_toast("扩展列表已更新，将在下次启动时应用到 Chromium");
+            }
+            SideEffect::CloseOverview | SideEffect::ExitReader | SideEffect::NewPrivateWindow => {}
+        }
     }
 
     fn new_tab(self: &Rc<Self>, url: &str, activate: bool) {
@@ -428,12 +923,12 @@ impl BrowserWindow {
             let mut st = self.state.borrow_mut();
             let id = st.next_tab_id;
             st.next_tab_id += 1;
-            let engine = PlaceholderEngine::new(
-                url,
-                &st.config.settings.user_agent_profile,
-                &st.config.settings.mac_platform_version,
-                st.warp_status.port,
-            );
+            let is_loading = st.cef_active;
+            let engine: Box<dyn WebEngine> = if is_loading {
+                Box::new(CefEngine::new(url, Arc::clone(&st.policy)))
+            } else {
+                Box::new(PlaceholderEngine::new(url, &st.cef_error))
+            };
             child_widget = engine.widget();
             let title = if url == internal_url("start.html") {
                 "起始页".to_string()
@@ -445,7 +940,7 @@ impl BrowserWindow {
                     id,
                     title,
                     url: url.to_string(),
-                    loading: false,
+                    loading: is_loading,
                     load_started_ms: now_epoch_ms(),
                     can_go_back: false,
                     can_go_forward: false,
@@ -455,11 +950,12 @@ impl BrowserWindow {
                     reader_source: String::new(),
                     zoom: 1.0,
                 },
-                engine: Box::new(engine),
+                engine,
             });
             if activate {
                 st.active_id = id;
             }
+            st.sync_stores_tabs();
             id
         };
         self.content_stack.add_named(&child_widget, Some(&format!("tab-{id}")));
@@ -478,6 +974,7 @@ impl BrowserWindow {
             }
             st.active_id = id;
             st.address_focused = false;
+            st.sync_stores_tabs();
         }
         self.address_entry.set_visible(false);
         self.content_stack.set_visible_child_name(&format!("tab-{id}"));
@@ -513,6 +1010,7 @@ impl BrowserWindow {
                 }
                 next_active = Some(st.active_id);
             }
+            st.sync_stores_tabs();
         }
         if let Some(w) = widget_to_remove {
             self.content_stack.remove(&w);
@@ -528,7 +1026,8 @@ impl BrowserWindow {
         {
             let mut st = self.state.borrow_mut();
             let active_id = st.active_id;
-            let save_history = !st.private_mode && st.config.settings.save_history;
+            let save_history =
+                !st.private_mode && st.stores.lock().unwrap().config.settings.save_history;
             let title = if resolved.starts_with("https://ulb.internal/") {
                 ulb_core::internal_pages::page_name(&resolved).unwrap_or_default()
             } else {
@@ -539,10 +1038,11 @@ impl BrowserWindow {
                 t.state.title = title.clone();
                 t.engine.navigate(&resolved);
             }
-            if save_history && resolved.starts_with("http") && !resolved.contains("ulb.internal") {
-                st.library.record_visit(&resolved, &title, now_epoch_ms());
+            if save_history && resolved.starts_with("http") && !resolved.contains(".internal") {
+                st.stores.lock().unwrap().library.record_visit(&resolved, &title, now_epoch_ms());
             }
             st.address_focused = false;
+            st.sync_stores_tabs();
         }
         self.address_entry.set_visible(false);
         self.suggest_popover.popdown();
@@ -560,7 +1060,7 @@ impl BrowserWindow {
                 .find(|t| t.state.id == active_id)
                 .map(|t| t.state.url.clone())
                 .unwrap_or_default();
-            (st.layout.address_text, u)
+            (self.layout.borrow().address_text, u)
         };
         if rect.w > 10.0 {
             self.address_entry.set_margin_start(rect.x.max(0.0) as i32);
@@ -578,25 +1078,24 @@ impl BrowserWindow {
     }
 
     fn show_main_menu(self: &Rc<Self>) {
-        let mut st = self.state.borrow_mut();
-        let active_id = st.active_id;
-        let active_opt = st.tabs.iter().find(|t| t.state.id == active_id).map(|t| t.state.clone());
-        let web_page = active_opt
-            .as_ref()
-            .is_some_and(|t| t.url.starts_with("http") && !t.url.contains("ulb.internal"));
-        let zoom = active_opt.as_ref().map(|t| t.zoom).unwrap_or(1.0);
-        let reader_active = active_opt.as_ref().is_some_and(|t| !t.reader_source.is_empty());
-        let host = active_opt.as_ref().map(|t| domain_of(&t.url)).unwrap_or_default();
-        let host_adblock = st.library.site(&host).adblock;
-        let extension_count = st.extensions.list().len();
-        let script_count = st.scripts.scripts().len();
+        let st = self.state.borrow();
+        let active = st.tabs.iter().find(|t| t.state.id == st.active_id);
+        let web_page =
+            active.is_some_and(|t| t.state.url.starts_with("http") && !t.state.url.contains(".internal"));
+        let zoom = active.map(|t| t.state.zoom).unwrap_or(1.0);
+        let reader_active = active.is_some_and(|t| !t.state.reader_source.is_empty());
+        let host = active.map(|t| domain_of(&t.state.url)).unwrap_or_default();
         let headphones_detected = st
             .audio_watcher
             .as_ref()
             .is_some_and(|w| w.is_headphones_active());
+        let mut stores = st.stores.lock().unwrap();
+        let host_adblock = stores.library.site(&host).adblock;
+        let extension_count = stores.extensions.list().len();
+        let script_count = stores.scripts.scripts().len();
         let menu = build_main_menu(&MainMenuContext {
-            settings: &st.config.settings,
-            warp: &st.warp_status,
+            settings: &stores.config.settings,
+            warp: &stores.warp_status,
             sidebar_visible: st.sidebar_visible,
             fullscreen: st.fullscreen,
             reader_active,
@@ -608,7 +1107,8 @@ impl BrowserWindow {
             script_count,
             headphones_detected,
         });
-        let r = st.layout.menu_btn;
+        drop(stores);
+        let r = self.layout.borrow().menu_btn;
         drop(st);
         self.menu_popover.set_menu_model(Some(&menu));
         self.menu_popover.set_pointing_to(Some(&gdk::Rectangle::new(
@@ -621,7 +1121,7 @@ impl BrowserWindow {
     }
 
     fn show_share_menu(self: &Rc<Self>) {
-        let r = self.state.borrow().layout.share_btn;
+        let r = self.layout.borrow().share_btn;
         let menu = build_share_menu();
         self.menu_popover.set_menu_model(Some(&menu));
         self.menu_popover.set_pointing_to(Some(&gdk::Rectangle::new(
@@ -643,7 +1143,7 @@ impl BrowserWindow {
             group.add_action(&act);
         };
 
-        add("memorial", Box::new(|bw| bw.new_tab(&internal_url("memorial/"), true)));
+        add("memorial", Box::new(|bw| bw.new_tab("https://f8964.internal/index.html", true)));
         add("new-tab", Box::new(|bw| { let u = bw.state.borrow().home_url(); bw.new_tab(&u, true); }));
         add("new-window", Box::new(|bw| { let u = bw.state.borrow().home_url(); bw.new_tab(&u, true); }));
         add("new-private", Box::new(|bw| bw.show_toast("可通过 --private 参数启动无痕窗口")));
@@ -657,7 +1157,7 @@ impl BrowserWindow {
         add("ua-selftest", Box::new(|bw| bw.new_tab(&internal_url("selftest.html"), true)));
         add("about", Box::new(|bw| {
             let tmp = bw.state.borrow().session_path_str.clone();
-            bw.show_toast(&format!("UltraLightBrowser · Omarchy ({tmp})"));
+            bw.show_toast(&format!("UltraLightBrowser · Omarchy CEF 156 ({tmp})"));
         }));
         add("toggle-sidebar", Box::new(|bw| {
             let vis = { let mut st = bw.state.borrow_mut(); st.sidebar_visible = !st.sidebar_visible; st.sidebar_visible };
@@ -678,76 +1178,116 @@ impl BrowserWindow {
         add("zoom-out", Box::new(|bw| bw.adjust_zoom(-0.1)));
         add("zoom-reset", Box::new(|bw| bw.set_zoom(1.0)));
         add("toggle-global-adblock", Box::new(|bw| {
-            { let mut st = bw.state.borrow_mut(); st.config.settings.enable_ad_block = !st.config.settings.enable_ad_block; let _ = st.config.save(); }
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.enable_ad_block = !host.config.settings.enable_ad_block;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().sync_policy();
         }));
         add("toggle-site-adblock", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            let active_id = st.active_id;
-            if let Some(url) = st.tabs.iter().find(|t| t.state.id == active_id).map(|t| t.state.url.clone()) {
-                let host = domain_of(&url);
-                if !host.is_empty() && !st.private_mode {
-                    let mut site = st.library.site(&host);
-                    site.adblock = !site.adblock;
-                    st.library.set_site(&host, site);
-                    let _ = st.library.save();
+            {
+                let st = bw.state.borrow();
+                let active_id = st.active_id;
+                if let Some(url) = st.tabs.iter().find(|t| t.state.id == active_id).map(|t| t.state.url.clone()) {
+                    let dom = domain_of(&url);
+                    let mut host = st.stores.lock().unwrap();
+                    if !dom.is_empty() && !host.private_mode {
+                        let mut site = host.library.site(&dom);
+                        site.adblock = !site.adblock;
+                        host.library.set_site(&dom, site);
+                        let _ = host.library.save();
+                    }
                 }
             }
+            bw.state.borrow_mut().sync_policy();
         }));
         add("audio-passthrough", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            st.config.settings.system_audio_passthrough = true;
-            let _ = st.config.save();
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.system_audio_passthrough = true;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().sync_policy();
         }));
         add("audio-surround", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            st.config.settings.system_audio_passthrough = false;
-            st.config.settings.enable_surround_sound = true;
-            let _ = st.config.save();
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.system_audio_passthrough = false;
+                host.config.settings.enable_surround_sound = true;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().sync_policy();
         }));
         add("audio-vocal", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            st.config.settings.enable_vocal_boost = !st.config.settings.enable_vocal_boost;
-            let _ = st.config.save();
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.enable_vocal_boost = !host.config.settings.enable_vocal_boost;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().sync_policy();
         }));
         add("audio-night", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            st.config.settings.enable_night_mode = !st.config.settings.enable_night_mode;
-            let _ = st.config.save();
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.enable_night_mode = !host.config.settings.enable_night_mode;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().sync_policy();
         }));
         add("warp-rescan", Box::new(|bw| {
             if let Some(ref mut sup) = bw.state.borrow_mut().warp_sup { sup.rescan(); }
         }));
         add("net-direct", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            st.config.settings.warp_enabled = false;
-            let _ = st.config.save();
-            st.restart_warp();
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.warp_enabled = false;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().restart_warp();
         }));
         add("net-warp", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            st.config.settings.warp_enabled = true;
-            st.config.settings.use_line = false;
-            let _ = st.config.save();
-            st.restart_warp();
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.warp_enabled = true;
+                host.config.settings.use_line = false;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().restart_warp();
         }));
         add("net-line", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            st.config.settings.warp_enabled = true;
-            st.config.settings.use_line = true;
-            let _ = st.config.save();
-            st.restart_warp();
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.warp_enabled = true;
+                host.config.settings.use_line = true;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().restart_warp();
         }));
         add("warp-fail-closed", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            st.config.settings.warp_fail_closed = !st.config.settings.warp_fail_closed;
-            let _ = st.config.save();
-            st.restart_warp();
+            {
+                let st = bw.state.borrow();
+                let mut host = st.stores.lock().unwrap();
+                host.config.settings.warp_fail_closed = !host.config.settings.warp_fail_closed;
+                let _ = host.config.save();
+            }
+            bw.state.borrow_mut().restart_warp();
         }));
         add("ua-default", Box::new(|bw| bw.set_ua("default")));
         add("ua-macos-edge", Box::new(|bw| bw.set_ua("macos-edge")));
         add("copy-url", Box::new(|bw| {
-            let active_id = bw.state.borrow().active_id;
-            let url = bw.state.borrow().tabs.iter().find(|t| t.state.id == active_id).map(|t| t.state.url.clone()).unwrap_or_default();
+            let url = {
+                let st = bw.state.borrow();
+                st.tabs.iter().find(|t| t.state.id == st.active_id).map(|t| t.state.url.clone()).unwrap_or_default()
+            };
             if let Some(display) = gdk::Display::default() {
                 display.clipboard().set_text(&url);
                 bw.show_toast("已复制链接");
@@ -756,13 +1296,15 @@ impl BrowserWindow {
         add("add-bookmark", Box::new(|bw| bw.bookmark_active(BOOKMARKS_FOLDER, "已添加书签")));
         add("add-favorite", Box::new(|bw| bw.bookmark_active(FAVORITES_FOLDER, "已添加到个人收藏")));
         add("add-reading", Box::new(|bw| {
-            let mut st = bw.state.borrow_mut();
-            let id = st.active_id;
-            if let Some((title, url)) = st.tabs.iter().find(|t| t.state.id == id).map(|t| (t.state.title.clone(), t.state.url.clone())) {
-                st.library.add_reading(&title, &url, now_epoch_ms());
-                let _ = st.library.save();
+            {
+                let st = bw.state.borrow();
+                let id = st.active_id;
+                if let Some((title, url)) = st.tabs.iter().find(|t| t.state.id == id).map(|t| (t.state.title.clone(), t.state.url.clone())) {
+                    let mut host = st.stores.lock().unwrap();
+                    host.library.add_reading(&title, &url, now_epoch_ms());
+                    let _ = host.library.save();
+                }
             }
-            drop(st);
             bw.show_toast("已添加到阅读列表");
         }));
         add("tab-ctx-reload", Box::new(|bw| {
@@ -771,8 +1313,10 @@ impl BrowserWindow {
             if let Some(t) = st.tabs.iter_mut().find(|t| t.state.id == tid) { t.engine.reload(); }
         }));
         add("tab-ctx-duplicate", Box::new(|bw| {
-            let tid = bw.state.borrow().ctx_tab_id;
-            let url = bw.state.borrow().tabs.iter().find(|t| t.state.id == tid).map(|t| t.state.url.clone());
+            let url = {
+                let st = bw.state.borrow();
+                st.tabs.iter().find(|t| t.state.id == st.ctx_tab_id).map(|t| t.state.url.clone())
+            };
             if let Some(u) = url { bw.new_tab(&u, true); }
         }));
         add("tab-ctx-mute", Box::new(|bw| {
@@ -795,13 +1339,14 @@ impl BrowserWindow {
     }
 
     fn set_ua(self: &Rc<Self>, profile: &str) {
-        let mut st = self.state.borrow_mut();
-        st.config.settings.user_agent_profile = profile.to_string();
-        let ver = st.config.settings.mac_platform_version.clone();
-        let _ = st.config.save();
-        for t in &mut st.tabs {
-            t.engine.apply_user_agent(profile, &ver);
+        {
+            let st = self.state.borrow();
+            let mut host = st.stores.lock().unwrap();
+            host.config.settings.user_agent_profile = profile.to_string();
+            let _ = host.config.save();
         }
+        self.state.borrow_mut().sync_policy();
+        self.show_toast("UA 配置已更新（刷新页面生效）");
     }
 
     fn set_zoom(self: &Rc<Self>, zoom: f64) {
@@ -823,25 +1368,27 @@ impl BrowserWindow {
 
     fn bookmark_active(self: &Rc<Self>, folder: &str, toast: &str) {
         {
-            let mut st = self.state.borrow_mut();
+            let st = self.state.borrow();
             let id = st.active_id;
             if let Some((title, url)) = st.tabs.iter().find(|t| t.state.id == id).map(|t| (t.state.title.clone(), t.state.url.clone())) {
-                st.library.add_bookmark(&title, &url, folder, now_epoch_ms());
-                let _ = st.library.save();
+                let mut host = st.stores.lock().unwrap();
+                host.library.add_bookmark(&title, &url, folder, now_epoch_ms());
+                let _ = host.library.save();
             }
         }
         self.show_toast(toast);
     }
 
     fn connect_events(self: &Rc<Self>, find_prev: &Button, find_next: &Button, find_done: &Button) {
-        // Draw toolbar
-        let st_draw = Rc::clone(&self.state);
+        let bw_draw = Rc::clone(self);
         self.toolbar.set_draw_func(move |_area, cr, width, _height| {
-            let mut st = st_draw.borrow_mut();
+            let Ok(st) = bw_draw.state.try_borrow() else {
+                return;
+            };
             let snaps = st.tab_snapshots();
-            st.layout = compute_layout(width as f64, &snaps, st.active_id, st.private_mode);
+            let layout = compute_layout(width as f64, &snaps, st.active_id, st.private_mode);
             let p = PaintParams {
-                layout: &st.layout,
+                layout: &layout,
                 tabs: &snaps,
                 active_id: st.active_id,
                 private_mode: st.private_mode,
@@ -853,15 +1400,16 @@ impl BrowserWindow {
                 hover: st.hover,
             };
             paint_toolbar(cr, &p);
+            *bw_draw.layout.borrow_mut() = layout;
         });
 
-        // Hover tracking
         let motion = EventControllerMotion::new();
         let bw_move = Rc::clone(self);
         motion.connect_motion(move |_, x, y| {
+            let layout = bw_move.layout.borrow().clone();
             let mut st = bw_move.state.borrow_mut();
-            let hit = hit_test(&st.layout, st.active_id, st.address_focused, x, y);
-            let th = st.layout.traffic_group.contains(x, y);
+            let hit = hit_test(&layout, st.active_id, st.address_focused, x, y);
+            let th = layout.traffic_group.contains(x, y);
             if hit != st.hover || th != st.traffic_hover {
                 st.hover = hit;
                 st.traffic_hover = th;
@@ -879,14 +1427,14 @@ impl BrowserWindow {
         });
         self.toolbar.add_controller(motion);
 
-        // Left & right click handling
         let click = GestureClick::builder().button(0).build();
         let bw_click = Rc::clone(self);
         click.connect_pressed(move |g, _n, x, y| {
             let btn = g.current_button();
             let hit = {
+                let layout = bw_click.layout.borrow();
                 let st = bw_click.state.borrow();
-                hit_test(&st.layout, st.active_id, st.address_focused, x, y)
+                hit_test(&layout, st.active_id, st.address_focused, x, y)
             };
             if btn == 3 && matches!(hit.kind, HitKind::Tab | HitKind::Address | HitKind::TabAudio) {
                 let muted = {
@@ -966,14 +1514,11 @@ impl BrowserWindow {
                     bw_click.toolbar.queue_draw();
                 }
                 HitKind::Address => bw_click.begin_address_edit(),
-                HitKind::Reader => bw_click.show_toast("阅读器模式将在 Chromium 接入后激活"),
-                HitKind::DragArea | HitKind::Overflow => {}
-                HitKind::None => {}
+                HitKind::DragArea | HitKind::Overflow | HitKind::Reader | HitKind::None => {}
             }
         });
         self.toolbar.add_controller(click);
 
-        // Address entry submit & live suggestions
         let bw_act = Rc::clone(self);
         self.address_entry.connect_activate(move |e| {
             let text = e.text().to_string();
@@ -990,7 +1535,7 @@ impl BrowserWindow {
                 bw_chg.suggest_popover.popdown();
                 return;
             }
-            let sugs = bw_chg.state.borrow().library.suggest(q.trim(), 8);
+            let sugs = bw_chg.state.borrow().stores.lock().unwrap().library.suggest(q.trim(), 8);
             if sugs.is_empty() {
                 bw_chg.suggest_popover.popdown();
                 return;
@@ -1020,7 +1565,6 @@ impl BrowserWindow {
             }
         });
 
-        // Find bar buttons
         let bw_fp = Rc::clone(self);
         find_prev.connect_clicked(move |_| {
             let q = bw_fp.find_entry.text().to_string();
@@ -1047,7 +1591,6 @@ impl BrowserWindow {
             bw_fd.find_bar.set_visible(false);
         });
 
-        // Keyboard shortcuts
         let key_ctrl = EventControllerKey::new();
         let bw_key = Rc::clone(self);
         key_ctrl.connect_key_pressed(move |_, key, _code, mods| {

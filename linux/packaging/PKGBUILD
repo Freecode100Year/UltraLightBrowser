@@ -1,0 +1,24 @@
+pkgname=ultralightbrowser-git
+pkgver=2.10.1
+pkgrel=1
+pkgdesc="Native Omarchy GTK4 + PipeWire browser powered by system CEF with Safari-style UI and macOS Edge identity"
+arch=('x86_64')
+license=('MIT')
+depends=('cef' 'gtk4' 'libpipewire' 'unzip')
+makedepends=('cargo' 'clang' 'go' 'pkgconf')
+provides=('ultralightbrowser')
+conflicts=('ultralightbrowser')
+
+build() {
+    local root="${SRCDEST_ROOT:-$(cd "$startdir/../.." && pwd)}"
+    go build -C "$root/warp" -trimpath -o "$srcdir/ulb-warp" .
+    cargo build --manifest-path "$root/linux/Cargo.toml" --locked --release -p ulb-linux
+}
+
+package() {
+    local root="${SRCDEST_ROOT:-$(cd "$startdir/../.." && pwd)}"
+    install -Dm755 "$root/linux/target/release/ulb-linux" "$pkgdir/usr/bin/ulb-linux"
+    install -Dm755 "$srcdir/ulb-warp" "$pkgdir/usr/bin/ulb-warp"
+    install -Dm644 "$startdir/ultralightbrowser.desktop" "$pkgdir/usr/share/applications/ultralightbrowser.desktop"
+    install -Dm644 "$startdir/ultralightbrowser.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/ultralightbrowser.svg"
+}
